@@ -288,12 +288,22 @@ def match_instruction(
         # Start from cached observations so new exploration only *adds* states.
         seen = dict(cached_seen)
 
-        proto: _BaseProtocol = exploration_protocol or RandomEpisodeProtocol(
-            max_steps=max_steps,
-            seed=seed,
-            record_history=True,
-            translate=caching_translator,
-        )
+        if exploration_protocol is not None:
+            proto: _BaseProtocol = exploration_protocol
+        else:
+            from .interaction_protocols import MultiEpisodeProtocol
+            _ep_len = 10  # conservative per-episode budget for short-episode envs
+            _n_ep = max(1, max_steps // _ep_len)
+            proto = MultiEpisodeProtocol(
+                RandomEpisodeProtocol(
+                    max_steps=_ep_len,
+                    seed=seed,
+                    record_history=True,
+                    translate=caching_translator,
+                ),
+                n_episodes=_n_ep,
+                base_seed=seed,
+            )
         exploration_result = proto(env)
 
         # Collect (raw_obs, language_obs) from every episode step.

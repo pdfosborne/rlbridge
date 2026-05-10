@@ -566,6 +566,47 @@ _instruction_protocols: dict[str, Any] = {}
 
 
 @mcp.tool()
+def rl_clear_obs_cache(env_id: str = "") -> str:
+    """
+    Clear the in-memory observation corpus cache used by rl_match_instruction.
+
+    Call this when you have updated a language translator and want
+    rl_match_instruction to rebuild the corpus with fresh translations,
+    or when you want to force re-exploration of the state space.
+
+    Parameters
+    ----------
+    env_id:
+        Clear only the cache for this environment ID.
+        When empty (default) the entire cache is cleared for all environments.
+
+    Returns
+    -------
+    Confirmation of what was cleared.
+    """
+    from ..instruction_following import clear_obs_cache, obs_cache_info
+    from ..language_translation.caching import clear_translation_cache, translation_cache_info
+
+    before_obs = obs_cache_info()
+    before_trans = translation_cache_info()
+
+    target = env_id.strip() or None
+    clear_obs_cache(target)
+    clear_translation_cache(target)
+
+    scope = f"'{target}'" if target else "all environments"
+    obs_cleared = sum(before_obs[k] for k in (([target] if target else list(before_obs.keys()))) if k in before_obs)
+    trans_cleared = sum(before_trans[k] for k in (([target] if target else list(before_trans.keys()))) if k in before_trans)
+
+    return (
+        f"Cache cleared for {scope}.\n"
+        f"  Observation corpus entries removed: {obs_cleared}\n"
+        f"  Translation cache entries removed:  {trans_cleared}\n\n"
+        "Next call to rl_match_instruction will run fresh exploration."
+    )
+
+
+@mcp.tool()
 def rl_match_instruction(
     env_id: str,
     instruction: str,

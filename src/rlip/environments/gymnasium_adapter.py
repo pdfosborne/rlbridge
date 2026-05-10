@@ -29,12 +29,22 @@ from .utils import (
 class GymnasiumEnvironment(RLIPEnvironment):
     """Thread-safe RLIP wrapper around a gymnasium.Env instance."""
 
-    def __init__(self, env: gym.Env) -> None:
+    def __init__(self, env: gym.Env, env_id: Optional[str] = None) -> None:
         self._env = env
+        if env_id:
+            self._env_id: str = env_id
+        elif getattr(env, "spec", None) and env.spec.id:
+            self._env_id = env.spec.id
+        else:
+            self._env_id = type(env).__name__
         self._lock = threading.Lock()
         self._initialized = False
         self._obs_space_desc: SpaceDescription = space_to_description(env.observation_space)
         self._act_space_desc: SpaceDescription = space_to_description(env.action_space)
+
+    @property
+    def env_id(self) -> str:
+        return self._env_id
 
     # ── Life-cycle ────────────────────────────────────────────────────────────
 
@@ -163,4 +173,4 @@ class GymnasiumFactory(RLIPEnvironmentFactory):
         **kwargs: Any,
     ) -> GymnasiumEnvironment:
         env = gym.make(self._env_id, render_mode=render_mode, **kwargs)
-        return GymnasiumEnvironment(env)
+        return GymnasiumEnvironment(env, env_id=self._env_id)

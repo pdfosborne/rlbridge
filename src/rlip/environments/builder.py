@@ -856,7 +856,9 @@ class _OverrideMetadataFactory(RLIPEnvironmentFactory):
         render_mode: Optional[str] = None,
         **kwargs: Any,
     ) -> RLIPEnvironment:
-        return self._inner.create(render_mode=render_mode, **kwargs)
+        env = self._inner.create(render_mode=render_mode, **kwargs)
+        env._env_id = self._env_info.env_id
+        return env
 
 
 # ── Bulk loader ───────────────────────────────────────────────────────────────
