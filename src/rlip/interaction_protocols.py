@@ -583,8 +583,12 @@ class InstructionFollowingProtocol(_BaseProtocol):
         Cosine similarity threshold (0–1) required to count a step as
         reaching any sub-goal.
     sub_goal_repeatable:
-        If *False* (default) the bonus is given at most once per episode.
-        If *True* the bonus is given on every step the threshold is met.
+        If *False* (default) the protocol uses **first-visit** semantics:
+        the bonus is given exactly once (the first step the threshold is met)
+        and similarity is **not** computed for the rest of the episode, so the
+        agent receives no sub-goal signal after the first visit and is not
+        tempted to linger.
+        If *True* the bonus fires on every step the threshold is met.
     max_steps:
         Hard cap on episode length.
     seed:
@@ -604,7 +608,7 @@ class InstructionFollowingProtocol(_BaseProtocol):
         sub_goal_language: str,
         sub_goal_observation: Any = None,
         policy_fn: Optional[Callable[[Any], Any]] = None,
-        sub_goal_bonus: float = 1.0,
+        sub_goal_bonus: float = 0.1,
         sub_goal_threshold: float = 0.5,
         sub_goal_repeatable: bool = False,
         max_steps: int = 200,
@@ -695,16 +699,21 @@ class InstructionFollowingProtocol(_BaseProtocol):
             language_obs: Optional[str] = None
             if translator:
                 language_obs = translator.translate(obs, action_history=action_history)
-                obs_vec = self._encoder.encode(language_obs)
-                # Max similarity across all sub-goal descriptions.
-                sim = max(
-                    self._encoder.cosine_similarity(obs_vec, sg_vec)
-                    for sg_vec in self._sub_goal_vecs
-                )
-                info["sub_goal_similarity"] = round(sim, 4)
 
-                if sim >= self.sub_goal_threshold:
-                    if self.sub_goal_repeatable or not sub_goal_reached:
+                # First-visit semantics: once the sub-goal has been reached,
+                # skip similarity computation entirely so the agent receives no
+                # signal that would encourage it to linger near the sub-goal.
+                # When sub_goal_repeatable=True the check runs every step.
+                if not sub_goal_reached or self.sub_goal_repeatable:
+                    obs_vec = self._encoder.encode(language_obs)
+                    # Max similarity across all sub-goal descriptions.
+                    sim = max(
+                        self._encoder.cosine_similarity(obs_vec, sg_vec)
+                        for sg_vec in self._sub_goal_vecs
+                    )
+                    info["sub_goal_similarity"] = round(sim, 4)
+
+                    if sim >= self.sub_goal_threshold:
                         reward += self.sub_goal_bonus
                         sub_goal_reached = True
                         info["sub_goal_reached"] = True

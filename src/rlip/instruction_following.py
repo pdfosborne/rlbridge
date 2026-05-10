@@ -416,8 +416,11 @@ def build_instruction_following_protocol(
         :attr:`InstructionMatch.matched_states`).  The reward bonus fires
         whenever the agent reaches *any* of these states.  Default ``0.05``.
     sub_goal_repeatable:
-        *False* (default) — bonus given at most once per episode.
-        *True* — bonus given on every step the threshold is met.
+        *False* (default) — **first-visit** semantics: the bonus fires once
+        (the first step similarity >= *sub_goal_threshold*), then similarity
+        is no longer computed for that episode so the agent has no incentive
+        to linger at or return to the sub-goal.
+        *True* — bonus fires on every step the threshold is met.
     record_history:
         Whether to retain the full step history in the training result.
 
