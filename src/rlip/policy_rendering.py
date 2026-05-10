@@ -1,0 +1,644 @@
+"""
+Policy Rendering for RLIP Interaction Protocols
+================================================
+Given a completed :class:`~rlip.interaction_protocols.InteractionResult`,
+this module:
+
+1. **Extracts an optimal policy** – selects the best episode by total reward
+   and builds a greedy observation-to-action lookup table from its trajectory.
+
+2. **Replays the policy** – runs a fresh environment episode, consulting the
+   lookup table at each step and falling back to a random action for
+   unseen observations.
+
+3. **Renders each step** – captures ``rgb_array`` PNG frames or ``ansi`` text
+   from the environment's ``render()`` call after every action.
+
+4. **Saves output** – writes individual PNG frames to a directory and/or
+   composes them into an animated GIF (requires Pillow, already a core dep).
+
+Quick start
+-----------
+::
+
+    from rlip.environments.predefined.sailing import SailingFactory, SAILING_V0
+    from rlip.interaction_protocols import RandomEpisodeProtocol
+    from rlip.policy_rendering import render_optimal_policy
+
+    # 1. Run any interaction protocol to collect episode data.
+    env = SAILING_V0.create()
+    result = RandomEpisodeProtocol(max_steps=200, seed=0, record_history=True)(env)
+
+    # 2. Render the optimal (best-reward) episode to a GIF.
+    render_result = render_optimal_policy(
+        result,
+        env_factory=SAILING_V0,
+        output_gif="sailing_policy.gif",
+    )
+    print(render_result)
+
+Instruction-following
+---------------------
+Works with :class:`~rlip.interaction_protocols.InstructionFollowingProtocol`
+results too — sub-goal steps are annotated in the frame metadata::
+
+    from rlip.instruction_following import build_instruction_following_protocol
+
+    protocol = build_instruction_following_protocol(
+        "sail towards the beach side", env, seed=0
+    )
+    result = protocol(env)
+    render_optimal_policy(result, env_factory=SAILING_V0, output_gif="if_policy.gif")
+"""
+
+from __future__ import annotations
+
+import base64
+import os
+import random
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+from .environments.base import RLIPEnvironment, RLIPEnvironmentFactory
+from .interaction_protocols import (
+    EpisodeResult,
+    InteractionResult,
+    StepRecord,
+    _EnvLike,
+    _get,
+    _make_sampler,
+)
+
+
+# ── Policy extraction ─────────────────────────────────────────────────────────
+
+def extract_optimal_policy(
+    result: InteractionResult,
+) -> tuple[EpisodeResult, dict[Any, Any]]:
+    """
+    Select the best episode from *result* and build a greedy lookup table.
+
+    The "optimal policy" derived here is a **tabular greedy policy**: a dict
+    mapping each observed state to the action taken at that state in the
+    highest-reward episode.  When multiple steps visit the same state, the
+    action from the *last* visit is kept (later steps reflect a more refined
+    trajectory).
+
+    Parameters
+    ----------
+    result:
+        A completed :class:`~rlip.interaction_protocols.InteractionResult`
+        with ``record_history=True``.
+
+    Returns
+    -------
+    best_episode : EpisodeResult
+        The episode with the highest ``total_reward``.
+    policy : dict[obs, action]
+        Observation-to-action mapping extracted from the best episode.
+
+    Raises
+    ------
+    ValueError
+        If *result* contains no episodes, or none have recorded history.
+    """
+    if not result.episodes:
+        raise ValueError("InteractionResult contains no episodes.")
+
+    episodes_with_history = [ep for ep in result.episodes if ep.history]
+    if not episodes_with_history:
+        raise ValueError(
+            "No episode history found.  Re-run the protocol with "
+            "record_history=True to capture trajectories."
+        )
+
+    best_episode = max(episodes_with_history, key=lambda ep: ep.total_reward)
+
+    policy: dict[Any, Any] = {}
+    for rec in best_episode.history:
+        # Coerce numpy scalars / arrays to plain Python for hashability
+        key = _hashable_obs(rec.observation)
+        policy[key] = rec.action
+
+    return best_episode, policy
+
+
+def _hashable_obs(obs: Any) -> Any:
+    """Convert an observation to a hashable key (handles lists/numpy arrays)."""
+    if isinstance(obs, list):
+        return tuple(round(v, 6) if isinstance(v, float) else v for v in obs)
+    try:
+        import numpy as np  # noqa: PLC0415
+        if isinstance(obs, np.ndarray):
+            return tuple(obs.flatten().tolist())
+    except ImportError:
+        pass
+    return obs
+
+
+# ── Rendered frame ────────────────────────────────────────────────────────────
+
+@dataclass
+class RenderedFrame:
+    """One rendered step from a policy replay."""
+
+    step: int
+    """Step number (1-based)."""
+
+    action: Any
+    """Action executed at this step."""
+
+    observation: Any
+    """Raw observation after the action."""
+
+    reward: float
+    """Reward received at this step."""
+
+    terminated: bool
+    truncated: bool
+
+    mode: str
+    """Render mode: ``"rgb_array"``, ``"ansi"``, or ``"none"``."""
+
+    png_data: Optional[bytes] = field(default=None, repr=False)
+    """Decoded PNG bytes when mode is ``"rgb_array"``."""
+
+    ansi_text: Optional[str] = field(default=None, repr=False)
+    """Text content when mode is ``"ansi"``."""
+
+    language_obs: Optional[str] = field(default=None, repr=False)
+    """Language description of the observation (when a translator is active)."""
+
+    sub_goal_reached: bool = False
+    """True if this step's language matched the instruction sub-goal."""
+
+    sub_goal_similarity: Optional[float] = None
+    """Cosine similarity to the sub-goal language, if available."""
+
+
+# ── Render result ─────────────────────────────────────────────────────────────
+
+@dataclass
+class PolicyRenderResult:
+    """Output of :func:`render_optimal_policy`."""
+
+    protocol_name: str
+    env_id: str
+    best_episode_index: int
+    best_episode_reward: float
+    best_episode_steps: int
+    frames: list[RenderedFrame] = field(default_factory=list, repr=False)
+    output_dir: Optional[str] = None
+    output_gif: Optional[str] = None
+    n_frames_saved: int = 0
+    n_gif_frames: int = 0
+    policy_size: int = 0
+    """Number of unique states in the extracted policy table."""
+
+    def __str__(self) -> str:
+        lines = [
+            f"PolicyRenderResult",
+            f"  Protocol:          {self.protocol_name}",
+            f"  Environment:       {self.env_id}",
+            f"  Best episode:      #{self.best_episode_index}  "
+            f"reward={self.best_episode_reward:.4f}  steps={self.best_episode_steps}",
+            f"  Policy table size: {self.policy_size} unique observations",
+            f"  Frames rendered:   {len(self.frames)}",
+        ]
+        if self.output_dir:
+            lines.append(f"  PNG frames saved:  {self.n_frames_saved}  → {self.output_dir}")
+        if self.output_gif:
+            lines.append(
+                f"  GIF saved:         {self.n_gif_frames} frames  → {self.output_gif}"
+            )
+        return "\n".join(lines)
+
+
+# ── Core renderer ─────────────────────────────────────────────────────────────
+
+class PolicyRenderer:
+    """
+    Replay a greedy policy on a fresh environment instance with rendering.
+
+    Parameters
+    ----------
+    env:
+        An RLIP environment that supports ``render()`` (may be the same
+        instance used for training — it will be ``reset()`` first).
+    policy:
+        Observation-to-action lookup table, typically from
+        :func:`extract_optimal_policy`.
+    fallback:
+        Action to execute when the current observation is not in *policy*.
+        Accepts:
+
+        * ``"random"`` (default) – sample from the environment's action space.
+        * ``"zero"`` – always use action 0.
+        * Any callable ``(obs) -> action``.
+    render_mode:
+        Override the environment's render mode.  If the environment was
+        created without a render mode, pass ``"rgb_array"`` or ``"ansi"``
+        here to enable rendering via :meth:`inject_render_mode`.
+    translate:
+        Language translator source (same semantics as interaction protocols).
+    """
+
+    def __init__(
+        self,
+        env: _EnvLike,
+        policy: dict[Any, Any],
+        fallback: Any = "random",
+        translate: Any = None,
+    ) -> None:
+        self.env = env
+        self.policy = policy
+        self.fallback = fallback
+        self.translate = translate
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def run(
+        self,
+        max_steps: int = 200,
+        seed: Optional[int] = None,
+    ) -> list[RenderedFrame]:
+        """
+        Run one episode using the greedy policy and collect rendered frames.
+
+        Parameters
+        ----------
+        max_steps:
+            Hard cap on episode length.
+        seed:
+            Seed for the environment reset.
+
+        Returns
+        -------
+        list[RenderedFrame]
+            One frame per step.  ``png_data`` is populated for ``rgb_array``
+            environments; ``ansi_text`` for ``ansi`` environments.
+        """
+        from .language_translation.base import LanguageTranslator  # noqa: PLC0415
+
+        # Resolve language translator
+        translator: Optional[LanguageTranslator] = None
+        if self.translate is not None and self.translate is not False:
+            if isinstance(self.translate, LanguageTranslator):
+                translator = self.translate
+            elif self.translate is True:
+                env_id = getattr(self.env, "env_id", type(self.env).__name__)
+                from .language_translation import get_translator  # noqa: PLC0415
+                translator = get_translator(env_id)
+
+        # Build fallback action supplier
+        sampler = _make_sampler(self.env, seed)
+        if callable(self.fallback) and not isinstance(self.fallback, str):
+            fallback_fn: Callable[[Any], Any] = self.fallback
+        elif self.fallback == "zero":
+            fallback_fn = lambda _obs: 0  # noqa: E731
+        else:
+            fallback_fn = lambda _obs: sampler()  # noqa: E731
+
+        # Reset
+        reset_out = self.env.reset(seed=seed)
+        obs = _get(reset_out, "observation", reset_out)
+
+        frames: list[RenderedFrame] = []
+        action_history: list[Any] = []
+
+        for step_n in range(1, max_steps + 1):
+            # Select action from policy or fallback
+            key = _hashable_obs(obs)
+            action = self.policy.get(key, fallback_fn(obs))
+            action_history.append(action)
+
+            step_out = self.env.step(action)
+            obs        = _get(step_out, "observation", obs)
+            reward     = float(_get(step_out, "reward", 0.0))
+            terminated = bool(_get(step_out, "terminated", False))
+            truncated  = bool(_get(step_out, "truncated", False))
+            info       = dict(_get(step_out, "info", {}) or {})
+
+            # Language translation
+            language_obs: Optional[str] = None
+            if translator:
+                language_obs = translator.translate(obs, action_history=action_history)
+
+            # Render
+            frame = self._capture_frame(
+                step=step_n,
+                action=action,
+                observation=obs,
+                reward=reward,
+                terminated=terminated,
+                truncated=truncated,
+                language_obs=language_obs,
+                info=info,
+            )
+            frames.append(frame)
+
+            if terminated or truncated:
+                break
+
+        return frames
+
+    # ── Internal ──────────────────────────────────────────────────────────────
+
+    def _capture_frame(
+        self,
+        *,
+        step: int,
+        action: Any,
+        observation: Any,
+        reward: float,
+        terminated: bool,
+        truncated: bool,
+        language_obs: Optional[str],
+        info: dict[str, Any],
+    ) -> RenderedFrame:
+        """Call env.render() and return a RenderedFrame."""
+        png_data: Optional[bytes] = None
+        ansi_text: Optional[str] = None
+        mode = "none"
+
+        render_fn = getattr(self.env, "render", None)
+        if render_fn is not None:
+            try:
+                render_out = render_fn()
+                mode = _get(render_out, "mode", "none") or "none"
+                if mode == "rgb_array":
+                    b64 = _get(render_out, "data")
+                    if b64:
+                        png_data = base64.b64decode(b64)
+                elif mode == "ansi":
+                    ansi_text = _get(render_out, "text")
+            except Exception:
+                pass  # render not supported / not initialised with a render mode
+
+        return RenderedFrame(
+            step=step,
+            action=action,
+            observation=observation,
+            reward=reward,
+            terminated=terminated,
+            truncated=truncated,
+            mode=mode,
+            png_data=png_data,
+            ansi_text=ansi_text,
+            language_obs=language_obs,
+            sub_goal_reached=bool(info.get("sub_goal_reached", False)),
+            sub_goal_similarity=info.get("sub_goal_similarity"),
+        )
+
+
+# ── Output helpers ────────────────────────────────────────────────────────────
+
+def save_frames_to_dir(
+    frames: list[RenderedFrame],
+    output_dir: str | os.PathLike,
+) -> int:
+    """
+    Write each ``rgb_array`` frame as a numbered PNG file.
+
+    Parameters
+    ----------
+    frames:
+        Frames from :meth:`PolicyRenderer.run`.
+    output_dir:
+        Directory path.  Created if it does not exist.
+
+    Returns
+    -------
+    int
+        Number of PNG files written.
+    """
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    saved = 0
+    for frame in frames:
+        if frame.png_data:
+            fname = out / f"frame_{frame.step:04d}.png"
+            fname.write_bytes(frame.png_data)
+            saved += 1
+    return saved
+
+
+def save_gif(
+    frames: list[RenderedFrame],
+    output_path: str | os.PathLike,
+    fps: float = 4.0,
+    annotate: bool = True,
+    max_width: int = 480,
+) -> int:
+    """
+    Compose ``rgb_array`` frames into an animated GIF using Pillow.
+
+    Parameters
+    ----------
+    frames:
+        Frames from :meth:`PolicyRenderer.run`.
+    output_path:
+        Destination ``.gif`` file path.  Parent directory is created if
+        needed.
+    fps:
+        Frames per second.  Lower values make the animation slower.
+    annotate:
+        If *True*, overlay a small text annotation on each frame showing
+        the step number, reward, and (if available) sub-goal similarity.
+    max_width:
+        If > 0, downscale each frame so its width does not exceed this
+        value (aspect ratio is preserved).  Keeps GIF file sizes small
+        enough to embed as a data URL.  Set to 0 to disable resizing.
+
+    Returns
+    -------
+    int
+        Number of frames written to the GIF (may be 0 if no PNG data).
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont  # noqa: PLC0415
+    except ImportError as exc:
+        raise ImportError(
+            "Pillow is required for GIF output.  Install it with: "
+            "pip install pillow"
+        ) from exc
+
+    from io import BytesIO  # noqa: PLC0415
+
+    images: list[Image.Image] = []
+    for frame in frames:
+        if not frame.png_data:
+            continue
+        img = Image.open(BytesIO(frame.png_data)).convert("RGBA")
+
+        # Downscale if wider than max_width
+        if max_width > 0 and img.width > max_width:
+            scale = max_width / img.width
+            new_size = (max_width, max(1, int(img.height * scale)))
+            img = img.resize(new_size, Image.LANCZOS)
+
+        if annotate:
+            draw = ImageDraw.Draw(img)
+            # Build annotation text
+            parts = [f"step={frame.step}  r={frame.reward:+.3f}"]
+            if frame.sub_goal_similarity is not None:
+                parts.append(f"sim={frame.sub_goal_similarity:.3f}")
+            if frame.sub_goal_reached:
+                parts.append("◀ sub-goal!")
+            text = "  ".join(parts)
+            # Draw a semi-transparent background box
+            font: Any
+            try:
+                font = ImageFont.truetype("DejaVuSansMono.ttf", 14)
+            except (IOError, OSError):
+                font = ImageFont.load_default()
+            bbox = draw.textbbox((4, 4), text, font=font)
+            draw.rectangle(
+                [bbox[0] - 2, bbox[1] - 2, bbox[2] + 2, bbox[3] + 2],
+                fill=(0, 0, 0, 160),
+            )
+            draw.text((4, 4), text, fill=(255, 255, 255, 255), font=font)
+
+        images.append(img.convert("P", palette=Image.ADAPTIVE))
+
+    if not images:
+        return 0
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    duration_ms = max(1, int(1000.0 / fps))
+    images[0].save(
+        output_path,
+        save_all=True,
+        append_images=images[1:],
+        loop=0,
+        duration=duration_ms,
+        optimize=False,
+    )
+    return len(images)
+
+
+# ── Convenience entry-point ───────────────────────────────────────────────────
+
+def render_optimal_policy(
+    result: InteractionResult,
+    env_factory: Optional[RLIPEnvironmentFactory] = None,
+    env: Optional[_EnvLike] = None,
+    *,
+    render_mode: str = "rgb_array",
+    max_steps: int = 200,
+    seed: Optional[int] = None,
+    fallback: Any = "random",
+    translate: Any = True,
+    output_dir: Optional[str | os.PathLike] = None,
+    output_gif: Optional[str | os.PathLike] = None,
+    gif_fps: float = 4.0,
+    gif_annotate: bool = True,
+) -> PolicyRenderResult:
+    """
+    Full pipeline: extract optimal policy → replay on a rendered env →
+    optionally save PNG frames and/or animated GIF.
+
+    You must supply either *env_factory* (preferred — creates a fresh
+    instance with the requested *render_mode*) or *env* (an already-
+    instantiated environment; rendering must have been enabled when it
+    was created).
+
+    Parameters
+    ----------
+    result:
+        A completed :class:`~rlip.interaction_protocols.InteractionResult`
+        with ``record_history=True``.
+    env_factory:
+        :class:`~rlip.environments.base.RLIPEnvironmentFactory` used to
+        create a fresh rendering-enabled environment.
+    env:
+        Pre-existing environment instance.  Ignored if *env_factory* is
+        given.
+    render_mode:
+        Render mode passed to *env_factory*.  Has no effect when *env* is
+        supplied directly.
+    max_steps:
+        Maximum steps for the replay episode.
+    seed:
+        Seed for the replay reset.
+    fallback:
+        Action to use for states not in the policy table (``"random"``,
+        ``"zero"``, or a ``Callable``).
+    translate:
+        Language translator source.  ``True`` (default) auto-resolves from
+        the environment ID.
+    output_dir:
+        If given, individual PNG frames are saved here (one per step).
+    output_gif:
+        If given, an animated GIF is written to this path.
+    gif_fps:
+        Animation speed (frames per second).
+    gif_annotate:
+        Overlay step / reward / sub-goal annotations on each GIF frame.
+
+    Returns
+    -------
+    PolicyRenderResult
+    """
+    # ── 1. Extract optimal policy ──────────────────────────────────────────────
+    best_ep, policy = extract_optimal_policy(result)
+
+    # ── 2. Build rendering environment ────────────────────────────────────────
+    if env_factory is not None:
+        render_env: _EnvLike = env_factory.create(render_mode=render_mode)
+    elif env is not None:
+        render_env = env
+    else:
+        raise ValueError("Supply either env_factory or env.")
+
+    # ── 3. Replay with rendering ───────────────────────────────────────────────
+    renderer = PolicyRenderer(
+        env=render_env,
+        policy=policy,
+        fallback=fallback,
+        translate=translate,
+    )
+    frames = renderer.run(max_steps=max_steps, seed=seed)
+
+    # ── 4. Save outputs ────────────────────────────────────────────────────────
+    n_png_saved = 0
+    n_gif_frames = 0
+
+    if output_dir is not None:
+        n_png_saved = save_frames_to_dir(frames, output_dir)
+
+    if output_gif is not None:
+        n_gif_frames = save_gif(
+            frames,
+            output_gif,
+            fps=gif_fps,
+            annotate=gif_annotate,
+        )
+
+    env_id = getattr(render_env, "env_id", type(render_env).__name__)
+
+    return PolicyRenderResult(
+        protocol_name=result.protocol_name,
+        env_id=env_id,
+        best_episode_index=best_ep.episode,
+        best_episode_reward=best_ep.total_reward,
+        best_episode_steps=best_ep.steps,
+        frames=frames,
+        output_dir=str(output_dir) if output_dir else None,
+        output_gif=str(output_gif) if output_gif else None,
+        n_frames_saved=n_png_saved,
+        n_gif_frames=n_gif_frames,
+        policy_size=len(policy),
+    )
+
+
+__all__ = [
+    "extract_optimal_policy",
+    "RenderedFrame",
+    "PolicyRenderResult",
+    "PolicyRenderer",
+    "save_frames_to_dir",
+    "save_gif",
+    "render_optimal_policy",
+]
