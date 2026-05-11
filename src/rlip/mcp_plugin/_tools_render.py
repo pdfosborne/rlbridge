@@ -1,0 +1,195 @@
+"""
+Rendering MCP tools and resources for the RLIP plugin.
+
+Resources: environments_resource, instances_resource.
+Tools:     rl_render_policy.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+from pathlib import Path
+from typing import Any, Optional
+
+from ._dispatch import _dispatch
+from ._state import _RENDERS_DIR, _in_process, _registry, _trained_agents, log, mcp
+
+
+# ── MCP Resources ─────────────────────────────────────────────────────────────
+
+@mcp.resource("rlip://environments")
+def environments_resource() -> str:
+    """All registered RLIP environments as JSON."""
+    from ..protocol.constants import Methods
+    result = _dispatch(Methods.LIST_ENVIRONMENTS, tags=[], namespace=None)
+    return json.dumps(result, indent=2)
+
+
+@mcp.resource("rlip://instances")
+def instances_resource() -> str:
+    """All active RLIP environment instances as JSON."""
+    from ..protocol.constants import Methods
+    result = _dispatch(Methods.LIST_INSTANCES)
+    return json.dumps(result, indent=2)
+
+
+# ── Render tool ───────────────────────────────────────────────────────────────
+
+@mcp.tool()
+def rl_render_policy(
+    env_id: str,
+    n_episodes: int = 30,
+    max_steps: int = 200,
+    seed: Optional[int] = None,
+    fps: float = 6.0,
+    agent_id: str = "",
+) -> str:
+    """
+    Render the optimal policy for an environment as an animated GIF.
+
+    Runs several episodes, picks the best one, replays it with rendering
+    enabled, and saves the result as a ``.gif`` file.  The GIF is returned
+    as an inline data URL so Claude can display it directly, and also saved
+    to ``~/.rlip/renders/`` for local access.
+
+    Parameters
+    ----------
+    env_id:
+        Environment to render (must be visible in rl_list_environments).
+    n_episodes:
+        Number of episodes to collect before selecting the best policy.
+        More episodes → higher chance of finding a good trajectory.
+    max_steps:
+        Hard cap on each episode length.
+    seed:
+        Random seed for reproducibility.
+    fps:
+        Animation speed of the output GIF (frames per second).
+    agent_id:
+        Optional ID of a trained agent (from rl_train_agent).  When
+        provided, the agent's greedy policy is used instead of random
+        exploration.
+
+    Returns the GIF as a data URL (``data:image/gif;base64,...``) that
+    Claude can display, plus the local file path.
+    """
+    from datetime import datetime
+
+    from ..interaction_protocols import (
+        MultiEpisodeProtocol,
+        RandomEpisodeProtocol,
+        GreedyEpisodeProtocol,
+    )
+    from ..policy_rendering import render_optimal_policy
+
+    # ── Resolve environment factory ───────────────────────────────────────────
+    if not _registry or env_id not in _registry:
+        return f"Unknown environment '{env_id}'. Use rl_list_environments() to see available envs."
+
+    factory = _registry.get(env_id)
+
+    # ── Determine GIF output path ─────────────────────────────────────────────
+    _RENDERS_DIR.mkdir(parents=True, exist_ok=True)
+    safe_id = env_id.replace("/", "_").replace("-", "_").replace(" ", "_")
+    _stored = _trained_agents.get(agent_id) if agent_id else None
+    agent_type_label = _stored.get("agent_type", "unknown") if _stored else "random"
+    _ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    gif_path = _RENDERS_DIR / f"{safe_id}_{agent_type_label}_{n_episodes}ep_{_ts}.gif"
+
+    # ── Collect episodes ──────────────────────────────────────────────────────
+    train_env = factory.create(render_mode=None)
+    try:
+        if agent_id and agent_id in _trained_agents:
+            # Use stored best-training-episode history directly.
+            # This avoids re-running the greedy policy, which may cycle for
+            # agents like TabularQ whose Q-values didn't fully propagate.
+            stored = _trained_agents[agent_id]
+            training_history = stored.get("best_episode_history", [])
+            if training_history:
+                from ..policy_rendering import PolicyRenderer  # noqa: PLC0415
+                from ..policy_rendering import save_gif, PolicyRenderResult  # noqa: PLC0415
+                from ..policy_rendering import _hashable_obs  # noqa: PLC0415
+
+                policy = {_hashable_obs(obs): act for obs, act in training_history}
+                render_env = factory.create(render_mode="rgb_array")
+                renderer = PolicyRenderer(env=render_env, policy=policy)
+                frames = renderer.run(max_steps=max_steps, seed=seed)
+
+                n_gif_frames = save_gif(frames, gif_path, fps=fps, annotate=True)
+                if n_gif_frames == 0:
+                    return (
+                        f"Policy replay completed but no frames were captured.\n"
+                        f"Environment '{env_id}' may not support rgb_array rendering."
+                    )
+
+                agent_type = stored.get("agent_type", "unknown")
+                summary = (
+                    f"PolicyRenderResult\n"
+                    f"  Agent type:        {agent_type}\n"
+                    f"  Environment:       {env_id}\n"
+                    f"  Source:            best training episode ({len(training_history)} steps)\n"
+                    f"  Frames rendered:   {len(frames)}\n"
+                    f"  GIF saved:         {n_gif_frames} frames  \u2192 {gif_path}"
+                )
+                gif_bytes = Path(gif_path).read_bytes()
+                b64 = base64.b64encode(gif_bytes).decode("ascii")
+                return f"{summary}\n\nSaved to: {gif_path}\n\ndata:image/gif;base64,{b64}"
+
+            # Fallback: no stored history — run greedy evaluation episodes
+            agent = stored["agent"]
+            def _greedy_fn(obs: Any) -> Any:
+                if hasattr(agent, "act_greedy"):
+                    return agent.act_greedy(obs)
+                return agent.act(obs)
+
+            base = GreedyEpisodeProtocol(
+                policy_fn=_greedy_fn,
+                max_steps=max_steps,
+                seed=seed,
+                record_history=True,
+            )
+            protocol = MultiEpisodeProtocol(base, n_episodes=n_episodes, base_seed=seed)
+        else:
+            base = RandomEpisodeProtocol(
+                max_steps=max_steps,
+                seed=seed,
+                record_history=True,
+            )
+            protocol = MultiEpisodeProtocol(base, n_episodes=n_episodes, base_seed=seed)
+
+        result = protocol(train_env)
+    finally:
+        train_env.close()
+
+    # ── Render best episode to GIF ────────────────────────────────────────────
+    try:
+        render_result = render_optimal_policy(
+            result,
+            env_factory=factory,
+            render_mode="rgb_array",
+            max_steps=max_steps,
+            seed=seed,
+            output_gif=gif_path,
+            gif_fps=fps,
+            gif_annotate=True,
+        )
+    except Exception as exc:
+        return f"Rendering failed: {exc}"
+
+    if render_result.n_gif_frames == 0:
+        return (
+            f"Policy replay completed but no frames were captured.\n"
+            f"Environment '{env_id}' may not support rgb_array rendering.\n\n"
+            f"{render_result}"
+        )
+
+    # ── Return GIF as data URL so Claude can display it ───────────────────────
+    gif_bytes = Path(gif_path).read_bytes()
+    b64 = base64.b64encode(gif_bytes).decode("ascii")
+
+    return (
+        f"{render_result}\n\n"
+        f"Saved to: {gif_path}\n\n"
+        f"data:image/gif;base64,{b64}"
+    )
