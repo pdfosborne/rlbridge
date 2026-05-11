@@ -58,6 +58,8 @@ envs-all     = ["gymnasium[all]>=0.29.0", "ale-py>=0.8.0"]
 # httpx is already a core dep so no extra install needed for Ollama;
 # install openai-sdk only if you prefer the official client.
 openai-sdk = ["openai>=1.30.0"]
+# GPU-accelerated DQN / PPO training (also works CPU-only)
+torch = ["torch>=2.0.0"]
 
 # Development tools
 dev = [

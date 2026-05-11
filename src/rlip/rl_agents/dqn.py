@@ -44,9 +44,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+import copy
+
 import numpy as np
 
+try:
+    import torch
+    import torch.nn as nn
+except ImportError:  # pragma: no cover
+    raise ImportError("DQN agent requires PyTorch. Install with: pip install torch")
+
 from .._agent_base import AgentBase, TrainResult, _flat_obs, _get, _n_actions_of
+
+# Use GPU when available; falls back to CPU transparently.
+_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # ── Result dataclass ──────────────────────────────────────────────────────────
@@ -69,20 +80,16 @@ class DQNTrainResult(TrainResult):
         )
 
 
-# ── Tiny NumPy neural net ─────────────────────────────────────────────────────
+# ── PyTorch neural net (GPU-accelerated when available) ──────────────────────
 
 class _MLP:
     """
-    Two-hidden-layer fully-connected network.
+    Two-hidden-layer fully-connected network backed by PyTorch.
 
-    Parameters
-    ----------
-    in_dim, hidden, out_dim:
-        Layer dimensions.
-    lr:
-        Learning rate for SGD weight updates.
-    seed:
-        NumPy random seed for weight initialisation.
+    Automatically runs on GPU when :data:`_DEVICE` is ``"cuda"``.
+    The external API (forward / predict / backward / to_dict / from_dict /
+    copy_weights_from) is identical to the previous NumPy implementation so
+    the rest of the agent code requires no changes.
     """
 
     def __init__(
@@ -93,19 +100,23 @@ class _MLP:
         lr: float = 1e-3,
         seed: Optional[int] = None,
     ) -> None:
-        rng = np.random.default_rng(seed)
-        # Xavier / Glorot uniform init
-        def _w(fan_in: int, fan_out: int) -> np.ndarray:
-            limit = np.sqrt(6.0 / (fan_in + fan_out))
-            return rng.uniform(-limit, limit, (fan_in, fan_out)).astype(np.float64)
-
-        self.W1 = _w(in_dim, hidden)
-        self.b1 = np.zeros(hidden, dtype=np.float64)
-        self.W2 = _w(hidden, hidden)
-        self.b2 = np.zeros(hidden, dtype=np.float64)
-        self.W3 = _w(hidden, out_dim)
-        self.b3 = np.zeros(out_dim, dtype=np.float64)
+        if seed is not None:
+            torch.manual_seed(seed)
+        self._net = nn.Sequential(
+            nn.Linear(in_dim, hidden, dtype=torch.float64),
+            nn.ReLU(),
+            nn.Linear(hidden, hidden, dtype=torch.float64),
+            nn.ReLU(),
+            nn.Linear(hidden, out_dim, dtype=torch.float64),
+        ).to(_DEVICE)
+        for m in self._net:
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.zeros_(m.bias)
         self.lr = lr
+        self._opt = torch.optim.SGD(self._net.parameters(), lr=lr)
+        self._out_t: Optional[torch.Tensor] = None
+        self._out: Optional[np.ndarray] = None
 
     # ── Forward (single sample or batch) ─────────────────────────────────────
 
@@ -113,65 +124,70 @@ class _MLP:
         """
         x: (batch, in_dim) or (in_dim,)
         returns: (batch, out_dim) or (out_dim,)
+        Retains the computation graph for a subsequent :meth:`backward` call.
         """
-        self._x = x
-        self._z1 = x @ self.W1 + self.b1
-        self._a1 = np.maximum(0.0, self._z1)   # ReLU
-        self._z2 = self._a1 @ self.W2 + self.b2
-        self._a2 = np.maximum(0.0, self._z2)   # ReLU
-        self._out = self._a2 @ self.W3 + self.b3
+        t = torch.as_tensor(x, dtype=torch.float64, device=_DEVICE)
+        self._out_t = self._net(t)
+        self._out = self._out_t.detach().cpu().numpy()
         return self._out
 
     def predict(self, x: np.ndarray) -> np.ndarray:
-        """Stateless forward pass (does not store activations)."""
-        a1 = np.maximum(0.0, x @ self.W1 + self.b1)
-        a2 = np.maximum(0.0, a1 @ self.W2 + self.b2)
-        return a2 @ self.W3 + self.b3
+        """Stateless forward pass – no gradient graph retained."""
+        with torch.no_grad():
+            t = torch.as_tensor(x, dtype=torch.float64, device=_DEVICE)
+            return self._net(t).cpu().numpy()
 
     # ── Backward + SGD step ───────────────────────────────────────────────────
 
     def backward(self, loss_grad: np.ndarray) -> None:
         """
         loss_grad: ∂L/∂output, shape (batch, out_dim).
-        Applies one SGD step to all weight matrices.
+        Applies one SGD step using the graph retained by the last forward().
         """
-        batch = self._x.shape[0]
-
-        # Layer 3
-        dW3 = self._a2.T @ loss_grad / batch
-        db3 = loss_grad.mean(axis=0)
-        d2  = (loss_grad @ self.W3.T) * (self._z2 > 0)
-
-        # Layer 2
-        dW2 = self._a1.T @ d2 / batch
-        db2 = d2.mean(axis=0)
-        d1  = (d2 @ self.W2.T) * (self._z1 > 0)
-
-        # Layer 1
-        dW1 = self._x.T @ d1 / batch
-        db1 = d1.mean(axis=0)
-
-        # SGD update
-        self.W3 -= self.lr * dW3;  self.b3 -= self.lr * db3
-        self.W2 -= self.lr * dW2;  self.b2 -= self.lr * db2
-        self.W1 -= self.lr * dW1;  self.b1 -= self.lr * db1
+        grad_t = torch.as_tensor(loss_grad, dtype=torch.float64, device=_DEVICE)
+        self._opt.zero_grad()
+        assert self._out_t is not None
+        self._out_t.backward(grad_t)
+        self._opt.step()
 
     # ── Weight copy ───────────────────────────────────────────────────────────
 
     def copy_weights_from(self, other: "_MLP") -> None:
         """Hard-copy all weights from *other* into self (target-network update)."""
-        self.W1[:] = other.W1;  self.b1[:] = other.b1
-        self.W2[:] = other.W2;  self.b2[:] = other.b2
-        self.W3[:] = other.W3;  self.b3[:] = other.b3
+        self._net.load_state_dict(copy.deepcopy(other._net.state_dict()))
 
     # ── Serialisation ─────────────────────────────────────────────────────────
 
     def to_dict(self) -> dict[str, Any]:
-        return {k: getattr(self, k).tolist() for k in ("W1","b1","W2","b2","W3","b3")}
+        """Serialise weights in the same format as the original NumPy version."""
+        sd = self._net.state_dict()
+        _keys = [
+            ("0.weight", "W1"), ("0.bias", "b1"),
+            ("2.weight", "W2"), ("2.bias", "b2"),
+            ("4.weight", "W3"), ("4.bias", "b3"),
+        ]
+        result: dict[str, Any] = {}
+        for pt_k, np_k in _keys:
+            arr = sd[pt_k].cpu().numpy()
+            if pt_k.endswith(".weight"):
+                arr = arr.T  # (out, in) → (in, out) for backward compatibility
+            result[np_k] = arr.tolist()
+        return result
 
     def from_dict(self, d: dict[str, Any]) -> None:
-        for k in ("W1","b1","W2","b2","W3","b3"):
-            setattr(self, k, np.array(d[k], dtype=np.float64))
+        """Restore weights from a dict produced by :meth:`to_dict`."""
+        _keys = [
+            ("W1", "0.weight"), ("b1", "0.bias"),
+            ("W2", "2.weight"), ("b2", "2.bias"),
+            ("W3", "4.weight"), ("b3", "4.bias"),
+        ]
+        sd: dict[str, torch.Tensor] = {}
+        for np_k, pt_k in _keys:
+            arr = np.array(d[np_k], dtype=np.float64)
+            if pt_k.endswith(".weight"):
+                arr = arr.T  # (in, out) → (out, in)
+            sd[pt_k] = torch.tensor(arr, dtype=torch.float64, device=_DEVICE)
+        self._net.load_state_dict(sd)
 
 
 # ── Replay buffer ─────────────────────────────────────────────────────────────
