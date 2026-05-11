@@ -7,8 +7,12 @@ Tools: rl_list_agents, rl_train_agent, rl_run_agent_episode,
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import sys
 from typing import Any, Optional
+
+from mcp.server.fastmcp import Context
 
 from ._env_wrappers import _LangStateEnv, _ShapedEnv
 from ._state import (
@@ -20,6 +24,74 @@ from ._state import (
     log,
     mcp,
 )
+
+class _ProgressEnv:
+    """
+    Thin env wrapper that renders a tqdm progress bar on sys.stderr during
+    agent.train().  Intercepts reset() to advance the bar once per episode
+    and step() to track the current episode reward for the postfix display.
+
+    Written to stderr so it never touches the MCP stdout channel.
+    """
+
+    def __init__(self, env: Any, n_episodes: int, agent_type: str, env_id: str) -> None:
+        import tqdm
+        self._env = env
+        self._n_episodes = n_episodes
+        self._best_reward = float("-inf")
+        self._ep_reward = 0.0
+        self._reset_calls = 0
+        self._completed_episodes = 0
+        self._bar = tqdm.tqdm(
+            total=n_episodes,
+            desc=f"Training {agent_type} on {env_id}",
+            unit="ep",
+            file=sys.stderr,
+            dynamic_ncols=True,
+            leave=True,
+        )
+
+    def reset(self, seed: Any = None, options: Any = None) -> Any:
+        if self._reset_calls > 0:
+            # A previous episode just ended — commit its reward and advance.
+            if self._ep_reward > self._best_reward:
+                self._best_reward = self._ep_reward
+            self._bar.set_postfix(
+                last=f"{self._ep_reward:.2f}",
+                best=f"{self._best_reward:.2f}",
+            )
+            n = min(1, self._n_episodes - self._bar.n)
+            if n > 0:
+                self._bar.update(n)
+            self._ep_reward = 0.0
+            self._completed_episodes += 1
+        self._reset_calls += 1
+        return self._env.reset(seed=seed, options=options)
+
+    def step(self, action: Any) -> Any:
+        result = self._env.step(action)
+        try:
+            r = result.reward if hasattr(result, "reward") else result.get("reward", 0.0)
+            self._ep_reward += float(r)
+        except Exception:
+            pass
+        return result
+
+    def close(self) -> None:
+        self._bar.close()
+        self._env.close()
+
+    @property
+    def action_space(self) -> Any:
+        return self._env.action_space
+
+    @property
+    def env_id(self) -> str:
+        return getattr(self._env, "env_id", "")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._env, name)
+
 
 # Human-readable descriptions shown when the user asks what agents are available.
 _AGENT_DESCRIPTIONS: dict[str, str] = {
@@ -60,7 +132,8 @@ def rl_list_agents() -> str:
 
 
 @mcp.tool()
-def rl_train_agent(
+async def rl_train_agent(
+    ctx: Context,
     agent_type: str,
     env_id: str,
     n_episodes: int = 300,
@@ -271,7 +344,33 @@ def rl_train_agent(
             seed=seed,
         )
 
-    result = agent.train(env, n_episodes=n_episodes, max_steps=max_steps, seed=seed)
+    progress_env = _ProgressEnv(env, n_episodes=n_episodes, agent_type=agent_type, env_id=env_id)
+
+    async def _poll_training() -> None:
+        while True:
+            await asyncio.sleep(1.5)
+            await ctx.report_progress(
+                progress_env._completed_episodes, n_episodes
+            )
+
+    poll_task = asyncio.create_task(_poll_training())
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: agent.train(
+                progress_env,
+                n_episodes=n_episodes,
+                max_steps=max_steps,
+                seed=seed,
+            ),
+        )
+    finally:
+        poll_task.cancel()
+        try:
+            await poll_task
+        except asyncio.CancelledError:
+            pass
+        progress_env.close()
 
     agent_id = uuid.uuid4().hex[:12]
     _trained_agents[agent_id] = {

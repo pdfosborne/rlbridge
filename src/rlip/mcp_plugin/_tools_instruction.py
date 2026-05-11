@@ -9,9 +9,61 @@ rl_train_agent (in _tools_agents) can access previously-matched sub-goals.
 
 from __future__ import annotations
 
+import asyncio
+import sys
 from typing import Any, Optional
 
+from mcp.server.fastmcp import Context
+
 from ._state import _instruction_protocols, mcp
+
+
+class _ExplorationProgressEnv:
+    """
+    Thin env wrapper that renders a tqdm progress bar on sys.stderr while
+    match_instruction() explores the environment.  Every step() call advances
+    the bar by one; the postfix shows the count of unique states discovered.
+
+    Written to stderr so it never touches the MCP stdout channel.
+    """
+
+    def __init__(self, env: Any, total_steps: int, env_id: str) -> None:
+        import tqdm
+        self._env = env
+        self._unique_langs: set[str] = set()
+        self._steps = 0
+        self._bar = tqdm.tqdm(
+            total=total_steps,
+            desc=f"Exploring {env_id}",
+            unit="step",
+            file=sys.stderr,
+            dynamic_ncols=True,
+            leave=True,
+        )
+
+    def reset(self, seed: Any = None, options: Any = None) -> Any:
+        return self._env.reset(seed=seed, options=options)
+
+    def step(self, action: Any) -> Any:
+        result = self._env.step(action)
+        self._steps += 1
+        self._bar.update(1)
+        return result
+
+    def close(self) -> None:
+        self._bar.close()
+        self._env.close()
+
+    @property
+    def action_space(self) -> Any:
+        return self._env.action_space
+
+    @property
+    def env_id(self) -> str:
+        return getattr(self._env, "env_id", "")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._env, name)
 
 
 @mcp.tool()
@@ -56,7 +108,8 @@ def rl_clear_obs_cache(env_id: str = "") -> str:
 
 
 @mcp.tool()
-def rl_match_instruction(
+async def rl_match_instruction(
+    ctx: Context,
     env_id: str,
     instruction: str,
     exploration_steps: int = 100,
@@ -105,18 +158,39 @@ def rl_match_instruction(
             "Call rl_list_environments() to see what is available."
         )
 
+    progress_env = _ExplorationProgressEnv(env, total_steps=exploration_steps, env_id=env_id)
+
+    async def _poll_exploration() -> None:
+        while True:
+            await asyncio.sleep(0.5)
+            await ctx.report_progress(progress_env._steps, exploration_steps)
+
+    poll_task = asyncio.create_task(_poll_exploration())
     try:
-        match = match_instruction(
-            instruction,
-            env,
-            seed=seed,
-            max_steps=exploration_steps,
-        )
-    except ValueError as exc:
-        return f"Instruction matching failed: {exc}"
+        try:
+            match = await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: match_instruction(
+                    instruction,
+                    progress_env,
+                    seed=seed,
+                    max_steps=exploration_steps,
+                ),
+            )
+        except ValueError as exc:
+            return f"Instruction matching failed: {exc}"
+    finally:
+        poll_task.cancel()
+        try:
+            await poll_task
+        except asyncio.CancelledError:
+            pass
+        progress_env._bar.close()  # close bar; env itself stays open for protocol
 
     # Build and cache the ready-to-run protocol so the agent can immediately
     # call rl_instruction_run_episode without re-running exploration.
+    # The obs cache is now populated so build_instruction_following_protocol
+    # skips re-exploration entirely.
     protocol = build_instruction_following_protocol(
         instruction,
         env,
