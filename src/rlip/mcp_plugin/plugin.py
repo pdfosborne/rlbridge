@@ -100,14 +100,26 @@ mcp = FastMCP(
         "environments that have a registered translator (e.g. Sailing-v0).\n"
         "3. rl_run_agent_episode(agent_id) – evaluate the trained agent for one episode "
         "(automatically uses the same obs mode as training).\n"
-        "4. rl_render_policy(env_id, agent_id=agent_id) – render the best training episode as a GIF.\n\n"
+        "4. rl_render_policy(env_id, agent_id=agent_id) – render the best training episode as a GIF.\n"
+        "5. rl_create_training_report(agent_id) – generate a multi-panel PNG report "
+        "showing the reward curve, sample frames, training metadata, and sub-goal "
+        "similarity trajectory (when applicable).\n\n"
+        "IMPORTANT — comparing multiple agents: when training more than one agent "
+        "(e.g. tabular_q vs dqn vs ppo, or with/without sub-goal shaping), always "
+        "use identical values for n_episodes, max_steps, seed, gamma, and any other "
+        "shared hyper-parameter across every rl_train_agent call.  Only vary the "
+        "parameter(s) under investigation.  This ensures that differences in "
+        "reported reward are attributable to the agent or configuration being "
+        "tested, not to unequal training budgets or random seeds.\n\n"
         "Combined instruction-following + agent training workflow:\n"
         "1. rl_match_instruction(env_id, instruction) – explore and find the sub-goal state. "
         "Returns a match_id.\n"
         "2. rl_train_agent(agent_type, env_id, match_id=match_id, use_language_state=True) – "
         "train with sub-goal reward shaping AND language observations (use_language_state is "
         "optional but recommended when a translator is available).\n"
-        "3. rl_render_policy(env_id, agent_id=agent_id) – render the result."
+        "3. rl_render_policy(env_id, agent_id=agent_id) – render the result.\n"
+        "4. rl_create_training_report(agent_id) – full training report with sub-goal "
+        "similarity panel showing when the instruction was matched during the best episode."
     ),
 )
 
@@ -1253,11 +1265,28 @@ def rl_train_agent(
 
     agent_id = uuid.uuid4().hex[:12]
     _trained_agents[agent_id] = {
-        "agent": agent,
-        "env_id": env_id,
-        "agent_type": agent_type,
+        "agent":                agent,
+        "env_id":               env_id,
+        "agent_type":           agent_type,
         "best_episode_history": result.best_episode_history,
-        "use_language_state": use_language_state,
+        "use_language_state":   use_language_state,
+        "train_result":         result,
+        # Sub-goal metadata (populated when match_id was provided)
+        "match_id":             match_id or None,
+        "sub_goal_language":    (
+            _instruction_protocols[match_id]["protocol"].sub_goal_language
+            if match_id and match_id in _instruction_protocols else None
+        ),
+        "sub_goal_bonus":       sub_goal_bonus if match_id else None,
+        "sub_goal_threshold":   sub_goal_threshold if match_id else None,
+        "instruction":          (
+            _instruction_protocols[match_id]["protocol"].instruction
+            if match_id and match_id in _instruction_protocols else None
+        ),
+        "n_subgoals":           (
+            len(_instruction_protocols[match_id]["protocol"]._all_sub_goal_languages)
+            if match_id and match_id in _instruction_protocols else None
+        ),
     }
 
     return (
@@ -1389,7 +1418,218 @@ def rl_run_agent_episode(
     )
 
 
-# ── Environment builder tools ─────────────────────────────────────────────────
+@mcp.tool()
+def rl_create_training_report(
+    agent_id: str,
+    output_path: str = "",
+    rolling_window: int = 0,
+    n_sample_frames: int = 6,
+    render_for_frames: bool = True,
+    n_render_episodes: int = 20,
+    fps: float = 6.0,
+) -> str:
+    """
+    Generate a multi-panel training report for a previously trained agent and
+    save it as a PNG image.
+
+    The report contains four sections:
+
+    1. **Reward curve** — per-episode reward and rolling average over the full
+       training run, with the best episode marked.
+    2. **Sample frames** — evenly-spaced RGB frames from the best episode
+       replayed through the learnt policy (only if the environment supports
+       rgb_array rendering; requires render_for_frames=True).
+    3. **Metadata table** — agent type, hyper-parameters, training statistics,
+       and sub-goal shaping settings.
+    4. **Sub-goal similarity panel** — if the agent was trained with a
+       match_id (via rl_match_instruction), shows per-step cosine similarity
+       to the sub-goal during the best training episode, with markers at each
+       step the reward bonus was triggered.  When no sub-goal was used, a
+       placeholder is shown.
+
+    Parameters
+    ----------
+    agent_id:
+        The agent_id returned by rl_train_agent().
+    output_path:
+        Path to write the PNG report.  Defaults to
+        ``~/.rlip/renders/<env>_<agent_id>_report.png``.
+    rolling_window:
+        Number of episodes for the rolling reward average (0 = auto: 5 %
+        of total episodes, minimum 10).
+    n_sample_frames:
+        Number of evenly-spaced frames to show in the frames strip (max 8).
+    render_for_frames:
+        Set False to skip the rgb_array rendering step (faster, but no
+        frame strip in the report).
+    n_render_episodes:
+        Number of episodes to run before selecting the best one to render.
+    fps:
+        Frame rate used when the GIF companion file is also desired.
+
+    Returns
+    -------
+    The local path of the saved PNG report and its base64-encoded content
+    so Claude can display it inline.
+    """
+    import uuid as _uuid  # noqa: PLC0415
+    from ..analysis import create_training_report  # noqa: PLC0415
+    from ..environments.registry import registry as _env_registry  # noqa: PLC0415
+    from ..instruction_matching import TextEncoder  # noqa: PLC0415
+    from ..language_translation import get_translator  # noqa: PLC0415
+
+    entry = _trained_agents.get(agent_id)
+    if entry is None:
+        return (
+            f"Agent ID '{agent_id}' not found.  "
+            "Run rl_train_agent() first to train an agent."
+        )
+
+    env_id     = entry["env_id"]
+    agent_type = entry["agent_type"]
+    train_result = entry.get("train_result")
+
+    if train_result is None:
+        return (
+            "No training result stored for this agent.  "
+            "This agent was trained with an older version of RLIP; re-train to "
+            "enable reporting."
+        )
+
+    # ── Determine output path ─────────────────────────────────────────────────
+    _RENDERS_DIR.mkdir(parents=True, exist_ok=True)
+    safe_id   = env_id.replace("/", "_").replace("-", "_").replace(" ", "_")
+    out_path  = output_path or str(
+        _RENDERS_DIR / f"{safe_id}_{agent_type}_{agent_id}_report.png"
+    )
+
+    # ── Render best episode to get sample frames ──────────────────────────────
+    render_result = None
+    if render_for_frames and _in_process:
+        try:
+            from ..interaction_protocols import (  # noqa: PLC0415
+                GreedyEpisodeProtocol,
+                MultiEpisodeProtocol,
+                RandomEpisodeProtocol,
+            )
+            from ..policy_rendering import render_optimal_policy  # noqa: PLC0415
+
+            factory   = _env_registry.get(env_id)
+            train_env = factory.create(render_mode=None)
+            try:
+                stored_agent = entry["agent"]
+                best_history = entry.get("best_episode_history", [])
+                if best_history:
+                    def _greedy_fn(obs: Any) -> Any:  # noqa: E731
+                        act_fn = getattr(stored_agent, "act_greedy", None) or stored_agent.act
+                        return act_fn(obs)
+                    base = GreedyEpisodeProtocol(
+                        policy_fn=_greedy_fn, max_steps=200, record_history=True
+                    )
+                else:
+                    base = RandomEpisodeProtocol(max_steps=200, record_history=True)
+                protocol = MultiEpisodeProtocol(base, n_episodes=n_render_episodes)
+                collection_result = protocol(train_env)
+            finally:
+                train_env.close()
+
+            render_result = render_optimal_policy(
+                collection_result,
+                env_factory=factory,
+                render_mode="rgb_array",
+                max_steps=200,
+            )
+        except Exception as _render_exc:
+            log.warning("Frame rendering failed (non-fatal): %s", _render_exc)
+
+    # ── Compute per-step sub-goal similarity from best training episode ────────
+    subgoal_steps: list[tuple[int, float, bool]] = []
+    subgoal_info:  dict[str, Any] | None = None
+
+    match_id_stored = entry.get("match_id")
+    sub_goal_lang   = entry.get("sub_goal_language")
+    if match_id_stored and sub_goal_lang:
+        instruction = entry.get("instruction", "")
+        threshold   = float(entry.get("sub_goal_threshold") or 0.5)
+        bonus       = entry.get("sub_goal_bonus")
+        n_subgoals  = entry.get("n_subgoals")
+
+        subgoal_info = {
+            "instruction":       instruction,
+            "sub_goal_language": sub_goal_lang,
+            "threshold":         threshold,
+            "bonus":             bonus,
+            "match_id":          match_id_stored,
+            "n_subgoals":        n_subgoals,
+        }
+
+        # Re-compute similarity for each step of the best training episode.
+        use_lang_state = entry.get("use_language_state", False)
+        translator = _custom_translators.get(env_id) or get_translator(env_id)
+        best_history = entry.get("best_episode_history", [])
+
+        if best_history and (translator or use_lang_state):
+            try:
+                enc = TextEncoder()
+                enc.fit([sub_goal_lang])
+                sg_vec = enc.encode(sub_goal_lang)
+
+                for step_n, (obs, _action) in enumerate(best_history, 1):
+                    # If language-state was used, obs is already a string
+                    if use_lang_state and isinstance(obs, str):
+                        lang = obs
+                    elif translator:
+                        lang = translator.translate(obs) or ""
+                    else:
+                        lang = ""
+
+                    if not lang:
+                        continue
+
+                    obs_vec = enc.encode(lang)
+                    sim = float(enc.cosine_similarity(obs_vec, sg_vec))
+                    reached = sim >= threshold
+                    subgoal_steps.append((step_n, sim, reached))
+            except Exception as _sg_exc:
+                log.warning("Sub-goal similarity computation failed: %s", _sg_exc)
+
+    # ── Extra metadata shown in the table ─────────────────────────────────────
+    extra_meta: dict[str, Any] = {"Agent ID": agent_id}
+    if entry.get("use_language_state"):
+        extra_meta["Language state"] = "Yes"
+    if match_id_stored:
+        extra_meta["Match ID"] = match_id_stored
+        extra_meta["Sub-goal shaping"] = "Yes"
+
+    # ── Generate report ───────────────────────────────────────────────────────
+    try:
+        fig = create_training_report(
+            train_result=train_result,
+            render_result=render_result,
+            metadata=extra_meta,
+            subgoal_steps=subgoal_steps or None,
+            subgoal_info=subgoal_info,
+            output_path=out_path,
+            rolling_window=rolling_window or None,
+            n_sample_frames=min(n_sample_frames, 8),
+        )
+    except Exception as exc:
+        return f"Report generation failed: {exc}"
+
+    # Return base64-encoded PNG so Claude can display inline
+    try:
+        import io as _io  # noqa: PLC0415
+        buf = _io.BytesIO()
+        fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode("ascii")
+        return (
+            f"Training report generated for agent '{agent_id}' ({agent_type} on {env_id}).\n"
+            f"Saved to: {out_path}\n\n"
+            f"data:image/png;base64,{b64}"
+        )
+    except Exception as exc:
+        return f"Report saved to {out_path} but base64 encoding failed: {exc}"
 
 # Sampled states held between rl_sample_states_for_translation and
 # rl_set_translator_code so Claude doesn't need to pass them back.
