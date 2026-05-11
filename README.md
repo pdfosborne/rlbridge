@@ -20,7 +20,7 @@ letting Claude interact with Gymnasium environments directly via natural languag
 ┌──────────▼───────────────────────────────────────────┐
 │  RLIP MCP Plugin  (rlip.mcp_plugin)                  │
 │  FastMCP tools:  rl_create · rl_reset · rl_step      │
-│                  rl_render · rl_close · rl_run_episode│
+│                 rl_render · rl_close · rl_run_episode│
 │         │                                            │
 │   In-process RLIP Dispatcher                         │
 └──────────┼───────────────────────────────────────────┘
@@ -32,10 +32,10 @@ letting Claude interact with Gymnasium environments directly via natural languag
            │
 ┌──────────▼───────────────────────────────────────────┐
 │  Environment Registry + Session Manager              │
-│  ┌───────────────┐  ┌───────────────┐               │
-│  │ CartPole-v1   │  │ LunarLander   │  + any custom │
-│  │ (Gymnasium)   │  │ (Gymnasium)   │    env …      │
-│  └───────────────┘  └───────────────┘               │
+│  ┌───────────────┐  ┌───────────────┐                │
+│  │ CartPole-v1   │  │ LunarLander   │  + any custom  │
+│  │ (Gymnasium)   │  │ (Gymnasium)   │    env …       │
+│  └───────────────┘  └───────────────┘                │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -325,7 +325,7 @@ grows past `refine_threshold`.
 ```
 ┌─────────────┐   stdio/MCP   ┌───────────────────┐   HTTP/JSON-RPC   ┌──────────────┐
 │ Claude Code │ ────────────► │  RLIP MCP Plugin  │ ────────────────► │ RLIP Server  │
-│             │               │ (thin proxy)       │                   │ (GPU box)    │
+│             │               │ (thin proxy)      │                   │ (GPU box)    │
 └─────────────┘               └───────────────────┘                   └──────────────┘
 ```
 

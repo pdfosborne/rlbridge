@@ -95,13 +95,18 @@ mcp = FastMCP(
         "and guidance on when to use each.\n"
         "2. rl_train_agent(agent_type, env_id, n_episodes) – train the chosen agent "
         "and get back an agent_id.\n"
-        "3. rl_run_agent_episode(agent_id) – evaluate the trained agent for one episode.\n"
+        "   • Add use_language_state=True to train on language descriptions of "
+        "observations instead of raw numeric values.  Ideal for tabular_q with "
+        "environments that have a registered translator (e.g. Sailing-v0).\n"
+        "3. rl_run_agent_episode(agent_id) – evaluate the trained agent for one episode "
+        "(automatically uses the same obs mode as training).\n"
         "4. rl_render_policy(env_id, agent_id=agent_id) – render the best training episode as a GIF.\n\n"
         "Combined instruction-following + agent training workflow:\n"
         "1. rl_match_instruction(env_id, instruction) – explore and find the sub-goal state. "
         "Returns a match_id.\n"
-        "2. rl_train_agent(agent_type, env_id, match_id=match_id) – train with sub-goal reward "
-        "shaping applied at every step where the observation matches the instruction.\n"
+        "2. rl_train_agent(agent_type, env_id, match_id=match_id, use_language_state=True) – "
+        "train with sub-goal reward shaping AND language observations (use_language_state is "
+        "optional but recommended when a translator is available).\n"
         "3. rl_render_policy(env_id, agent_id=agent_id) – render the result."
     ),
 )
@@ -906,6 +911,94 @@ class _ShapedEnv:
         return getattr(self._env, name)
 
 
+class _LangStateEnv:
+    """
+    Environment wrapper that replaces raw observations with their
+    natural-language translations at every ``reset()`` and ``step()``.
+
+    When the translator returns an empty string or raises an exception the
+    raw observation is returned unchanged as a safe fallback, so training
+    always continues.
+
+    Stack order when used together with ``_ShapedEnv``::
+
+        _LangStateEnv(
+            _ShapedEnv(base_env, ...)   ← injects reward bonus using raw obs
+        )                                ← agent then sees language string obs
+
+    The ``action_space``, ``env_id``, ``close``, and all other attributes
+    are forwarded transparently to the wrapped environment.
+    """
+
+    def __init__(self, env: Any, translator: Any, env_id: str) -> None:
+        self._env = env
+        self._env_id = env_id
+        from ..language_translation import get_translator  # noqa: PLC0415
+        from ..language_translation.base import LanguageTranslator  # noqa: PLC0415
+        if isinstance(translator, LanguageTranslator):
+            self._translator: Any = translator
+        else:
+            self._translator = get_translator(env_id)
+
+    def _translate(self, obs: Any) -> Any:
+        """Return the language description of *obs*, or *obs* on failure."""
+        if self._translator is None:
+            return obs
+        try:
+            lang = self._translator.translate(obs)
+            return lang if lang else obs
+        except Exception:
+            return obs
+
+    def _apply_to_result(self, result: Any, key: str, translated: Any) -> Any:
+        """Replace *key* in a Pydantic model or dict result."""
+        if hasattr(result, key):
+            object.__setattr__(result, key, translated)
+        elif isinstance(result, dict):
+            result = dict(result)
+            result[key] = translated
+        return result
+
+    def reset(self, seed: Any = None, options: Any = None) -> Any:
+        result = self._env.reset(seed=seed, options=options)
+        if hasattr(result, "observation"):
+            translated = self._translate(result.observation)
+            result = self._apply_to_result(result, "observation", translated)
+        elif isinstance(result, dict) and "observation" in result:
+            translated = self._translate(result["observation"])
+            result = dict(result)
+            result["observation"] = translated
+        else:
+            # The result itself is the raw observation
+            result = self._translate(result)
+        return result
+
+    def step(self, action: Any) -> Any:
+        result = self._env.step(action)
+        if hasattr(result, "observation"):
+            translated = self._translate(result.observation)
+            result = self._apply_to_result(result, "observation", translated)
+        elif isinstance(result, dict) and "observation" in result:
+            translated = self._translate(result["observation"])
+            result = dict(result)
+            result["observation"] = translated
+        return result
+
+    def close(self) -> None:
+        self._env.close()
+
+    @property
+    def action_space(self) -> Any:
+        return self._env.action_space
+
+    @property
+    def env_id(self) -> str:
+        return self._env_id
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._env, name)
+
+
 # Human-readable descriptions shown when the user asks what agents are available.
 _AGENT_DESCRIPTIONS: dict[str, str] = {
     "tabular_q": (
@@ -954,6 +1047,7 @@ def rl_train_agent(
     match_id: str = "",
     sub_goal_bonus: float = 1.0,
     sub_goal_threshold: float = 0.5,
+    use_language_state: bool = False,
     # Tabular Q hyper-parameters
     alpha: float = 0.1,
     gamma: float = 0.99,
@@ -1005,6 +1099,16 @@ def rl_train_agent(
         when match_id is provided).
     sub_goal_threshold:
         Cosine similarity threshold to trigger the sub-goal bonus (0–1).
+    use_language_state:
+        When True, the agent is trained on natural-language descriptions of
+        observations instead of the raw numeric/array observations.  The
+        environment's registered language translator converts each observation
+        to a string before it reaches the agent.  This is ideal for
+        tabular_q (which uses strings as Q-table keys directly) and works
+        with dqn/ppo via their hash-based encoding fallback.  Requires a
+        translator to be registered for *env_id* (see
+        rl_set_translator_code).  The language-state flag is stored with the
+        agent so rl_run_agent_episode automatically uses the same mode.
     alpha:
         (tabular_q) Q-learning rate.
     gamma:
@@ -1093,6 +1197,20 @@ def rl_train_agent(
             f"  Bonus / threshold:{sub_goal_bonus} / {sub_goal_threshold}"
         )
 
+    # ── Optional language-state wrapping ─────────────────────────────────────
+    lang_state_summary = ""
+    if use_language_state:
+        from ..language_translation import get_translator  # noqa: PLC0415
+        translator = _custom_translators.get(env_id) or get_translator(env_id)
+        if translator is None:
+            return (
+                f"use_language_state=True requires a language translator for "
+                f"'{env_id}', but none is registered.\n"
+                "Register one with rl_set_translator_code() first."
+            )
+        env = _LangStateEnv(env, translator=translator, env_id=env_id)
+        lang_state_summary = f"\n  Language state:   ON  (translator={type(translator).__name__})"
+
     # Build the requested agent
     if agent_type == "tabular_q":
         agent = TabularQAgent(
@@ -1139,10 +1257,11 @@ def rl_train_agent(
         "env_id": env_id,
         "agent_type": agent_type,
         "best_episode_history": result.best_episode_history,
+        "use_language_state": use_language_state,
     }
 
     return (
-        f"Training complete — {agent_type} on {env_id}{shaping_summary}\n\n"
+        f"Training complete — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}\n\n"
         f"  {result}\n\n"
         f"  Mean reward (last 10 %): {result.last_n_mean:.4f}\n"
         f"  Agent ID: {agent_id}\n\n"
@@ -1156,6 +1275,7 @@ def rl_run_agent_episode(
     max_steps: int = 200,
     seed: Optional[int] = None,
     stochastic: bool = False,
+    use_language_state: bool = False,
 ) -> str:
     """
     Run a single evaluation episode using a previously trained agent.
@@ -1174,6 +1294,11 @@ def rl_run_agent_episode(
     stochastic:
         If True, use stochastic (sampled) action selection — meaningful for
         PPO; equivalent to greedy for tabular_q and dqn.
+    use_language_state:
+        When True, observations are translated to natural-language strings
+        before being fed to the agent, matching the training mode used when
+        the agent was trained with use_language_state=True.  If omitted,
+        defaults to whatever value was used during training.
 
     Returns
     -------
@@ -1192,12 +1317,26 @@ def rl_run_agent_episode(
     agent      = entry["agent"]
     env_id     = entry["env_id"]
     agent_type = entry["agent_type"]
+    # Honour the training-time language-state flag unless caller overrides
+    effective_lang_state = use_language_state or entry.get("use_language_state", False)
 
     try:
         factory = _env_registry.get(env_id)
         env = factory.create()
     except KeyError:
         return f"Environment '{env_id}' is no longer registered."
+
+    # ── Apply language-state wrapper if requested ─────────────────────────────
+    if effective_lang_state:
+        from ..language_translation import get_translator  # noqa: PLC0415
+        translator = _custom_translators.get(env_id) or get_translator(env_id)
+        if translator is None:
+            return (
+                f"use_language_state=True requires a language translator for "
+                f"'{env_id}', but none is registered.\n"
+                "Register one with rl_set_translator_code() first."
+            )
+        env = _LangStateEnv(env, translator=translator, env_id=env_id)
 
     reset_out = env.reset(seed=seed)
     obs = reset_out.observation if hasattr(reset_out, "observation") else reset_out.get("observation", reset_out)
@@ -1236,11 +1375,13 @@ def rl_run_agent_episode(
 
     end_reason = "terminated" if terminated else ("truncated" if truncated else "max_steps")
     mode_str   = "stochastic" if stochastic else "greedy"
+    lang_mode  = "language" if effective_lang_state else "raw"
 
     return (
         f"Evaluation episode — {agent_type} on {env_id}\n"
         f"  Agent ID:     {agent_id}\n"
         f"  Action mode:  {mode_str}\n"
+        f"  Obs mode:     {lang_mode}\n"
         f"  Steps:        {step_count}\n"
         f"  Total reward: {total_reward:.4f}\n"
         f"  End reason:   {end_reason}\n\n"
