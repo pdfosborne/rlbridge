@@ -52,6 +52,7 @@ from typing import Any, Optional
 
 from ..base import RLIPEnvironment, RLIPEnvironmentFactory
 from ...protocol.messages import (
+    DiscreteSpace,
     EnvironmentInfo,
     RenderResult,
     ResetResult,
@@ -70,7 +71,156 @@ _PIECE_NAME: dict[str, str] = {
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# Maximum legal moves in any chess position (theoretical max ≈ 218; 256 is a
+# safe, power-of-two ceiling that also acts as the fixed Discrete(n) size).
+_MAX_LEGAL_MOVES = 256
+
+
 def _normalize_move(text: str, board: Any) -> Optional[Any]:
+    """Try to parse *text* as a UCI or SAN move legal in *board*.
+
+    Returns a ``chess.Move`` on success, ``None`` if the move is not legal or
+    the text cannot be parsed.
+    """
+    import chess  # local import to avoid top-level dep at import time
+    text = text.strip()
+    # Try UCI first (e.g. "e2e4", "g1f3", "e7e8q")
+    try:
+        move = chess.Move.from_uci(text)
+        if move in board.legal_moves:
+            return move
+    except (ValueError, chess.InvalidMoveError):
+        pass
+    # Try SAN (e.g. "e4", "Nf3", "O-O")
+    try:
+        move = board.parse_san(text)
+        if move in board.legal_moves:
+            return move
+    except (ValueError, chess.InvalidMoveError, chess.AmbiguousMoveError, chess.IllegalMoveError):
+        pass
+    return None
+
+
+# ── RGB-array board renderer ─────────────────────────────────────────────────
+
+# Font paths tried in order; first one that loads wins.
+_FONT_PATHS = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+]
+
+_PIECE_GLYPH: dict[tuple, str] = {}
+
+def _piece_glyph(piece_type: int, color: bool) -> str:
+    """Return the Unicode chess glyph for *piece_type* / *color* (lazy init)."""
+    global _PIECE_GLYPH
+    if not _PIECE_GLYPH:
+        import chess
+        _PIECE_GLYPH = {
+            (chess.PAWN,   chess.WHITE): "\u2659",  # ♙
+            (chess.KNIGHT, chess.WHITE): "\u2658",  # ♘
+            (chess.BISHOP, chess.WHITE): "\u2657",  # ♗
+            (chess.ROOK,   chess.WHITE): "\u2656",  # ♖
+            (chess.QUEEN,  chess.WHITE): "\u2655",  # ♕
+            (chess.KING,   chess.WHITE): "\u2654",  # ♔
+            (chess.PAWN,   chess.BLACK): "\u265f",  # ♟
+            (chess.KNIGHT, chess.BLACK): "\u265e",  # ♞
+            (chess.BISHOP, chess.BLACK): "\u265d",  # ♝
+            (chess.ROOK,   chess.BLACK): "\u265c",  # ♜
+            (chess.QUEEN,  chess.BLACK): "\u265b",  # ♛
+            (chess.KING,   chess.BLACK): "\u265a",  # ♚
+        }
+    return _PIECE_GLYPH.get((piece_type, color), "?")
+
+
+def _render_board_png(board: Any, sq_size: int = 72) -> bytes:
+    """Render *board* as a PNG image using Pillow.  Returns PNG bytes."""
+    import io
+    import chess
+    from PIL import Image, ImageDraw, ImageFont
+
+    LIGHT = (240, 217, 181)
+    DARK  = (181, 136,  99)
+    HL    = (205, 210, 106)   # last-move highlight
+    BG    = ( 40,  40,  40)   # margin background
+
+    margin = sq_size // 2
+    img_w  = 8 * sq_size + 2 * margin
+    img    = Image.new("RGB", (img_w, img_w), BG)
+    draw   = ImageDraw.Draw(img)
+
+    # Squares highlighted for the last move
+    hl_squares: set = set()
+    try:
+        last = board.peek()
+        hl_squares = {last.from_square, last.to_square}
+    except Exception:
+        pass
+
+    for rank in range(8):
+        for file in range(8):
+            sq  = chess.square(file, rank)
+            x   = margin + file * sq_size
+            y   = margin + (7 - rank) * sq_size
+            col = HL if sq in hl_squares else (LIGHT if (file + rank) % 2 == 0 else DARK)
+            draw.rectangle([x, y, x + sq_size - 1, y + sq_size - 1], fill=col)
+
+    # Fonts
+    font_piece: Any = None
+    font_label: Any = None
+    for fp in _FONT_PATHS:
+        try:
+            font_piece = ImageFont.truetype(fp, int(sq_size * 0.72))
+            font_label = ImageFont.truetype(fp, int(sq_size * 0.26))
+            break
+        except Exception:
+            pass
+    if font_piece is None:
+        font_piece = font_label = ImageFont.load_default()
+
+    # Pieces
+    for sq, piece in board.piece_map().items():
+        file  = chess.square_file(sq)
+        rank  = chess.square_rank(sq)
+        x     = margin + file * sq_size
+        y     = margin + (7 - rank) * sq_size
+        glyph = _piece_glyph(piece.piece_type, piece.color)
+        fill   = ( 20,  20,  20) if piece.color == chess.WHITE else (245, 245, 245)
+        stroke = (250, 250, 250) if piece.color == chess.WHITE else ( 10,  10,  10)
+        try:
+            bb = draw.textbbox((0, 0), glyph, font=font_piece)
+            tx = x + (sq_size - (bb[2] - bb[0])) // 2 - bb[0]
+            ty = y + (sq_size - (bb[3] - bb[1])) // 2 - bb[1]
+            draw.text((tx, ty), glyph, font=font_piece, fill=fill,
+                      stroke_width=2, stroke_fill=stroke)
+        except Exception:
+            pass
+
+    # Coordinate labels
+    lbl = (180, 180, 180)
+    for i in range(8):
+        cx = margin + i * sq_size + sq_size // 2
+        cy = margin + (7 - i) * sq_size + sq_size // 2
+        try:
+            draw.text((cx, img_w - margin // 2), "abcdefgh"[i], font=font_label,
+                      fill=lbl, anchor="mm")
+            draw.text((margin // 2, cy), str(i + 1), font=font_label,
+                      fill=lbl, anchor="mm")
+        except Exception:
+            pass
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _sorted_legal_uci(board: Any) -> list[str]:
+    """Return all legal moves as UCI strings in a deterministic sorted order."""
+    return sorted(m.uci() for m in board.legal_moves)
+
+
     """
     Try to parse *text* as a legal move on *board*.
 
@@ -160,6 +310,8 @@ def _build_observation(
     board: Any,
     last_move_san: Optional[str],
     first_capture_mode: bool = False,
+    discrete_actions: bool = False,
+    legal_uci: Optional[list[str]] = None,
 ) -> str:
     """Build the text observation for the current board state."""
     import chess
@@ -204,16 +356,37 @@ def _build_observation(
     ]
 
     if not board.is_game_over():
-        legal = _san_list(board)
-        n_total = board.legal_moves.count()
-        shown = legal[:20]
-        lines += [
-            "",
-            f"Legal moves ({n_total} total, showing first 20 in SAN):",
-            "  " + "  ".join(shown),
-            "",
-            "Enter a move in UCI (e.g. 'e2e4') or SAN (e.g. 'e4', 'Nf3', 'O-O').",
-        ]
+        if discrete_actions and legal_uci is not None:
+            # Show index → SAN table so the agent (and human) can read off
+            # which integer action corresponds to which move.
+            n_total = len(legal_uci)
+            shown   = legal_uci[:32]
+            san_map = []
+            for idx, uci in enumerate(shown):
+                try:
+                    san = board.san(board.parse_uci(uci))
+                except Exception:
+                    san = uci
+                san_map.append(f"  {idx:3d}: {san}")
+            lines += [
+                "",
+                f"Legal moves — {n_total} total  (action = index, wraps with modulo):",
+                *san_map,
+                *([". . ."] if n_total > 32 else []),
+                "",
+                f"Enter an integer 0–{n_total - 1} (or any int; wraps mod {n_total}).",
+            ]
+        else:
+            legal = _san_list(board)
+            n_total = board.legal_moves.count()
+            shown = legal[:20]
+            lines += [
+                "",
+                f"Legal moves ({n_total} total, showing first 20 in SAN):",
+                "  " + "  ".join(shown),
+                "",
+                "Enter a move in UCI (e.g. 'e2e4') or SAN (e.g. 'e4', 'Nf3', 'O-O').",
+            ]
 
     return "\n".join(lines)
 
@@ -243,6 +416,8 @@ class ChessEnvironment(RLIPEnvironment):
         player_color: str = "white",
         max_episode_steps: int = 400,
         first_capture: bool = False,
+        discrete_actions: bool = False,
+        render_mode: Optional[str] = None,
     ) -> None:
         import chess  # deferred so ImportError surfaces clearly
 
@@ -251,10 +426,13 @@ class ChessEnvironment(RLIPEnvironment):
         self._player_color = chess.WHITE if player_color.lower() == "white" else chess.BLACK
         self._max_episode_steps = max_episode_steps
         self._first_capture = first_capture
+        self._discrete_actions = discrete_actions
+        self._render_mode = render_mode
 
         self._board: chess.Board = chess.Board()
         self._steps: int = 0
         self._last_move_san: Optional[str] = None
+        self._legal_uci: list[str] = []   # current sorted legal-move list (discrete mode)
         self._initialized: bool = False
         self._lock = threading.Lock()
         self._rng = random.Random()
@@ -265,8 +443,12 @@ class ChessEnvironment(RLIPEnvironment):
     def env_id(self) -> str:
         if self._opponent == "none":
             return "Chess-SelfPlay-v0"
+        if self._first_capture and self._discrete_actions:
+            return "Chess-FirstCapture-Discrete-v0"
         if self._first_capture:
             return "Chess-FirstCapture-v0"
+        if self._discrete_actions:
+            return "Chess-Discrete-v0"
         return "Chess-v0"
 
     # ── Life-cycle ────────────────────────────────────────────────────────────
@@ -290,10 +472,17 @@ class ChessEnvironment(RLIPEnvironment):
                 self._opponent == "random"
                 and self._player_color == self._chess.BLACK
             ):
-                self._apply_opponent_move()
+                self._apply_opponent_move_internal()
+
+            if self._discrete_actions:
+                self._legal_uci = _sorted_legal_uci(self._board)
 
             return ResetResult(
-                observation=_build_observation(self._board, self._last_move_san, self._first_capture),
+                observation=_build_observation(
+                    self._board, self._last_move_san,
+                    self._first_capture, self._discrete_actions,
+                    self._legal_uci if self._discrete_actions else None,
+                ),
                 info=self._build_info(),
             )
 
@@ -302,12 +491,20 @@ class ChessEnvironment(RLIPEnvironment):
             if not self._initialized:
                 raise RuntimeError("Call reset() before step().")
 
-            # --- Parse and apply the player's move ---
-            move = _normalize_move(str(action), self._board)
+            # --- Resolve discrete integer action → chess.Move ---
+            if self._discrete_actions:
+                move = self._resolve_discrete_action(action)
+            else:
+                move = _normalize_move(str(action), self._board)
+
             if move is None:
                 # Invalid / illegal move: small penalty, no board change
                 return StepResult(
-                    observation=_build_observation(self._board, self._last_move_san, self._first_capture),
+                    observation=_build_observation(
+                        self._board, self._last_move_san,
+                        self._first_capture, self._discrete_actions,
+                        self._legal_uci if self._discrete_actions else None,
+                    ),
                     reward=-0.01,
                     terminated=False,
                     truncated=False,
@@ -321,8 +518,14 @@ class ChessEnvironment(RLIPEnvironment):
 
             # First-capture: agent captured first — win
             if player_captures:
+                if self._discrete_actions:
+                    self._legal_uci = _sorted_legal_uci(self._board)
                 return StepResult(
-                    observation=_build_observation(self._board, self._last_move_san, self._first_capture),
+                    observation=_build_observation(
+                        self._board, self._last_move_san,
+                        self._first_capture, self._discrete_actions,
+                        self._legal_uci if self._discrete_actions else None,
+                    ),
                     reward=1.0,
                     terminated=True,
                     truncated=False,
@@ -332,8 +535,14 @@ class ChessEnvironment(RLIPEnvironment):
             # Check if game ended after player's move (checkmate / stalemate)
             if self._board.is_game_over():
                 reward = self._terminal_reward()
+                if self._discrete_actions:
+                    self._legal_uci = []
                 return StepResult(
-                    observation=_build_observation(self._board, self._last_move_san, self._first_capture),
+                    observation=_build_observation(
+                        self._board, self._last_move_san,
+                        self._first_capture, self._discrete_actions,
+                        self._legal_uci if self._discrete_actions else None,
+                    ),
                     reward=reward,
                     terminated=True,
                     truncated=False,
@@ -350,8 +559,14 @@ class ChessEnvironment(RLIPEnvironment):
 
                     # First-capture: opponent captured first — loss
                     if opp_captures:
+                        if self._discrete_actions:
+                            self._legal_uci = _sorted_legal_uci(self._board)
                         return StepResult(
-                            observation=_build_observation(self._board, self._last_move_san, self._first_capture),
+                            observation=_build_observation(
+                                self._board, self._last_move_san,
+                                self._first_capture, self._discrete_actions,
+                                self._legal_uci if self._discrete_actions else None,
+                            ),
                             reward=-1.0,
                             terminated=True,
                             truncated=False,
@@ -360,17 +575,31 @@ class ChessEnvironment(RLIPEnvironment):
 
                     if self._board.is_game_over():
                         reward = self._terminal_reward()
+                        if self._discrete_actions:
+                            self._legal_uci = []
                         return StepResult(
-                            observation=_build_observation(self._board, self._last_move_san, self._first_capture),
+                            observation=_build_observation(
+                                self._board, self._last_move_san,
+                                self._first_capture, self._discrete_actions,
+                                self._legal_uci if self._discrete_actions else None,
+                            ),
                             reward=reward,
                             terminated=True,
                             truncated=False,
                             info=self._build_info(),
                         )
 
+            # Update legal move list for next step
+            if self._discrete_actions:
+                self._legal_uci = _sorted_legal_uci(self._board)
+
             truncated = self._steps >= self._max_episode_steps
             return StepResult(
-                observation=_build_observation(self._board, self._last_move_san, self._first_capture),
+                observation=_build_observation(
+                    self._board, self._last_move_san,
+                    self._first_capture, self._discrete_actions,
+                    self._legal_uci if self._discrete_actions else None,
+                ),
                 reward=0.0,
                 terminated=False,
                 truncated=truncated,
@@ -389,6 +618,43 @@ class ChessEnvironment(RLIPEnvironment):
             return None
         return self._rng.choice(legal)
 
+    def _apply_opponent_move_internal(self) -> None:
+        """Pick and push a random legal move (used only inside reset())."""
+        move = self._pick_opponent_move()
+        if move is not None:
+            self._last_move_san = self._board.san(move)
+            self._board.push(move)
+
+    def _resolve_discrete_action(self, action: Any) -> Optional[Any]:
+        """
+        Map an integer *action* to a legal ``chess.Move``.
+
+        The mapping is::
+
+            move = legal_moves[ action % n_legal ]
+
+        where ``legal_moves`` is the sorted-UCI list captured at the start of
+        the current turn.  This means **every integer is always valid** — no
+        action is ever truly illegal in discrete mode, which avoids the
+        −0.01 penalty that confuses gradient-based agents early in training.
+
+        Strings and UCI/SAN text are still accepted for human interop.
+        """
+        if not self._legal_uci:
+            return None
+        # Also accept string moves for interop with text-only tools
+        if isinstance(action, str):
+            return _normalize_move(action, self._board)
+        try:
+            idx = int(action) % len(self._legal_uci)
+        except (TypeError, ValueError):
+            return None
+        uci = self._legal_uci[idx]
+        try:
+            return self._board.parse_uci(uci)
+        except Exception:
+            return None
+
     def _terminal_reward(self) -> float:
         """Reward from the agent's perspective."""
         outcome = self._board.outcome()
@@ -404,7 +670,7 @@ class ChessEnvironment(RLIPEnvironment):
     def _build_info(self) -> dict[str, Any]:
         board = self._board
         outcome = board.outcome()
-        return {
+        info: dict[str, Any] = {
             "fen":              board.fen(),
             "turn":             "white" if board.turn == self._chess.WHITE else "black",
             "fullmove_number":  board.fullmove_number,
@@ -420,6 +686,11 @@ class ChessEnvironment(RLIPEnvironment):
             "legal_move_count": board.legal_moves.count(),
             "step":             self._steps,
         }
+        if self._discrete_actions and self._legal_uci:
+            # Expose the index → UCI mapping so callers can inspect / mask actions
+            info["legal_moves_uci"]  = list(self._legal_uci)
+            info["n_legal"]          = len(self._legal_uci)
+        return info
 
     # ── Introspection ─────────────────────────────────────────────────────────
 
@@ -428,7 +699,9 @@ class ChessEnvironment(RLIPEnvironment):
         return TextSpace()
 
     @property
-    def action_space(self) -> TextSpace:
+    def action_space(self):
+        if self._discrete_actions:
+            return DiscreteSpace(n=_MAX_LEGAL_MOVES)
         return TextSpace()
 
     @property
@@ -436,16 +709,38 @@ class ChessEnvironment(RLIPEnvironment):
         return (-1.0, 1.0)
 
     def render(self) -> RenderResult:
+        if self._render_mode == "rgb_array":
+            import base64 as _b64
+            png = _render_board_png(self._board)
+            return RenderResult(
+                mode="rgb_array",
+                data=_b64.b64encode(png).decode("ascii"),
+                width=8 * 72 + 72,
+                height=8 * 72 + 72,
+            )
         return RenderResult(
             mode="ansi",
-            text=_build_observation(self._board, self._last_move_san, self._first_capture),
+            text=_build_observation(
+                self._board, self._last_move_san,
+                self._first_capture, self._discrete_actions,
+                self._legal_uci if self._discrete_actions else None,
+            ),
         )
 
-    def sample_action(self) -> str:
-        """Return a random legal move in UCI notation."""
+    def sample_action(self) -> Any:
+        """Return a random legal action.
+
+        In discrete mode returns a random integer index in ``[0, n_legal)``.
+        In text mode returns a random legal move in UCI notation.
+        """
+        if self._discrete_actions:
+            n = len(self._legal_uci)
+            if n == 0:
+                return 0
+            return self._rng.randint(0, n - 1)
         legal = list(self._board.legal_moves)
         if not legal:
-            return "a1a1"  # no-op fallback (shouldn't happen)
+            return "a1a1"
         return self._rng.choice(legal).uci()
 
 
@@ -460,6 +755,17 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float | None, dict[str, Any]
         400,
         1.0,
         {"opponent": "random", "player_color": "white"},
+    ),
+    "Chess-Discrete-v0": (
+        f"Standard chess with a Discrete({_MAX_LEGAL_MOVES}) action space. "
+        "Each integer action maps to legal_moves[action % n_legal] "
+        "so every integer is always valid — no illegal-move penalty. "
+        "Optimal for DQN/PPO agents; tabular_q also works via hashed text observations. "
+        "info dict includes 'legal_moves_uci' and 'n_legal' at each step.",
+        ["chess", "board-game", "strategy", "discrete", "two-player", "rl-ready"],
+        400,
+        1.0,
+        {"opponent": "random", "player_color": "white", "discrete_actions": True},
     ),
     "Chess-SelfPlay-v0": (
         "Standard chess in self-play mode. "
@@ -481,6 +787,17 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float | None, dict[str, Any]
         80,
         1.0,
         {"opponent": "random", "player_color": "white", "first_capture": True},
+    ),
+    "Chess-FirstCapture-Discrete-v0": (
+        f"First-capture chess with a Discrete({_MAX_LEGAL_MOVES}) action space. "
+        "Combines the short-episode first-capture rule with the integer action mapping. "
+        "Ideal for rapidly training discrete-action RL agents on chess tactics. "
+        "info dict includes 'legal_moves_uci' and 'n_legal' at each step.",
+        ["chess", "board-game", "strategy", "discrete", "two-player", "quick", "rl-ready"],
+        80,
+        1.0,
+        {"opponent": "random", "player_color": "white",
+         "first_capture": True, "discrete_actions": True},
     ),
 }
 
@@ -511,7 +828,7 @@ class ChessFactory(RLIPEnvironmentFactory):
             max_episode_steps=self._max_steps,
             reward_threshold=self._threshold,
             namespace="chess",
-            render_modes=["ansi"],
+            render_modes=["ansi", "rgb_array"],
         )
 
     def create(
@@ -522,18 +839,23 @@ class ChessFactory(RLIPEnvironmentFactory):
         merged = {**self._kwargs, **kwargs}
         return ChessEnvironment(
             max_episode_steps=merged.pop("max_episode_steps", self._max_steps),
+            render_mode=render_mode,
             **merged,
         )
 
 
 # ── Pre-built singletons ──────────────────────────────────────────────────────
 
-CHESS_V0             = ChessFactory("Chess-v0")
-CHESS_SELFPLAY_V0    = ChessFactory("Chess-SelfPlay-v0")
-CHESS_FIRST_CAPTURE_V0 = ChessFactory("Chess-FirstCapture-v0")
+CHESS_V0                      = ChessFactory("Chess-v0")
+CHESS_DISCRETE_V0             = ChessFactory("Chess-Discrete-v0")
+CHESS_SELFPLAY_V0             = ChessFactory("Chess-SelfPlay-v0")
+CHESS_FIRST_CAPTURE_V0        = ChessFactory("Chess-FirstCapture-v0")
+CHESS_FIRST_CAPTURE_DISCRETE_V0 = ChessFactory("Chess-FirstCapture-Discrete-v0")
 
 ALL_CHESS_FACTORIES: list[ChessFactory] = [
     CHESS_V0,
+    CHESS_DISCRETE_V0,
     CHESS_SELFPLAY_V0,
     CHESS_FIRST_CAPTURE_V0,
+    CHESS_FIRST_CAPTURE_DISCRETE_V0,
 ]

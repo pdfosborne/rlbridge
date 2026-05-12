@@ -126,6 +126,82 @@ class _ProgressEnv:
         return getattr(self._env, name)
 
 
+
+# ── Dashboard policy render helper ───────────────────────────────────────────
+
+def _render_policy_for_dashboard(
+    agent_id: str,
+    env_id: str,
+    best_episode_history: list,
+    max_steps: int = 200,
+) -> None:
+    """
+    Render the best training episode and push the result to the dashboard.
+
+    Tries rgb_array (GIF) first; falls back to ANSI text frames.
+    Silently swallows all exceptions — this must never break training.
+    """
+    if not _dash_running():
+        return
+    try:
+        from ..environments.registry import registry as _env_registry  # noqa: PLC0415
+        from ..policy_rendering import PolicyRenderer, save_gif  # noqa: PLC0415
+        from ..policy_rendering import _hashable_obs  # noqa: PLC0415
+
+        if not best_episode_history:
+            _dash.finish(agent_id)
+            return
+
+        policy = {_hashable_obs(obs): act for obs, act in best_episode_history}
+        factory = _env_registry.get(env_id)
+
+        # ── Attempt 1: animated GIF via rgb_array ─────────────────────────────
+        try:
+            import io, base64 as _b64  # noqa: PLC0415
+            render_env = factory.create(render_mode="rgb_array")
+            renderer = PolicyRenderer(env=render_env, policy=policy, fallback="random")
+            frames = renderer.run(max_steps=max_steps, seed=0)
+            render_env.close()
+
+            if frames and any(f.png_data for f in frames):
+                buf = io.BytesIO()
+                gif_path = _RENDERS_DIR / f"{agent_id}_dashboard_policy.gif"
+                _RENDERS_DIR.mkdir(parents=True, exist_ok=True)
+                n = save_gif(frames, gif_path, fps=5.0, annotate=True)
+                if n > 0:
+                    gif_bytes = gif_path.read_bytes()
+                    b64 = _b64.b64encode(gif_bytes).decode("ascii")
+                    _dash.finish(agent_id, policy_gif_b64=b64)
+                    return
+        except Exception:
+            pass
+
+        # ── Attempt 2: ANSI text frames ───────────────────────────────────────
+        try:
+            render_env = factory.create(render_mode="ansi")
+            renderer = PolicyRenderer(env=render_env, policy=policy, fallback="random")
+            frames = renderer.run(max_steps=max_steps, seed=0)
+            render_env.close()
+
+            text_frames = [
+                f.ansi_text for f in frames if f.ansi_text
+            ]
+            if text_frames:
+                _dash.finish(agent_id, policy_frames=text_frames)
+                return
+        except Exception:
+            pass
+
+        # ── Fallback: just mark done without a render ─────────────────────────
+        _dash.finish(agent_id)
+
+    except Exception:
+        try:
+            _dash.finish(agent_id)
+        except Exception:
+            pass
+
+
 # Human-readable descriptions shown when the user asks what agents are available.
 _AGENT_DESCRIPTIONS: dict[str, str] = {
     "tabular_q": (
@@ -458,6 +534,16 @@ async def rl_train_agent(
             if match_id and match_id in _instruction_protocols else None
         ),
     }
+
+    # Push policy render to dashboard in a background thread (best-effort)
+    if _dash_running():
+        import threading as _th  # noqa: PLC0415
+        _th.Thread(
+            target=_render_policy_for_dashboard,
+            args=(agent_id, env_id, result.best_episode_history, max_steps),
+            daemon=True,
+            name=f"rlip-dashrender-{agent_id}",
+        ).start()
 
     return (
         f"Training complete — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}\n\n"

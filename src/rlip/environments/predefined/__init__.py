@@ -20,8 +20,10 @@ try:
         ChessEnvironment,
         ChessFactory,
         CHESS_V0,
+        CHESS_DISCRETE_V0,
         CHESS_SELFPLAY_V0,
         CHESS_FIRST_CAPTURE_V0,
+        CHESS_FIRST_CAPTURE_DISCRETE_V0,
         ALL_CHESS_FACTORIES,
     )
     _CHESS_AVAILABLE = True
@@ -82,8 +84,10 @@ __all__ = [
     "ChessEnvironment",
     "ChessFactory",
     "CHESS_V0",
+    "CHESS_DISCRETE_V0",
     "CHESS_SELFPLAY_V0",
     "CHESS_FIRST_CAPTURE_V0",
+    "CHESS_FIRST_CAPTURE_DISCRETE_V0",
     "ALL_CHESS_FACTORIES",
     # Pokemon Red (optional — requires PyBoy + ROM)
     "PokemonRedEnvironment",

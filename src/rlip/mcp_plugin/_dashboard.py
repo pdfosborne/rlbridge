@@ -42,7 +42,8 @@ class _AgentState:
         "agent_id", "agent_type", "env_id",
         "n_episodes", "completed", "episode_rewards",
         "epsilon", "best_reward", "last_reward",
-        "policy_text", "started_at", "updated_at",
+        "policy_text", "policy_gif_b64", "policy_frames",
+        "started_at", "updated_at",
     )
 
     def __init__(
@@ -62,6 +63,8 @@ class _AgentState:
         self.best_reward     = float("-inf")
         self.last_reward     = 0.0
         self.policy_text     = ""          # formatted text snapshot of current policy
+        self.policy_gif_b64  = ""          # base64 GIF of the best episode
+        self.policy_frames: list[str] = [] # ANSI text frames (fallback)
         self.started_at      = time.time()
         self.updated_at      = time.time()
 
@@ -118,13 +121,23 @@ class TrainingDashboard:
             state.updated_at  = time.time()
             self._version += 1
 
-    def finish(self, agent_id: str, policy_text: str = "") -> None:
+    def finish(
+        self,
+        agent_id: str,
+        policy_text: str = "",
+        policy_gif_b64: str = "",
+        policy_frames: Optional[list[str]] = None,
+    ) -> None:
         with self._lock:
             state = self._agents.get(agent_id)
             if state is None:
                 return
             if policy_text:
                 state.policy_text = policy_text
+            if policy_gif_b64:
+                state.policy_gif_b64 = policy_gif_b64
+            if policy_frames:
+                state.policy_frames = policy_frames
             # Mark as fully complete; update() may have already set this.
             state.completed  = state.n_episodes
             state.updated_at = time.time()
@@ -282,6 +295,43 @@ def _render_agent_card(state: _AgentState) -> str:
     mean_recent  = sum(recent) / len(recent) if recent else 0.0
 
     done_badge = '<span class="done-badge">✓ Done</span>' if done else ""
+
+    # ── Policy render section ─────────────────────────────────────────────────
+    policy_section = ""
+    if done:
+        if state.policy_gif_b64:
+            # Animated GIF of the best training episode
+            policy_section = (
+                '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
+                f'<img src="data:image/gif;base64,{state.policy_gif_b64}" '
+                'style="max-width:100%;border-radius:6px;border:1px solid #1e3a5f;'
+                'margin-top:6px;display:block" alt="policy replay gif">'
+            )
+        elif state.policy_frames:
+            # ANSI / text frames — show as a cycling JS slideshow
+            frames_json = json.dumps(state.policy_frames)
+            card_id = f"pf_{state.agent_id}"
+            policy_section = (
+                '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
+                f'<div class="policy-pre" id="{card_id}"></div>'
+                f'<script>(function(){{'
+                f'var frames={frames_json},i=0,el=document.getElementById("{card_id}");'
+                f'if(!el)return;'
+                f'el.textContent=frames[0];'
+                f'setInterval(function(){{i=(i+1)%frames.length;el.textContent=frames[i];}},600);'
+                f'}})();</script>'
+            )
+        elif state.policy_text:
+            policy_section = (
+                '<div class="policy-lbl">Current policy snapshot</div>'
+                f'<div class="policy-pre">{html.escape(state.policy_text)}</div>'
+            )
+    elif state.policy_text:
+        policy_section = (
+            '<div class="policy-lbl">Current policy snapshot</div>'
+            f'<div class="policy-pre">{html.escape(state.policy_text)}</div>'
+        )
+
     return f"""
 <div class="card">
   <div class="card-header">
@@ -314,7 +364,7 @@ def _render_agent_card(state: _AgentState) -> str:
     </div>
   </div>
   <div class="chart-wrap">{_sparkline_svg(state.episode_rewards)}</div>
-  {'<div class="policy-lbl">Current policy snapshot</div><div class="policy-pre">' + html.escape(state.policy_text) + '</div>' if state.policy_text else ''}
+  {policy_section}
 </div>
 """
 
