@@ -14,6 +14,22 @@ from .gridworld import (
     ALL_GRIDWORLD_FACTORIES,
 )
 
+# PyBoy/Pokemon Red is an optional dependency; skip if not installed.
+try:
+    from .pokemon_red import (
+        PokemonRedEnvironment,
+        PokemonRedFactory,
+        POKEMON_RED_GARY_BATTLE_V0,
+        ALL_POKEMON_RED_FACTORIES,
+        setup_save_state as pokemon_red_setup_save_state,
+    )
+    _POKEMON_RED_AVAILABLE = True
+except ImportError:
+    _POKEMON_RED_AVAILABLE = False
+    PokemonRedEnvironment = None       # type: ignore[assignment]
+    PokemonRedFactory = None           # type: ignore[assignment]
+    ALL_POKEMON_RED_FACTORIES = []     # type: ignore[assignment]
+
 # TextWorld is an optional dependency; skip registration if not installed.
 try:
     from .textworld import (
@@ -45,6 +61,12 @@ __all__ = [
     "GridWorldFactory",
     "GRIDWORLD_V0",
     "ALL_GRIDWORLD_FACTORIES",
+    # Pokemon Red (optional — requires PyBoy + ROM)
+    "PokemonRedEnvironment",
+    "PokemonRedFactory",
+    "POKEMON_RED_GARY_BATTLE_V0",
+    "ALL_POKEMON_RED_FACTORIES",
+    "pokemon_red_setup_save_state",
     # TextWorld (optional)
     "TextWorldEnvironment",
     "TextWorldFactory",
