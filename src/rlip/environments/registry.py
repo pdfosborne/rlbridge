@@ -157,3 +157,8 @@ for _factory in ALL_SAILING_FACTORIES:
 from .predefined.gridworld import ALL_GRIDWORLD_FACTORIES  # noqa: E402
 for _factory in ALL_GRIDWORLD_FACTORIES:
     registry.register(_factory)
+
+# Register TextWorld environments (optional dependency)
+from .predefined import ALL_TEXTWORLD_FACTORIES as _tw_factories  # noqa: E402
+for _factory in _tw_factories:
+    registry.register(_factory)

@@ -29,6 +29,7 @@ from .caching import (
     translation_cache_info,
 )
 from .sailing import SailingLanguageTranslator
+from .textworld import TextWorldTranslator
 from .generator import (
     LLMCallable,
     GeneratedTranslator,
@@ -38,10 +39,18 @@ from .generator import (
 
 #: Registry of built-in translators keyed by their ``env_id`` prefix.
 TRANSLATORS: dict[str, LanguageTranslator] = {
-    "Sailing-v0":          SailingLanguageTranslator(),
-    "Sailing-Hard-v0":     SailingLanguageTranslator(),
+    "Sailing-v0":                SailingLanguageTranslator(),
+    "Sailing-Hard-v0":           SailingLanguageTranslator(),
     # Direct class-name fallback for SailingEnvironment used outside the registry
-    "SailingEnvironment":  SailingLanguageTranslator(),
+    "SailingEnvironment":        SailingLanguageTranslator(),
+    # TextWorld text-adventure environments (observation is already language)
+    "TextWorld-Take-v0":                   TextWorldTranslator(),
+    "TextWorld-Navigate-v0":               TextWorldTranslator(),
+    "TextWorld-TreasureHunt-v0":           TextWorldTranslator(),
+    "TextWorld-CoinCollector-Easy-v0":     TextWorldTranslator(),
+    "TextWorld-CoinCollector-Medium-v0":   TextWorldTranslator(),
+    "TextWorld-Cooking-Easy-v0":           TextWorldTranslator(),
+    "TextWorld-Cooking-Medium-v0":         TextWorldTranslator(),
 }
 
 
@@ -78,6 +87,7 @@ def translate(
 __all__ = [
     "LanguageTranslator",
     "SailingLanguageTranslator",
+    "TextWorldTranslator",
     "CachingTranslator",
     "TRANSLATORS",
     "get_translator",
