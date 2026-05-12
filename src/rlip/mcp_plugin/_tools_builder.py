@@ -236,7 +236,13 @@ def rl_sample_states_for_translation(
         return f"Could not create environment '{env_id}': {exc}"
 
     try:
-        samples = _sample_states(env, n_samples=n_samples, seed=seed)
+        samples = _sample_states(
+            env,
+            n_samples=n_samples,
+            max_steps_per_episode=50,
+            max_episodes=n_samples * 10,
+            seed=seed,
+        )
     except Exception as exc:
         return f"State sampling failed: {exc}"
     finally:
@@ -247,8 +253,16 @@ def rl_sample_states_for_translation(
 
     _sampled_states[env_id] = samples
 
+    collected = len(samples)
+    header = (
+        f"Sampled {collected} unique states from '{env_id}'."
+        if collected >= n_samples
+        else f"Sampled {collected}/{n_samples} unique states from '{env_id}' "
+             f"(episode/step budget exhausted — this is normal for large or "
+             f"complex environments)."
+    )
     lines = [
-        f"Sampled {len(samples)} unique states from '{env_id}'.\n",
+        f"{header}\n",
         "Write a translate() function for these states, then call\n"
         f"rl_set_translator_code(env_id='{env_id}', python_code='...').\n",
         "Sampled states:",

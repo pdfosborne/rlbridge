@@ -280,6 +280,13 @@ def _get_flag(step_out: Any, name: str) -> bool:
 
 def _sample_action(env: Any, rng: random.Random) -> Any:
     """Sample a random action from the environment's action space."""
+    # RLIP environments expose sample_action() directly — prefer that so
+    # text-action envs (chess, sailing, textworld …) return valid moves.
+    if hasattr(env, "sample_action"):
+        try:
+            return env.sample_action()
+        except Exception:
+            pass
     action_space = getattr(env, "action_space", None)
     if action_space is not None:
         n = getattr(action_space, "n", None)
@@ -296,7 +303,8 @@ def _sample_action(env: Any, rng: random.Random) -> Any:
 def _sample_states(
     env: Any,
     n_samples: int = 30,
-    max_steps_per_episode: int = 200,
+    max_steps_per_episode: int = 50,
+    max_episodes: int = 0,
     seed: Optional[int] = None,
 ) -> list[tuple[Any, list[Any]]]:
     """
@@ -305,18 +313,32 @@ def _sample_states(
     Returns a list of ``(observation, action_history)`` pairs where
     *action_history* contains all actions taken up to (and including) the step
     that produced this observation.
+
+    Parameters
+    ----------
+    max_steps_per_episode:
+        Hard step cap per episode (default 50 — enough to explore without
+        running a full game).
+    max_episodes:
+        Maximum number of episodes to run.  0 (default) → ``n_samples * 10``.
+        Prevents infinite loops on high-variance or long-horizon environments.
     """
     rng = random.Random(seed)
     seen: set[str] = set()
     samples: list[tuple[Any, list[Any]]] = []
 
-    episode_seed = seed
+    if max_episodes <= 0:
+        max_episodes = n_samples * 10
 
-    while len(samples) < n_samples:
+    episode_seed = seed
+    episodes_run = 0
+
+    while len(samples) < n_samples and episodes_run < max_episodes:
         reset_out = env.reset(seed=episode_seed)
         obs = _get_obs(reset_out)
         action_history: list[Any] = []
         episode_seed = (episode_seed + 1) if episode_seed is not None else None
+        episodes_run += 1
 
         for _ in range(max_steps_per_episode):
             key = repr(obs)
