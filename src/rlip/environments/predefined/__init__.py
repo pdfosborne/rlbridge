@@ -14,6 +14,22 @@ from .gridworld import (
     ALL_GRIDWORLD_FACTORIES,
 )
 
+# Chess (python-chess) is an optional dependency; skip if not installed.
+try:
+    from .chess_env import (
+        ChessEnvironment,
+        ChessFactory,
+        CHESS_V0,
+        CHESS_SELFPLAY_V0,
+        ALL_CHESS_FACTORIES,
+    )
+    _CHESS_AVAILABLE = True
+except ImportError:
+    _CHESS_AVAILABLE = False
+    ChessEnvironment = None         # type: ignore[assignment]
+    ChessFactory = None             # type: ignore[assignment]
+    ALL_CHESS_FACTORIES = []        # type: ignore[assignment]
+
 # PyBoy/Pokemon Red is an optional dependency; skip if not installed.
 try:
     from .pokemon_red import (
@@ -61,6 +77,12 @@ __all__ = [
     "GridWorldFactory",
     "GRIDWORLD_V0",
     "ALL_GRIDWORLD_FACTORIES",
+    # Chess (optional — requires python-chess)
+    "ChessEnvironment",
+    "ChessFactory",
+    "CHESS_V0",
+    "CHESS_SELFPLAY_V0",
+    "ALL_CHESS_FACTORIES",
     # Pokemon Red (optional — requires PyBoy + ROM)
     "PokemonRedEnvironment",
     "PokemonRedFactory",

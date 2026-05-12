@@ -51,6 +51,9 @@ TRANSLATORS: dict[str, LanguageTranslator] = {
     "TextWorld-CoinCollector-Medium-v0":   TextWorldTranslator(),
     "TextWorld-Cooking-Easy-v0":           TextWorldTranslator(),
     "TextWorld-Cooking-Medium-v0":         TextWorldTranslator(),
+    # Chess — observation is already descriptive text (board + legal moves)
+    "Chess-v0":                            None,  # passthrough
+    "Chess-SelfPlay-v0":                   None,  # passthrough
     # Pokemon Red — observation is already descriptive text from memory
     "PokemonRed-Gary-Battle-v0":           None,  # passthrough: obs is already text
 }

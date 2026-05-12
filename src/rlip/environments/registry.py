@@ -163,6 +163,11 @@ from .predefined import ALL_TEXTWORLD_FACTORIES as _tw_factories  # noqa: E402
 for _factory in _tw_factories:
     registry.register(_factory)
 
+# Register Chess environments (optional dependency)
+from .predefined import ALL_CHESS_FACTORIES as _chess_factories  # noqa: E402
+for _factory in _chess_factories:
+    registry.register(_factory)
+
 # Register Pokemon Red environments (optional dependency — requires PyBoy)
 from .predefined import ALL_POKEMON_RED_FACTORIES as _pr_factories  # noqa: E402
 for _factory in _pr_factories:
