@@ -7,7 +7,7 @@ _LangStateEnv – replaces raw observations with their natural-language translat
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 
 class _ShapedEnv:
@@ -30,14 +30,14 @@ class _ShapedEnv:
         self,
         env: Any,
         sub_goal_language: str,
-        bonus: float,
+        bonus: Optional[float],
         threshold: float,
         translator: Any,
         env_id: str,
         sub_goal_languages: list[str] | None = None,
     ) -> None:
         self._env = env
-        self._bonus = bonus
+        self._bonus = bonus  # None → auto-scale on first step
         self._threshold = threshold
         self._env_id = env_id
         # Full set of sub-goal language descriptions (primary + extras),
@@ -58,38 +58,48 @@ class _ShapedEnv:
         # Encoder fitted lazily on first step
         self._encoder: Any = None
         self._sub_goal_vecs: list[Any] = []
+        self._episode_sub_goal_reached: bool = False
 
     def _ensure_encoder(self) -> None:
         if self._encoder is not None:
             return
-        from ..instruction_following import TextEncoder  # noqa: PLC0415
+        from ..instruction_following import TextEncoder, scale_sub_goal_bonus  # noqa: PLC0415
         enc = TextEncoder()
         enc.fit(self._all_sub_goal_languages)
         self._encoder = enc
         self._sub_goal_vecs = [enc.encode(lg) for lg in self._all_sub_goal_languages]
+        # Auto-scale bonus: max_reward / (100 × n_sub_goals).
+        if self._bonus is None:
+            self._bonus = scale_sub_goal_bonus(
+                self._env, n_instructions=len(self._all_sub_goal_languages)
+            )
 
     def reset(self, seed: Any = None, options: Any = None) -> Any:
+        self._episode_sub_goal_reached = False
         return self._env.reset(seed=seed, options=options)
 
     def step(self, action: Any) -> Any:
         result = self._env.step(action)
         # Compute max similarity across all sub-goal descriptions and inject bonus.
+        # First-visit semantics: bonus applied at most once per episode.
         try:
-            self._ensure_encoder()
-            obs = result.observation if hasattr(result, "observation") else result.get("observation")
-            if self._translator and obs is not None:
-                lang = self._translator.translate(obs)
-                obs_vec = self._encoder.encode(lang)
-                sim = max(
-                    float(self._encoder.cosine_similarity(obs_vec, sg_vec))
-                    for sg_vec in self._sub_goal_vecs
-                )
-                if sim >= self._threshold:
-                    if hasattr(result, "reward"):
-                        object.__setattr__(result, "reward", result.reward + self._bonus)
-                    elif isinstance(result, dict):
-                        result = dict(result)
-                        result["reward"] = result.get("reward", 0.0) + self._bonus
+            if not self._episode_sub_goal_reached:
+                self._ensure_encoder()
+                obs = result.observation if hasattr(result, "observation") else result.get("observation")
+                if self._translator and obs is not None:
+                    lang = self._translator.translate(obs)
+                    obs_vec = self._encoder.encode(lang)
+                    sim = max(
+                        float(self._encoder.cosine_similarity(obs_vec, sg_vec))
+                        for sg_vec in self._sub_goal_vecs
+                    )
+                    if sim >= self._threshold:
+                        self._episode_sub_goal_reached = True
+                        if hasattr(result, "reward"):
+                            object.__setattr__(result, "reward", result.reward + self._bonus)
+                        elif isinstance(result, dict):
+                            result = dict(result)
+                            result["reward"] = result.get("reward", 0.0) + self._bonus
         except Exception:
             pass  # never crash the training loop over shaping
         return result

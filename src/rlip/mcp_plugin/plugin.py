@@ -64,6 +64,7 @@ from . import (  # noqa: F401, E402
     _tools_agents,
     _tools_builder,
     _tools_render,
+    _tools_derived_instructions,
 )
 
 

@@ -18,6 +18,79 @@ from mcp.server.fastmcp import Context
 from ._state import _instruction_protocols, mcp
 
 
+# ---------------------------------------------------------------------------
+# LLM sub-goal decomposition helper
+# ---------------------------------------------------------------------------
+
+async def _decompose_instruction_with_llm(
+    ctx: Context,
+    instruction: str,
+    env_id: str,
+    observed_langs: list[str],
+) -> list[str]:
+    """
+    Ask the host LLM to break *instruction* into clear, ordered sub-steps
+    grounded in the language descriptions actually observed in the environment.
+
+    Returns a list of sub-step strings, or an empty list on any failure
+    (so callers always get graceful degradation).
+    """
+    import mcp.types as _t
+
+    # Present a sample of observed states (cap at 60 to keep prompt concise).
+    sample = observed_langs[:60]
+    obs_block = "\n".join(f"  - {lg}" for lg in sample)
+    if len(observed_langs) > 60:
+        obs_block += f"\n  … ({len(observed_langs) - 60} more)"
+
+    prompt = (
+        f"You are helping set up reward shaping for a reinforcement learning agent "
+        f"in the environment \"{env_id}\".\n\n"
+        f"The user has given the following high-level instruction:\n"
+        f"  \"{instruction}\"\n\n"
+        f"Below is a sample of language descriptions of states actually observed "
+        f"in this environment:\n{obs_block}\n\n"
+        f"Break the instruction into 2–5 concrete, ordered sub-steps that the agent "
+        f"should achieve in sequence to complete the task.  Each sub-step must be a "
+        f"short natural-language phrase grounded in the vocabulary above.  "
+        f"Output ONLY a numbered list, one sub-step per line, with no extra text."
+    )
+
+    try:
+        result = await ctx.session.create_message(
+            messages=[_t.SamplingMessage(
+                role="user",
+                content=_t.TextContent(type="text", text=prompt),
+            )],
+            max_tokens=256,
+        )
+    except Exception:
+        return []
+
+    # Extract text from result
+    content = result.content
+    if hasattr(content, "text"):
+        raw = content.text
+    elif isinstance(content, list) and content:
+        raw = getattr(content[0], "text", "") or ""
+    else:
+        raw = str(content)
+
+    # Parse numbered list: "1. ...", "2. ...", etc.
+    sub_steps: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Strip leading "1.", "1)", "-", "*"
+        import re as _re
+        cleaned = _re.sub(r"^[\d]+[.)]\s*|^[-*]\s*", "", line).strip()
+        if cleaned:
+            sub_steps.append(cleaned)
+
+    return sub_steps
+
+
 class _ExplorationProgressEnv:
     """
     Thin env wrapper that renders a tqdm progress bar on sys.stderr while
@@ -121,9 +194,15 @@ async def rl_match_instruction(
     find which observed state best matches a natural-language instruction
     using TF-IDF cosine similarity.
 
+    After exploration the tool calls the host LLM to decompose *instruction*
+    into clear, ordered sub-steps grounded in the observed environment
+    vocabulary.  Each sub-step is matched against the corpus and added as
+    an additional co-equal sub-goal so the agent receives shaping rewards
+    for visiting relevant intermediate states throughout the trajectory.
+
     This is the first step of instruction-following RL.  After calling this
     tool you can run rl_instruction_run_episode() to train with the matched
-    state as a sub-goal.
+    state(s) as sub-goals.
 
     Parameters
     ----------
@@ -142,8 +221,9 @@ async def rl_match_instruction(
 
     Returns
     -------
-    A text summary of the best-matched state, its similarity score, and
-    a match_id you can pass to rl_instruction_run_episode().
+    A text summary of the best-matched state, its similarity score,
+    the LLM-derived sub-steps (when available), and a match_id you can
+    pass to rl_instruction_run_episode().
     """
     import uuid
     from ..instruction_following import match_instruction, build_instruction_following_protocol
@@ -187,15 +267,25 @@ async def rl_match_instruction(
             pass
         progress_env._bar.close()  # close bar; env itself stays open for protocol
 
+    # ── LLM sub-goal decomposition ─────────────────────────────────────────────
+    # Ask the host LLM to break the instruction into ordered sub-steps using the
+    # observed language states as grounding context.  Falls back to [] silently
+    # so the rest of the tool always runs even when sampling is unavailable.
+    from ..instruction_following import obs_cache_langs
+    observed_langs = obs_cache_langs(env_id)
+    sub_steps = await _decompose_instruction_with_llm(ctx, instruction, env_id, observed_langs)
+
     # Build and cache the ready-to-run protocol so the agent can immediately
     # call rl_instruction_run_episode without re-running exploration.
     # The obs cache is now populated so build_instruction_following_protocol
-    # skips re-exploration entirely.
+    # skips re-exploration entirely.  Each sub-step is matched against the
+    # cached corpus and added as an extra co-equal sub-goal.
     protocol = build_instruction_following_protocol(
         instruction,
         env,
         seed=seed,
         max_steps=exploration_steps,
+        extra_sub_goals=sub_steps if sub_steps else None,
     )
     # The env was consumed by exploration; protocol will reset it on __call__.
     match_id = uuid.uuid4().hex[:12]
@@ -211,13 +301,22 @@ async def rl_match_instruction(
         for i, (lg, sc) in enumerate(match.all_scores[:top_k])
     ]
 
+    # Format the decomposed sub-steps block (shown only when the LLM decomposed them).
+    if sub_steps:
+        steps_block = "Decomposed sub-steps (LLM):\n" + "\n".join(
+            f"  {i+1}. {s}" for i, s in enumerate(sub_steps)
+        ) + f"\n  → {len(protocol._all_sub_goal_languages)} total sub-goal state(s) matched\n\n"
+    else:
+        steps_block = ""
+
     return (
         f"Instruction matched for '{env_id}':\n\n"
         f"  Instruction:   {instruction!r}\n"
         f"  Best match:    {match.matched_language}\n"
         f"  Similarity:    {match.similarity_score:.4f}\n"
         f"  Match ID:      {match_id}\n\n"
-        f"Top {top_k} candidates:\n" + "\n".join(top_lines) + "\n\n"
+        + steps_block
+        + f"Top {top_k} candidates:\n" + "\n".join(top_lines) + "\n\n"
         f"Use rl_instruction_run_episode(match_id='{match_id}') to run a "
         f"training episode with this state as a sub-goal."
     )
@@ -227,7 +326,7 @@ async def rl_match_instruction(
 def rl_instruction_run_episode(
     match_id: str,
     max_steps: int = 200,
-    sub_goal_bonus: float = 1.0,
+    sub_goal_bonus: float = 0.0,
     sub_goal_threshold: float = 0.5,
     sub_goal_repeatable: bool = False,
     seed: Optional[int] = None,
@@ -248,6 +347,10 @@ def rl_instruction_run_episode(
         Maximum steps for the training episode.
     sub_goal_bonus:
         Bonus reward added when the language similarity threshold is met.
+        Set to 0.0 (default) to auto-scale: ``max_reward / (100 × n_sub_goals)``
+        where *max_reward* is inferred from the environment's reward range and
+        *n_sub_goals* is the number of matched states.  Pass an explicit
+        positive value to override.
     sub_goal_threshold:
         Cosine similarity threshold (0–1) required to award the bonus.
         Lower values make the sub-goal easier to reach.
@@ -272,6 +375,12 @@ def rl_instruction_run_episode(
 
     protocol = entry["protocol"]
     env = entry["env"]
+
+    # Auto-scale bonus when caller passed 0.0 (the sentinel for "auto").
+    if sub_goal_bonus == 0.0:
+        from ..instruction_following import scale_sub_goal_bonus  # noqa: PLC0415
+        n_sub_goals = len(protocol._all_sub_goal_languages)
+        sub_goal_bonus = scale_sub_goal_bonus(env, n_instructions=n_sub_goals)
 
     # Apply per-call overrides
     protocol.max_steps = max_steps
@@ -313,7 +422,7 @@ def rl_instruction_run_episode(
         f"  Environment:   {result.env_id}\n"
         f"  Instruction:   {protocol.instruction!r}\n"
         f"  Sub-goal:      {protocol.sub_goal_language[:80]}\n"
-        f"  Threshold:     {sub_goal_threshold}\n\n"
+        f"  Threshold:     {sub_goal_threshold}  Bonus: {sub_goal_bonus:.6g}\n\n"
         f"  Steps:         {ep.steps}\n"
         f"  Total reward:  {ep.total_reward:.4f}\n"
         f"  End reason:    {ep.end_reason}\n"

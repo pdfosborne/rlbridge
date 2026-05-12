@@ -620,6 +620,8 @@ class InstructionFollowingProtocol(_BaseProtocol):
         llm_fn: Optional[Callable[[str], str]] = None,
         llm_refine_threshold: int = 20,
         llm_env_context: str = "",
+        _stats_tracker: Any = None,
+        _state_instruction_map: Optional[dict] = None,
     ) -> None:
         self.instruction = instruction
         self.sub_goal_language = sub_goal_language
@@ -649,6 +651,11 @@ class InstructionFollowingProtocol(_BaseProtocol):
                 self._all_sub_goal_languages.append(lg)
         self._encoder: Any = None
         self._sub_goal_vecs: list[Any] = []  # one vector per sub-goal language
+        # Optional InstructionCacheEntry (duck-typed) for success-rate tracking.
+        self._stats_tracker = _stats_tracker
+        # Optional live dict mapping language_description → [instruction, ...]
+        # used to annotate steps with other instructions targeting the same state.
+        self._state_instruction_map: Optional[dict] = _state_instruction_map
 
     def __call__(self, env: _EnvLike) -> InteractionResult:
         # Lazy import avoids circular dependency at module load time.
@@ -700,6 +707,13 @@ class InstructionFollowingProtocol(_BaseProtocol):
             if translator:
                 language_obs = translator.translate(obs, action_history=action_history)
 
+                # Annotate steps that land on states matched to *any* instruction
+                # (including instructions other than the currently active one).
+                if self._state_instruction_map and language_obs in self._state_instruction_map:
+                    associated = self._state_instruction_map[language_obs]
+                    if associated:
+                        info["associated_instructions"] = list(associated)
+
                 # First-visit semantics: once the sub-goal has been reached,
                 # skip similarity computation entirely so the agent receives no
                 # signal that would encourage it to linger near the sub-goal.
@@ -743,6 +757,11 @@ class InstructionFollowingProtocol(_BaseProtocol):
             end_reason=end_reason,
             history=history,
         ))
+
+        # Record episode outcome into the instruction cache entry (if provided).
+        if self._stats_tracker is not None:
+            self._stats_tracker.record_episode(sub_goal_reached)
+
         return result
 
 

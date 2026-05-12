@@ -140,7 +140,7 @@ async def rl_train_agent(
     max_steps: int = 200,
     seed: Optional[int] = None,
     match_id: str = "",
-    sub_goal_bonus: float = 1.0,
+    sub_goal_bonus: float = 0.0,
     sub_goal_threshold: float = 0.5,
     use_language_state: bool = False,
     # Tabular Q hyper-parameters
@@ -191,7 +191,10 @@ async def rl_train_agent(
         call.
     sub_goal_bonus:
         Bonus reward magnitude added when the sub-goal is reached (only used
-        when match_id is provided).
+        when match_id is provided).  Set to 0.0 (default) to auto-scale:
+        ``max_reward / (100 × n_sub_goals)`` where *max_reward* is inferred
+        from the environment's reward range and *n_sub_goals* is the number
+        of matched states.  Pass an explicit positive value to override.
     sub_goal_threshold:
         Cosine similarity threshold to trigger the sub-goal bonus (0–1).
     use_language_state:
@@ -246,6 +249,7 @@ async def rl_train_agent(
     from ..environments.registry import registry as _env_registry  # noqa: PLC0415
 
     agent_type = agent_type.lower().strip()
+    resolved_bonus: Optional[float] = None  # set when sub-goal shaping is active
     if agent_type not in _AGENT_DESCRIPTIONS:
         return (
             f"Unknown agent type '{agent_type}'.  "
@@ -272,24 +276,31 @@ async def rl_train_agent(
                 "Call rl_match_instruction() first to generate a valid match_id."
             )
         protocol = entry["protocol"]
+        n_sub_goals = len(protocol._all_sub_goal_languages)
+        # None tells _ShapedEnv to auto-scale; explicit >0 overrides.
+        effective_bonus: Optional[float] = None if sub_goal_bonus == 0.0 else sub_goal_bonus
         # Wrap the environment so that step() injects the similarity bonus.
-        env = _ShapedEnv(
+        shaped_env = _ShapedEnv(
             env,
             sub_goal_language=protocol.sub_goal_language,
             sub_goal_languages=[
                 lg for lg in protocol._all_sub_goal_languages
                 if lg != protocol.sub_goal_language
             ],
-            bonus=sub_goal_bonus,
+            bonus=effective_bonus,
             threshold=sub_goal_threshold,
             translator=protocol.translate,
             env_id=env_id,
         )
+        # Trigger encoder/bonus resolution now so we can report the value.
+        shaped_env._ensure_encoder()
+        resolved_bonus = shaped_env._bonus
+        env = shaped_env
         shaping_summary = (
             f"\n  Sub-goal shaping: ON  (match_id={match_id})\n"
-            f"  Sub-goals:        {len(protocol._all_sub_goal_languages)} state(s)\n"
+            f"  Sub-goals:        {n_sub_goals} state(s)\n"
             f"  Primary:          {protocol.sub_goal_language!r}\n"
-            f"  Bonus / threshold:{sub_goal_bonus} / {sub_goal_threshold}"
+            f"  Bonus (auto-scaled): {resolved_bonus:.6g} / threshold={sub_goal_threshold}"
         )
 
     # ── Optional language-state wrapping ─────────────────────────────────────
@@ -386,7 +397,7 @@ async def rl_train_agent(
             _instruction_protocols[match_id]["protocol"].sub_goal_language
             if match_id and match_id in _instruction_protocols else None
         ),
-        "sub_goal_bonus":       sub_goal_bonus if match_id else None,
+        "sub_goal_bonus":       resolved_bonus,
         "sub_goal_threshold":   sub_goal_threshold if match_id else None,
         "instruction":          (
             _instruction_protocols[match_id]["protocol"].instruction

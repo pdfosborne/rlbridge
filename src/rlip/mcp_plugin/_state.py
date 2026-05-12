@@ -97,7 +97,17 @@ mcp = FastMCP(
         "optional but recommended when a translator is available).\n"
         "3. rl_render_policy(env_id, agent_id=agent_id) – render the result.\n"
         "4. rl_create_training_report(agent_id) – full training report with sub-goal "
-        "similarity panel showing when the instruction was matched during the best episode."
+        "similarity panel showing when the instruction was matched during the best episode.\n\n"
+        "Auto-derived instruction workflow (no instruction needed up front):\n"
+        "1. rl_train_and_derive_instructions(env_id, agent_type, n_episodes) – train an "
+        "agent while tracking which language states appear in successful episodes.  "
+        "Automatically scores and caches the top-k instruction candidates.\n"
+        "2. rl_list_cached_instructions(env_id) – inspect cached instructions with "
+        "per-instruction success-rate statistics.\n"
+        "3. rl_apply_derived_instruction(env_id, instruction) – convert a cached "
+        "instruction into a match_id (no re-exploration needed).\n"
+        "4. rl_instruction_run_episode(match_id) or rl_train_agent(match_id=...) – "
+        "run sub-goal-shaped episodes using the derived instruction."
     ),
 )
 
