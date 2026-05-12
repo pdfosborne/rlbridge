@@ -46,6 +46,7 @@ _tools_instruction.py– instruction-following tools
 _tools_agents.py     – RL agent training / evaluation tools
 _tools_builder.py    – custom environment builder tools
 _tools_render.py     – rendering tools and MCP resources
+_tools_dashboard.py  – live training dashboard server tools
 plugin.py            – this file: entry-point + main()
 """
 
@@ -65,6 +66,7 @@ from . import (  # noqa: F401, E402
     _tools_builder,
     _tools_render,
     _tools_derived_instructions,
+    _tools_dashboard,
 )
 
 

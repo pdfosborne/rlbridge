@@ -156,7 +156,11 @@ def _san_list(board: Any, limit: int = 20) -> list[str]:
     return sorted(moves)[:limit]
 
 
-def _build_observation(board: Any, last_move_san: Optional[str]) -> str:
+def _build_observation(
+    board: Any,
+    last_move_san: Optional[str],
+    first_capture_mode: bool = False,
+) -> str:
     """Build the text observation for the current board state."""
     import chess
 
@@ -180,8 +184,9 @@ def _build_observation(board: Any, last_move_san: Optional[str]) -> str:
     else:
         status = f"{turn} to move."
 
+    goal_line = "  [First-Capture mode: make the first capture to win]" if first_capture_mode else ""
     lines = [
-        f"=== Chess  (Move {move_num}) ===",
+        f"=== Chess  (Move {move_num}) ==={goal_line}",
         f"Status: {status}",
     ]
 
@@ -237,6 +242,7 @@ class ChessEnvironment(RLIPEnvironment):
         opponent: str = "random",
         player_color: str = "white",
         max_episode_steps: int = 400,
+        first_capture: bool = False,
     ) -> None:
         import chess  # deferred so ImportError surfaces clearly
 
@@ -244,6 +250,7 @@ class ChessEnvironment(RLIPEnvironment):
         self._opponent = opponent.lower()
         self._player_color = chess.WHITE if player_color.lower() == "white" else chess.BLACK
         self._max_episode_steps = max_episode_steps
+        self._first_capture = first_capture
 
         self._board: chess.Board = chess.Board()
         self._steps: int = 0
@@ -258,6 +265,8 @@ class ChessEnvironment(RLIPEnvironment):
     def env_id(self) -> str:
         if self._opponent == "none":
             return "Chess-SelfPlay-v0"
+        if self._first_capture:
+            return "Chess-FirstCapture-v0"
         return "Chess-v0"
 
     # ── Life-cycle ────────────────────────────────────────────────────────────
@@ -284,7 +293,7 @@ class ChessEnvironment(RLIPEnvironment):
                 self._apply_opponent_move()
 
             return ResetResult(
-                observation=_build_observation(self._board, self._last_move_san),
+                observation=_build_observation(self._board, self._last_move_san, self._first_capture),
                 info=self._build_info(),
             )
 
@@ -298,22 +307,33 @@ class ChessEnvironment(RLIPEnvironment):
             if move is None:
                 # Invalid / illegal move: small penalty, no board change
                 return StepResult(
-                    observation=_build_observation(self._board, self._last_move_san),
+                    observation=_build_observation(self._board, self._last_move_san, self._first_capture),
                     reward=-0.01,
                     terminated=False,
                     truncated=False,
                     info={**self._build_info(), "invalid_move": str(action)},
                 )
 
+            player_captures = self._first_capture and self._board.is_capture(move)
             self._last_move_san = self._board.san(move)
             self._board.push(move)
             self._steps += 1
 
-            # Check if game ended after player's move
+            # First-capture: agent captured first — win
+            if player_captures:
+                return StepResult(
+                    observation=_build_observation(self._board, self._last_move_san, self._first_capture),
+                    reward=1.0,
+                    terminated=True,
+                    truncated=False,
+                    info={**self._build_info(), "first_capture": "player"},
+                )
+
+            # Check if game ended after player's move (checkmate / stalemate)
             if self._board.is_game_over():
                 reward = self._terminal_reward()
                 return StepResult(
-                    observation=_build_observation(self._board, self._last_move_san),
+                    observation=_build_observation(self._board, self._last_move_san, self._first_capture),
                     reward=reward,
                     terminated=True,
                     truncated=False,
@@ -322,21 +342,35 @@ class ChessEnvironment(RLIPEnvironment):
 
             # --- Opponent responds (unless self-play) ---
             if self._opponent == "random":
-                self._apply_opponent_move()
+                opp_move = self._pick_opponent_move()
+                if opp_move is not None:
+                    opp_captures = self._first_capture and self._board.is_capture(opp_move)
+                    self._last_move_san = self._board.san(opp_move)
+                    self._board.push(opp_move)
 
-                if self._board.is_game_over():
-                    reward = self._terminal_reward()
-                    return StepResult(
-                        observation=_build_observation(self._board, self._last_move_san),
-                        reward=reward,
-                        terminated=True,
-                        truncated=False,
-                        info=self._build_info(),
-                    )
+                    # First-capture: opponent captured first — loss
+                    if opp_captures:
+                        return StepResult(
+                            observation=_build_observation(self._board, self._last_move_san, self._first_capture),
+                            reward=-1.0,
+                            terminated=True,
+                            truncated=False,
+                            info={**self._build_info(), "first_capture": "opponent"},
+                        )
+
+                    if self._board.is_game_over():
+                        reward = self._terminal_reward()
+                        return StepResult(
+                            observation=_build_observation(self._board, self._last_move_san, self._first_capture),
+                            reward=reward,
+                            terminated=True,
+                            truncated=False,
+                            info=self._build_info(),
+                        )
 
             truncated = self._steps >= self._max_episode_steps
             return StepResult(
-                observation=_build_observation(self._board, self._last_move_san),
+                observation=_build_observation(self._board, self._last_move_san, self._first_capture),
                 reward=0.0,
                 terminated=False,
                 truncated=truncated,
@@ -348,14 +382,12 @@ class ChessEnvironment(RLIPEnvironment):
 
     # ── Internals ─────────────────────────────────────────────────────────────
 
-    def _apply_opponent_move(self) -> None:
-        """Pick and push a random legal move for the opponent."""
+    def _pick_opponent_move(self) -> Optional[Any]:
+        """Pick (but do not push) a random legal move for the opponent."""
         legal = list(self._board.legal_moves)
         if not legal:
-            return
-        move = self._rng.choice(legal)
-        self._last_move_san = self._board.san(move)
-        self._board.push(move)
+            return None
+        return self._rng.choice(legal)
 
     def _terminal_reward(self) -> float:
         """Reward from the agent's perspective."""
@@ -406,7 +438,7 @@ class ChessEnvironment(RLIPEnvironment):
     def render(self) -> RenderResult:
         return RenderResult(
             mode="ansi",
-            text=_build_observation(self._board, self._last_move_san),
+            text=_build_observation(self._board, self._last_move_san, self._first_capture),
         )
 
     def sample_action(self) -> str:
@@ -438,6 +470,17 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float | None, dict[str, Any]
         400,
         None,
         {"opponent": "none", "player_color": "white"},
+    ),
+    "Chess-FirstCapture-v0": (
+        "Shortened chess: the episode ends as soon as any piece is captured. "
+        "Agent plays White against a uniform-random opponent. "
+        "Reward +1 if the agent makes the first capture, -1 if the opponent does. "
+        "Episodes are much shorter than standard chess — ideal for quick training. "
+        "Actions: UCI (e.g. 'e2e4') or SAN (e.g. 'e4', 'Nf3', 'O-O').",
+        ["chess", "board-game", "strategy", "text", "two-player", "quick"],
+        80,
+        1.0,
+        {"opponent": "random", "player_color": "white", "first_capture": True},
     ),
 }
 
@@ -478,17 +521,19 @@ class ChessFactory(RLIPEnvironmentFactory):
     ) -> ChessEnvironment:
         merged = {**self._kwargs, **kwargs}
         return ChessEnvironment(
-            max_episode_steps=self._max_steps,
+            max_episode_steps=merged.pop("max_episode_steps", self._max_steps),
             **merged,
         )
 
 
 # ── Pre-built singletons ──────────────────────────────────────────────────────
 
-CHESS_V0            = ChessFactory("Chess-v0")
-CHESS_SELFPLAY_V0   = ChessFactory("Chess-SelfPlay-v0")
+CHESS_V0             = ChessFactory("Chess-v0")
+CHESS_SELFPLAY_V0    = ChessFactory("Chess-SelfPlay-v0")
+CHESS_FIRST_CAPTURE_V0 = ChessFactory("Chess-FirstCapture-v0")
 
 ALL_CHESS_FACTORIES: list[ChessFactory] = [
     CHESS_V0,
     CHESS_SELFPLAY_V0,
+    CHESS_FIRST_CAPTURE_V0,
 ]

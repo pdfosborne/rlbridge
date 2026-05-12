@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from mcp.server.fastmcp import Context
 
+from ._dashboard import dashboard as _dash, is_running as _dash_running
 from ._env_wrappers import _LangStateEnv, _ShapedEnv
 from ._state import (
     _RENDERS_DIR,
@@ -34,7 +35,16 @@ class _ProgressEnv:
     Written to stderr so it never touches the MCP stdout channel.
     """
 
-    def __init__(self, env: Any, n_episodes: int, agent_type: str, env_id: str) -> None:
+    def __init__(
+        self,
+        env: Any,
+        n_episodes: int,
+        agent_type: str,
+        env_id: str,
+        *,
+        dashboard_agent_id: str = "",
+        agent_ref: Any = None,
+    ) -> None:
         import tqdm
         self._env = env
         self._n_episodes = n_episodes
@@ -42,6 +52,8 @@ class _ProgressEnv:
         self._ep_reward = 0.0
         self._reset_calls = 0
         self._completed_episodes = 0
+        self._dashboard_agent_id = dashboard_agent_id
+        self._agent_ref = agent_ref
         self._bar = tqdm.tqdm(
             total=n_episodes,
             desc=f"Training {agent_type} on {env_id}",
@@ -63,8 +75,16 @@ class _ProgressEnv:
             n = min(1, self._n_episodes - self._bar.n)
             if n > 0:
                 self._bar.update(n)
+            _finished_reward = self._ep_reward
             self._ep_reward = 0.0
             self._completed_episodes += 1
+            if self._dashboard_agent_id:
+                _dash.update(
+                    self._dashboard_agent_id,
+                    completed=self._completed_episodes,
+                    last_reward=_finished_reward,
+                    epsilon=float(getattr(self._agent_ref, "epsilon", 0.0)),
+                )
         self._reset_calls += 1
         return self._env.reset(seed=seed, options=options)
 
@@ -79,6 +99,19 @@ class _ProgressEnv:
 
     def close(self) -> None:
         self._bar.close()
+        if self._dashboard_agent_id and self._reset_calls > 0:
+            # Commit the last episode whose reward was accumulated but never
+            # flushed (there is no subsequent reset() call after the final ep).
+            self._completed_episodes += 1
+            _dash.update(
+                self._dashboard_agent_id,
+                completed=min(self._completed_episodes, self._n_episodes),
+                last_reward=self._ep_reward,
+                epsilon=float(getattr(self._agent_ref, "epsilon", 0.0)),
+            )
+            _dash.finish(self._dashboard_agent_id)
+        elif self._dashboard_agent_id:
+            _dash.finish(self._dashboard_agent_id)
         self._env.close()
 
     @property
@@ -244,7 +277,6 @@ async def rl_train_agent(
     -------
     A training summary and an agent_id for use with rl_run_agent_episode().
     """
-    import uuid  # noqa: PLC0415
     from ..rl_agents import TabularQAgent, DQNAgent, PPOAgent  # noqa: PLC0415
     from ..environments.registry import registry as _env_registry  # noqa: PLC0415
 
@@ -355,7 +387,26 @@ async def rl_train_agent(
             seed=seed,
         )
 
-    progress_env = _ProgressEnv(env, n_episodes=n_episodes, agent_type=agent_type, env_id=env_id)
+    import uuid as _uuid  # noqa: PLC0415
+    agent_id = _uuid.uuid4().hex[:12]
+
+    # Register with the live dashboard if it is running
+    if _dash_running():
+        _dash.register(
+            agent_id,
+            agent_type=agent_type,
+            env_id=env_id,
+            n_episodes=n_episodes,
+        )
+
+    progress_env = _ProgressEnv(
+        env,
+        n_episodes=n_episodes,
+        agent_type=agent_type,
+        env_id=env_id,
+        dashboard_agent_id=agent_id if _dash_running() else "",
+        agent_ref=agent,
+    )
 
     async def _poll_training() -> None:
         while True:
@@ -383,7 +434,6 @@ async def rl_train_agent(
             pass
         progress_env.close()
 
-    agent_id = uuid.uuid4().hex[:12]
     _trained_agents[agent_id] = {
         "agent":                agent,
         "env_id":               env_id,
