@@ -15,8 +15,8 @@ from typing import Any, Optional
 from ._env_wrappers import _LangStateEnv
 from ._dispatch import _dispatch
 from ._state import (
-    _RENDERS_DIR,
     _custom_translators,
+    _env_renders_dir,
     _in_process,
     _registry,
     _trained_agents,
@@ -60,7 +60,7 @@ def rl_render_policy(
     Runs several episodes, picks the best one, replays it with rendering
     enabled, and saves the result as a ``.gif`` file.  The GIF is returned
     as an inline data URL so Claude can display it directly, and also saved
-    to ``~/.rlip/renders/`` for local access.
+    to ``./.rlip/environments/<env>/renders/`` for local access.
 
     Parameters
     ----------
@@ -99,12 +99,13 @@ def rl_render_policy(
     factory = _registry.get(env_id)
 
     # ── Determine GIF output path ─────────────────────────────────────────────
-    _RENDERS_DIR.mkdir(parents=True, exist_ok=True)
+    env_render_dir = _env_renders_dir(env_id)
+    env_render_dir.mkdir(parents=True, exist_ok=True)
     safe_id = env_id.replace("/", "_").replace("-", "_").replace(" ", "_")
     _stored = _trained_agents.get(agent_id) if agent_id else None
     agent_type_label = _stored.get("agent_type", "unknown") if _stored else "random"
     _ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    gif_path = _RENDERS_DIR / f"{safe_id}_{agent_type_label}_{n_episodes}ep_{_ts}.gif"
+    gif_path = env_render_dir / f"{safe_id}_{agent_type_label}_{n_episodes}ep_{_ts}.gif"
 
     # ── Collect episodes ──────────────────────────────────────────────────────
     train_env = factory.create(render_mode=None)

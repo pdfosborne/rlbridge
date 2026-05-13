@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
+import json
+import shutil
 import sys
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 from mcp.server.fastmcp import Context
@@ -17,7 +22,10 @@ from mcp.server.fastmcp import Context
 from ._dashboard import dashboard as _dash, is_running as _dash_running
 from ._env_wrappers import _LangStateEnv, _SequentialShapedEnv, _ShapedEnv
 from ._state import (
-    _RENDERS_DIR,
+    _CUSTOM_ENV_CACHE_ROOT,
+    _env_agents_dir,
+    _env_cache_dir,
+    _env_renders_dir,
     _custom_translators,
     _instruction_protocols,
     _trained_agents,
@@ -126,6 +134,137 @@ class _ProgressEnv:
 
 
 
+# ── Artifact packaging helpers ───────────────────────────────────────────────
+
+def _copy_if_exists(src: Path, dst: Path) -> bool:
+    if not src.exists() or not src.is_file():
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return True
+
+
+def _collect_training_instructions(match_id: str) -> list[str]:
+    if not match_id:
+        return []
+    entry = _instruction_protocols.get(match_id)
+    if not entry:
+        return []
+    protocol = entry.get("protocol")
+    if protocol is None:
+        return []
+
+    seq = getattr(protocol, "instructions", None)
+    if isinstance(seq, list) and seq:
+        return [str(x) for x in seq if str(x).strip()]
+
+    single = getattr(protocol, "instruction", None)
+    if isinstance(single, str) and single.strip():
+        return [single]
+
+    return []
+
+
+def _package_trained_agent(agent_id: str, entry: dict[str, Any]) -> tuple[Path | None, str | None]:
+    """Persist agent weights plus reproducibility artifacts and create a zip bundle."""
+    env_id = str(entry.get("env_id", ""))
+    if not env_id:
+        return None, "missing env_id"
+
+    agent_type = str(entry.get("agent_type", "agent"))
+    pkg_root = _env_agents_dir(env_id)
+    pkg_root.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    package_dir = pkg_root / f"{agent_type}_{agent_id}_{ts}"
+    weights_dir = package_dir / "weights"
+    env_src_dir = package_dir / "environment_source"
+    translator_src_dir = package_dir / "language_translation_source"
+    cached_env_root = _env_cache_dir(env_id)
+    cached_env_src_dir = cached_env_root / "environment_source"
+    cached_translator_src_dir = cached_env_root / "language_translation_source"
+    weights_dir.mkdir(parents=True, exist_ok=True)
+    env_src_dir.mkdir(parents=True, exist_ok=True)
+    translator_src_dir.mkdir(parents=True, exist_ok=True)
+    cached_env_src_dir.mkdir(parents=True, exist_ok=True)
+    cached_translator_src_dir.mkdir(parents=True, exist_ok=True)
+
+    agent = entry.get("agent")
+    weights_path = weights_dir / "agent_weights.json"
+    if agent is None or not hasattr(agent, "save"):
+        return None, "agent has no save() method"
+
+    try:
+        agent.save(weights_path)
+    except Exception as exc:
+        return None, f"failed to save agent weights: {exc}"
+
+    try:
+        from ..environments.registry import registry as _env_registry  # noqa: PLC0415
+
+        factory = _env_registry.get(env_id)
+        factory_file = inspect.getsourcefile(type(factory))
+        if factory_file:
+            filename = Path(factory_file).name
+            _copy_if_exists(Path(factory_file), env_src_dir / filename)
+            _copy_if_exists(Path(factory_file), cached_env_src_dir / filename)
+
+        custom_env_dir = _CUSTOM_ENV_CACHE_ROOT / env_id
+        if custom_env_dir.exists() and custom_env_dir.is_dir():
+            cached_dest = env_src_dir / "custom_env_cache"
+            shutil.copytree(custom_env_dir, cached_dest, dirs_exist_ok=True)
+            shutil.copytree(custom_env_dir, cached_env_src_dir / "custom_env_cache", dirs_exist_ok=True)
+    except Exception:
+        pass
+
+    try:
+        from ..language_translation import get_translator  # noqa: PLC0415
+
+        translator = _custom_translators.get(env_id) or get_translator(env_id)
+        if translator is not None:
+            translator_file = inspect.getsourcefile(type(translator))
+            if translator_file:
+                filename = Path(translator_file).name
+                _copy_if_exists(Path(translator_file), translator_src_dir / filename)
+                _copy_if_exists(Path(translator_file), cached_translator_src_dir / filename)
+
+        custom_translator = _CUSTOM_ENV_CACHE_ROOT / env_id / "translator.py"
+        if custom_translator.exists():
+            _copy_if_exists(custom_translator, translator_src_dir / "translator.py")
+            _copy_if_exists(custom_translator, cached_translator_src_dir / "translator.py")
+    except Exception:
+        pass
+
+    instructions_used = list(entry.get("instructions_used") or [])
+    metadata = {
+        "agent_id": agent_id,
+        "agent_type": agent_type,
+        "env_id": env_id,
+        "created_at": datetime.now().isoformat(),
+        "weights_file": str(weights_path.name),
+        "training_config": entry.get("training_config") or {},
+        "use_language_state": bool(entry.get("use_language_state", False)),
+        "match_id": entry.get("match_id"),
+        "instruction": entry.get("instruction"),
+        "instructions_used": instructions_used,
+        "sub_goal_language": entry.get("sub_goal_language"),
+        "sub_goal_bonus": entry.get("sub_goal_bonus"),
+        "sub_goal_threshold": entry.get("sub_goal_threshold"),
+    }
+    (package_dir / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    (package_dir / "instructions.json").write_text(
+        json.dumps({"instructions": instructions_used}, indent=2),
+        encoding="utf-8",
+    )
+    (cached_env_root / "latest_instructions.json").write_text(
+        json.dumps({"instructions": instructions_used}, indent=2),
+        encoding="utf-8",
+    )
+
+    archive_base = package_dir.with_suffix("")
+    archive_path = shutil.make_archive(str(archive_base), "zip", root_dir=package_dir)
+    return Path(archive_path), None
+
+
 # ── Dashboard policy render helper ───────────────────────────────────────────
 
 def _render_policy_for_dashboard(
@@ -214,8 +353,9 @@ def _render_policy_for_dashboard(
         # Attempt 1: rgb_array GIF render
         rgb_error: Optional[str] = None
         try:
-            gif_path = _RENDERS_DIR / f"{agent_id}_dashboard_policy.gif"
-            _RENDERS_DIR.mkdir(parents=True, exist_ok=True)
+            render_dir = _env_renders_dir(env_id)
+            render_dir.mkdir(parents=True, exist_ok=True)
+            gif_path = render_dir / f"{agent_id}_dashboard_policy.gif"
             render_env = factory.create(render_mode="rgb_array")
             try:
                 if use_lang_state:
@@ -652,6 +792,8 @@ async def rl_train_agent(
             pass
         progress_env.close()
 
+    instructions_used = _collect_training_instructions(match_id)
+
     _trained_agents[agent_id] = {
         "agent":                agent,
         "env_id":               env_id,
@@ -659,6 +801,7 @@ async def rl_train_agent(
         "best_episode_history": result.best_episode_history,
         "use_language_state":   use_language_state,
         "train_result":         result,
+        "instructions_used":    instructions_used,
         "training_config": {
             "n_episodes": n_episodes,
             "max_steps": max_steps,
@@ -724,13 +867,27 @@ async def rl_train_agent(
     if _dash_running():
         _render_policy_for_dashboard(agent_id, env_id, result.best_episode_history, max_steps)
 
-    return (
+    artifact_path: str | None = None
+    artifact_warning = ""
+    archive_path, archive_error = _package_trained_agent(agent_id, _trained_agents[agent_id])
+    if archive_path is not None:
+        artifact_path = str(archive_path)
+        _trained_agents[agent_id]["artifact_archive"] = artifact_path
+    elif archive_error:
+        artifact_warning = f"\n  Artifact package: FAILED ({archive_error})"
+
+    summary = (
         f"Training complete — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}\n\n"
         f"  {result}\n\n"
         f"  Mean reward (last 10 %): {result.last_n_mean:.4f}\n"
         f"  Agent ID: {agent_id}\n\n"
-        f"Use rl_run_agent_episode(agent_id='{agent_id}') to evaluate the agent."
     )
+    if artifact_path:
+        summary += f"  Artifact package: {artifact_path}\n\n"
+    if artifact_warning:
+        summary += f"{artifact_warning}\n"
+    summary += f"Use rl_run_agent_episode(agent_id='{agent_id}') to evaluate the agent."
+    return summary
 
 
 @mcp.tool()
@@ -885,7 +1042,7 @@ def rl_create_training_report(
         Agents should be trained on the same environment for fair comparison.
     output_path:
         Path to write the PNG report.  Defaults to
-        ``~/.rlip/renders/<env>_<agent_id>_report.png``.
+        ``./.rlip/environments/<env>/renders/<env>_<agent_id>_report.png``.
     rolling_window:
         Number of episodes for the rolling reward average (0 = auto: 5 %
         of total episodes, minimum 10).
@@ -974,13 +1131,14 @@ def rl_create_training_report(
                 "Re-train that agent to enable reporting."
             )
 
-    _RENDERS_DIR.mkdir(parents=True, exist_ok=True)
+    env_render_dir = _env_renders_dir(env_id)
+    env_render_dir.mkdir(parents=True, exist_ok=True)
     safe_id = env_id.replace("/", "_").replace("-", "_").replace(" ", "_")
     if len(entries) > 1:
-        out_path = output_path or str(_RENDERS_DIR / f"{safe_id}_comparison_report.png")
+        out_path = output_path or str(env_render_dir / f"{safe_id}_comparison_report.png")
     else:
         out_path = output_path or str(
-            _RENDERS_DIR / f"{safe_id}_{primary_agent_type}_{agent_id}_report.png"
+            env_render_dir / f"{safe_id}_{primary_agent_type}_{agent_id}_report.png"
         )
 
     comparison_runs: list[dict[str, Any]] = []

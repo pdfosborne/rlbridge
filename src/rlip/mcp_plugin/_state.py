@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -130,5 +131,36 @@ _custom_translators: dict[str, Any] = {}
 # without requiring the caller to pass the states back.
 _sampled_states: dict[str, list[Any]] = {}
 
-# Persistent output directory for GIFs, PNGs, and reports.
-_RENDERS_DIR = Path.home() / ".rlip" / "renders"
+def _safe_env_name(env_id: str) -> str:
+    """Normalize env IDs for filesystem-safe directory names."""
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", env_id).strip("._-")
+    return cleaned or "environment"
+
+
+# All plugin artifacts live under the working directory Claude was launched in.
+# Users can override this with RLIP_OUTPUT_ROOT if desired.
+_OUTPUT_ROOT = Path(os.environ.get("RLIP_OUTPUT_ROOT") or Path.cwd())
+_RLIP_ROOT = _OUTPUT_ROOT / ".rlip"
+
+# Shared roots
+_RENDERS_DIR = _RLIP_ROOT / "renders"
+_CUSTOM_ENV_CACHE_ROOT = _RLIP_ROOT / "envs"
+_CATALOG_PATH = _RLIP_ROOT / "catalog.json"
+_ENV_ARTIFACTS_ROOT = _RLIP_ROOT / "environments"
+
+
+def _env_root_dir(env_id: str) -> Path:
+    """Per-environment root for renders, cache, and agent artifacts."""
+    return _ENV_ARTIFACTS_ROOT / _safe_env_name(env_id)
+
+
+def _env_renders_dir(env_id: str) -> Path:
+    return _env_root_dir(env_id) / "renders"
+
+
+def _env_cache_dir(env_id: str) -> Path:
+    return _env_root_dir(env_id) / "cache"
+
+
+def _env_agents_dir(env_id: str) -> Path:
+    return _env_root_dir(env_id) / "agents"
