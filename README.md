@@ -158,6 +158,31 @@ The installed translator is automatically used by `rl_match_instruction` and
 | `rl_run_agent_episode` | Evaluate a trained agent for one greedy episode |
 | `rl_render_policy` | Render the best training episode as an animated GIF |
 
+### Local LLM policy agent (Python API)
+
+RLIP also includes a direct `local_llm` policy agent for action selection
+without gradient training.
+
+```python
+from rlip.environments.registry import registry
+from rlip.language_translation import get_translator
+from rlip.rl_agents import LocalLLMAgent
+
+env = registry.get("Sailing-v0").create()
+translator = get_translator("Sailing-v0")
+
+agent = LocalLLMAgent(base_url="http://localhost:11434/v1", model="llama3.1")
+
+obs = env.reset().observation
+obs_text = translator.translate(obs) if translator else str(obs)
+action = agent.choose_action(obs_text, action_space=env.action_space)
+step = env.step(action)
+```
+
+Use this agent primarily with language-translated observations. Calling a model
+for every environment action can be expensive in long episodes, so account for
+per-step latency and token cost.
+
 ---
 
 ## Full Example: New Environment from Scratch

@@ -91,6 +91,7 @@ try:
         DQNTrainResult,
         PPOAgent,
         PPOTrainResult,
+        LocalLLMAgent,
     )
     _RL_AGENTS_AVAILABLE = True
 except ImportError:
@@ -167,4 +168,5 @@ if _RL_AGENTS_AVAILABLE:
         "DQNTrainResult",
         "PPOAgent",
         "PPOTrainResult",
+        "LocalLLMAgent",
     ])

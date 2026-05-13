@@ -38,7 +38,12 @@ try:
 except ImportError:
     DQNAgent = None  # type: ignore[assignment,misc]
     DQNTrainResult = None  # type: ignore[assignment,misc]
-from .ppo import PPOAgent, PPOTrainResult
+try:
+    from .ppo import PPOAgent, PPOTrainResult
+except ImportError:
+    PPOAgent = None  # type: ignore[assignment,misc]
+    PPOTrainResult = None  # type: ignore[assignment,misc]
+from .local_llm import LocalLLMAgent
 
 __all__ = [
     "TabularQAgent",
@@ -47,4 +52,5 @@ __all__ = [
     "DQNTrainResult",
     "PPOAgent",
     "PPOTrainResult",
+    "LocalLLMAgent",
 ]
