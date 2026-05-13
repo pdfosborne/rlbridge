@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib
 import math
 import os
+import random
 import sys
 import textwrap
 import uuid
@@ -44,6 +45,16 @@ class TrainConfig:
     max_steps: int
     seed: Optional[int]
     use_language_state: bool
+
+
+@dataclass
+class DeckMetaRewardConfig:
+    format: str
+    inner_agent_type: str
+    inner_train_episodes: int
+    inner_eval_episodes: int
+    matchups_per_deck: int
+    inner_max_steps: int
 
 
 class ProgressEnv:
@@ -307,6 +318,245 @@ def _fab_win_probabilities(obs: Any) -> tuple[float, float]:
     return agent_p, 1.0 - agent_p
 
 
+def _fab_outcome_score(obs: Any, *, terminated: bool) -> float:
+    """Return an agent-centric score in [0, 1] from a final FaB observation."""
+    if isinstance(obs, dict):
+        agent = obs.get("agent") if isinstance(obs.get("agent"), dict) else {}
+        opp = obs.get("opponent") if isinstance(obs.get("opponent"), dict) else {}
+        agent_life = float(agent.get("life", 0.0) or 0.0)
+        opp_life = float(opp.get("life", 0.0) or 0.0)
+
+        if terminated:
+            if opp_life <= 0 < agent_life:
+                return 1.0
+            if agent_life <= 0 < opp_life:
+                return 0.0
+            if agent_life == opp_life:
+                return 0.5
+
+    # For non-terminal or ambiguous outcomes, use the state win-probability estimate.
+    p_agent, _ = _fab_win_probabilities(obs)
+    return float(p_agent)
+
+
+def _deck_matchup_key(deck_option: dict[str, Any], matchup_option: dict[str, Any], cfg: DeckMetaRewardConfig) -> tuple[Any, ...]:
+    return (
+        str(deck_option.get("key", "")),
+        str(matchup_option.get("key", "")),
+        cfg.format,
+        cfg.inner_agent_type,
+        cfg.inner_train_episodes,
+        cfg.inner_eval_episodes,
+        cfg.inner_max_steps,
+    )
+
+
+def _evaluate_deck_vs_matchup(
+    *,
+    deck_option: dict[str, Any],
+    matchup_option: dict[str, Any],
+    cfg: DeckMetaRewardConfig,
+    play_hyperparams: dict[str, Any],
+    seed: Optional[int],
+) -> dict[str, Any]:
+    """Train a gameplay policy for one deck/matchup pair and report win-rate."""
+    env_kwargs = {
+        "render_mode": None,
+        "format": cfg.format,
+        "agent_hero_id": str(deck_option.get("hero_id")),
+        "opponent_hero_id": str(matchup_option.get("hero_id")),
+        "deck_size": int(deck_option.get("deck_size", 40) or 40),
+        "agent_deck_style": str(deck_option.get("style", "balanced")),
+        "opponent_deck_style": str(matchup_option.get("style", "balanced")),
+    }
+
+    play_agent = _build_agent(cfg.inner_agent_type, dict(play_hyperparams))
+    train_env = registry.create("FleshAndBlood-Talishar-v0", **env_kwargs)
+    try:
+        train_result = play_agent.train(
+            train_env,
+            n_episodes=cfg.inner_train_episodes,
+            max_steps=cfg.inner_max_steps,
+            seed=seed,
+        )
+    finally:
+        train_env.close()
+
+    eval_env = registry.create("FleshAndBlood-Talishar-v0", **env_kwargs)
+    eval_scores: list[float] = []
+    try:
+        base_seed = 0 if seed is None else int(seed)
+        for ep in range(cfg.inner_eval_episodes):
+            ep_seed = base_seed + 10_000 + ep
+            out = _run_eval_episode(eval_env, play_agent, max_steps=cfg.inner_max_steps, seed=ep_seed)
+            eval_scores.append(
+                _fab_outcome_score(
+                    out.get("final_observation"),
+                    terminated=bool(out.get("terminated", False)),
+                )
+            )
+    finally:
+        eval_env.close()
+
+    win_rate = (sum(eval_scores) / len(eval_scores)) if eval_scores else 0.5
+    return {
+        "win_rate": float(win_rate),
+        "train_mean_reward": float(train_result.mean_reward),
+        "train_best_reward": float(train_result.best_reward),
+    }
+
+
+class DeckBuildMetaRewardEnv:
+    """One-step outer environment: choose deck, receive inner-loop win-rate reward."""
+
+    def __init__(
+        self,
+        *,
+        cfg: DeckMetaRewardConfig,
+        play_hyperparams: dict[str, Any],
+        seed: Optional[int] = None,
+    ) -> None:
+        self._cfg = cfg
+        self._play_hyperparams = dict(play_hyperparams)
+        self._base_seed = seed
+        self._episode_idx = 0
+        self._rng = random.Random(seed)
+        self._cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+
+        deck_env = registry.create("FleshAndBlood-DeckBuild-v0", render_mode=None, format=cfg.format)
+        try:
+            reset_out = deck_env.reset(seed=seed, options={"format": cfg.format, "two_phase_deckbuild": True})
+            obs = reset_out.observation if hasattr(reset_out, "observation") else reset_out.get("observation", {})
+            options = obs.get("deck_options") if isinstance(obs, dict) else None
+            self._deck_options = list(options) if isinstance(options, list) else []
+        finally:
+            deck_env.close()
+
+        n_actions = max(1, len(self._deck_options))
+        self.action_space = {"type": "Discrete", "n": n_actions}
+        self.env_id = "FleshAndBlood-DeckBuildMetaReward-v0"
+
+    def _legal_actions(self) -> list[str]:
+        return [f"choose_deck {o.get('key', '')}" for o in self._deck_options]
+
+    def reset(self, seed: Any = None, options: Any = None) -> dict[str, Any]:
+        if seed is not None:
+            self._base_seed = int(seed)
+            self._rng.seed(self._base_seed)
+        self._episode_idx += 1
+        obs = {
+            "stage": "deck_selection",
+            "format": self._cfg.format,
+            "deck_options": self._deck_options,
+            "legal_actions": self._legal_actions(),
+            "meta_reward_mode": "inner_play_win_rate",
+        }
+        return {
+            "observation": obs,
+            "info": {
+                "legal_actions": obs["legal_actions"],
+                "stage": "deck_selection",
+                "meta_reward_mode": "inner_play_win_rate",
+            },
+        }
+
+    def step(self, action: Any) -> dict[str, Any]:
+        if not self._deck_options:
+            obs = {
+                "stage": "terminal",
+                "format": self._cfg.format,
+                "selected_deck": None,
+                "meta_reward": {"win_rate": 0.5, "error": "No deck options available"},
+                "legal_actions": [],
+            }
+            return {
+                "observation": obs,
+                "reward": 0.5,
+                "terminated": True,
+                "truncated": False,
+                "info": {"legal_actions": [], "meta_reward": obs["meta_reward"]},
+            }
+
+        if isinstance(action, int):
+            idx = int(action) % len(self._deck_options)
+        elif isinstance(action, str) and action.startswith("choose_deck "):
+            key = action.split(" ", 1)[1].strip()
+            idx = next((i for i, o in enumerate(self._deck_options) if str(o.get("key")) == key), 0)
+        else:
+            idx = 0
+
+        deck_choice = dict(self._deck_options[idx])
+        opponent_pool = [o for o in self._deck_options if str(o.get("hero_id")) != str(deck_choice.get("hero_id"))]
+        if not opponent_pool:
+            opponent_pool = list(self._deck_options)
+
+        if self._cfg.matchups_per_deck >= len(opponent_pool):
+            sampled = [dict(x) for x in opponent_pool]
+        else:
+            sampled = [dict(x) for x in self._rng.sample(opponent_pool, self._cfg.matchups_per_deck)]
+
+        details: list[dict[str, Any]] = []
+        for i, matchup in enumerate(sampled):
+            ep_seed = None if self._base_seed is None else int(self._base_seed) + self._episode_idx * 1000 + i
+            cache_key = _deck_matchup_key(deck_choice, matchup, self._cfg)
+            cached = self._cache.get(cache_key)
+            if cached is None:
+                stats = _evaluate_deck_vs_matchup(
+                    deck_option=deck_choice,
+                    matchup_option=matchup,
+                    cfg=self._cfg,
+                    play_hyperparams=self._play_hyperparams,
+                    seed=ep_seed,
+                )
+                self._cache[cache_key] = stats
+                used_cache = False
+            else:
+                stats = cached
+                used_cache = True
+
+            details.append(
+                {
+                    "matchup": f"{matchup.get('label', matchup.get('key', 'unknown'))}",
+                    "hero_id": matchup.get("hero_id"),
+                    "win_rate": float(stats["win_rate"]),
+                    "used_cache": used_cache,
+                }
+            )
+
+        win_rate = (sum(d["win_rate"] for d in details) / len(details)) if details else 0.5
+        meta = {
+            "win_rate": float(win_rate),
+            "selected_deck": deck_choice,
+            "matchups_evaluated": len(details),
+            "matchup_results": details,
+        }
+        obs = {
+            "stage": "terminal",
+            "format": self._cfg.format,
+            "selected_deck": deck_choice,
+            "meta_reward": meta,
+            "legal_actions": [],
+        }
+        return {
+            "observation": obs,
+            "reward": float(win_rate),
+            "terminated": True,
+            "truncated": False,
+            "info": {
+                "legal_actions": [],
+                "meta_reward": meta,
+            },
+        }
+
+    def close(self) -> None:
+        return None
+
+    def sample_action(self) -> int:
+        if not self._deck_options:
+            return 0
+        return self._rng.randrange(len(self._deck_options))
+
+
 def main() -> int:
     print("RLIP Interactive Trainer")
     print("=" * 80)
@@ -393,6 +643,29 @@ def main() -> int:
         use_language_state=use_language_state,
     )
 
+    deck_meta_cfg: Optional[DeckMetaRewardConfig] = None
+    if env_id == "FleshAndBlood-DeckBuild-v0" and _ask_bool(
+        "Use nested deck reward (terminal reward = inner gameplay win-rate)",
+        default=True,
+    ):
+        fmt_raw = input("Meta format [silver_age]: ").strip().lower()
+        meta_format = fmt_raw or "silver_age"
+        inner_agent_options = ["tabular_q", "dqn", "ppo"]
+        inner_idx = _select_from_list("Inner gameplay agent type", inner_agent_options, default_idx=2)
+        inner_agent_type = inner_agent_options[inner_idx]
+        inner_train_episodes = _ask_int("Inner train episodes per matchup", 60, minimum=1)
+        inner_eval_episodes = _ask_int("Inner eval episodes per matchup", 6, minimum=1)
+        matchups_per_deck = _ask_int("Matchups sampled per deck", 4, minimum=1)
+        inner_max_steps = _ask_int("Inner max steps per episode", max_steps, minimum=1)
+        deck_meta_cfg = DeckMetaRewardConfig(
+            format=meta_format,
+            inner_agent_type=inner_agent_type,
+            inner_train_episodes=inner_train_episodes,
+            inner_eval_episodes=inner_eval_episodes,
+            matchups_per_deck=matchups_per_deck,
+            inner_max_steps=inner_max_steps,
+        )
+
     hyperparams: dict[str, Any] = {"seed": seed, "gamma": 0.99}
     if agent_type in {"tabular_q", "dqn"}:
         hyperparams["epsilon"] = _ask_float("epsilon", 1.0, minimum=0.0)
@@ -433,20 +706,27 @@ def main() -> int:
         instructions=[instruction] if instruction else None,
     )
 
-    base_train_env = registry.create(env_id, render_mode=None)
-    train_env: Any = base_train_env
-    if match is not None and translator is not None and instruction:
-        train_env = _ShapedEnv(
-            env=train_env,
-            sub_goal_language=match.matched_language,
-            sub_goal_languages=[s[0] for s in match.matched_states],
-            bonus=sub_goal_bonus,
-            threshold=sub_goal_threshold,
-            translator=translator,
-            env_id=env_id,
+    if deck_meta_cfg is not None:
+        train_env = DeckBuildMetaRewardEnv(
+            cfg=deck_meta_cfg,
+            play_hyperparams={k: v for k, v in hyperparams.items() if v is not None},
+            seed=seed,
         )
-    if cfg.use_language_state and translator is not None:
-        train_env = _LangStateEnv(train_env, translator=translator, env_id=env_id)
+    else:
+        base_train_env = registry.create(env_id, render_mode=None)
+        train_env = base_train_env
+        if match is not None and translator is not None and instruction:
+            train_env = _ShapedEnv(
+                env=train_env,
+                sub_goal_language=match.matched_language,
+                sub_goal_languages=[s[0] for s in match.matched_states],
+                bonus=sub_goal_bonus,
+                threshold=sub_goal_threshold,
+                translator=translator,
+                env_id=env_id,
+            )
+        if cfg.use_language_state and translator is not None:
+            train_env = _LangStateEnv(train_env, translator=translator, env_id=env_id)
 
     progress_env = ProgressEnv(
         train_env,
@@ -468,6 +748,71 @@ def main() -> int:
     print(f"  mean_reward={train_result.mean_reward:.4f}")
     print(f"  best_reward={train_result.best_reward:.4f}")
     print(f"  final_epsilon={train_result.final_epsilon:.4f}")
+
+    if deck_meta_cfg is not None:
+        eval_env = DeckBuildMetaRewardEnv(
+            cfg=deck_meta_cfg,
+            play_hyperparams={k: v for k, v in hyperparams.items() if v is not None},
+            seed=seed,
+        )
+        try:
+            eval_metrics = _run_eval_episode(eval_env, agent, max_steps=1, seed=seed)
+        finally:
+            eval_env.close()
+
+        renders_dir = Path.home() / ".rlip" / "renders"
+        renders_dir.mkdir(parents=True, exist_ok=True)
+        safe_env = env_id.replace("/", "_").replace(" ", "_")
+        report_path = renders_dir / f"{safe_env}_{agent_type}_report.png"
+
+        comparison_runs = [
+            {
+                "label": f"{agent_type}:cli",
+                "train_result": train_result,
+                "metadata": {
+                    "env_id": env_id,
+                    "agent_id": run_agent_id,
+                    "agent_type": agent_type,
+                    "meta_reward": "inner_play_win_rate",
+                    "inner_agent_type": deck_meta_cfg.inner_agent_type,
+                },
+                "hyperparameters": {k: v for k, v in hyperparams.items() if v is not None},
+                "instruction": None,
+                "best_match_observation": None,
+                "best_match_similarity": None,
+            }
+        ]
+        fig = create_training_report(
+            comparison_runs=comparison_runs,
+            output_path=str(report_path),
+        )
+        fig.clf()
+
+        final_obs = eval_metrics.get("final_observation")
+        meta = final_obs.get("meta_reward", {}) if isinstance(final_obs, dict) else {}
+        selected = meta.get("selected_deck") or {}
+        selected_label = str(selected.get("label", "unknown"))
+        win_rate = float(meta.get("win_rate", eval_metrics.get("total_reward", 0.0)) or 0.0)
+
+        print("\n" + "=" * 80)
+        print("Deck Meta-Training Summary")
+        print("=" * 80)
+        print(textwrap.dedent(
+            f"""
+            Environment:                 {env_id}
+            Agent (deckbuilder):         {agent_type}
+            Dashboard:                   {dashboard_url}
+            Meta reward mode:            inner gameplay win-rate
+            Inner agent:                 {deck_meta_cfg.inner_agent_type}
+            Inner train episodes:        {deck_meta_cfg.inner_train_episodes}
+            Inner eval episodes:         {deck_meta_cfg.inner_eval_episodes}
+            Matchups per deck:           {deck_meta_cfg.matchups_per_deck}
+            Selected deck (eval):        {selected_label}
+            Terminal reward / win-rate:  {win_rate:.2%}
+            Report PNG:                  {report_path}
+            """
+        ).strip())
+        return 0
 
     # Evaluation run
     eval_env = registry.create(env_id, render_mode=None)

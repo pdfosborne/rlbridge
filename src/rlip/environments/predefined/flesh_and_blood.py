@@ -27,6 +27,7 @@ competitive-rules implementation.
 from __future__ import annotations
 
 import base64
+import importlib
 import json
 import math
 import random
@@ -48,6 +49,18 @@ from ..base import RLIPEnvironment, RLIPEnvironmentFactory
 _FAB_DB_DIR = Path(__file__).with_name("card_db") / "flesh_and_blood"
 _CARDS_PATH = _FAB_DB_DIR / "cards.json"
 _HEROES_PATH = _FAB_DB_DIR / "heroes.json"
+_FABRARY_DECKS_PATH = _FAB_DB_DIR / "fabrary_decks.json"
+
+_FORMAT_ALIASES = {
+    "cc": "classic_constructed",
+    "classic_constructed": "classic_constructed",
+    "classic constructed": "classic_constructed",
+    "silver_age": "silver_age",
+    "silver age": "silver_age",
+    "sage": "silver_age",
+}
+
+_FAB_CUSTOM_TOOLS_REGISTERED = False
 
 
 @dataclass(frozen=True)
@@ -164,6 +177,10 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         opponent_hero_id: str = "hero_rhinar_reckless_rampage",
         max_turns: int = 60,
         deck_size: int = 36,
+        agent_deck_style: str = "balanced",
+        opponent_deck_style: str = "balanced",
+        format: str = "classic_constructed",
+        two_phase_deckbuild: bool = False,
         self_play: bool = False,
         render_mode: Optional[str] = None,
     ) -> None:
@@ -180,6 +197,10 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         self._opponent_hero_id = opponent_hero_id
         self._max_turns = max_turns
         self._deck_size = deck_size
+        self._agent_deck_style = str(agent_deck_style)
+        self._opponent_deck_style = str(opponent_deck_style)
+        self._format = self._normalize_format(format)
+        self._two_phase_deckbuild = bool(two_phase_deckbuild)
 
         self._players: list[PlayerState] = []
         self._turn = 0
@@ -190,6 +211,9 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         self._last_event = ""
         self._render_mode = render_mode
         self._self_play = self_play
+        self._selection_stage = False
+        self._selected_deck_option: Optional[dict[str, Any]] = None
+        self._selected_opponent_deck_option: Optional[dict[str, Any]] = None
 
     def reset(
         self,
@@ -202,37 +226,117 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         opts = options or {}
         self._agent_hero_id = str(opts.get("agent_hero_id", self._agent_hero_id))
         self._opponent_hero_id = str(opts.get("opponent_hero_id", self._opponent_hero_id))
+        self._agent_deck_style = str(opts.get("agent_deck_style", self._agent_deck_style))
+        self._opponent_deck_style = str(opts.get("opponent_deck_style", self._opponent_deck_style))
+        self._format = self._normalize_format(str(opts.get("format", self._format)))
+        self._two_phase_deckbuild = bool(opts.get("two_phase_deckbuild", self._two_phase_deckbuild))
         self._max_turns = int(opts.get("max_turns", self._max_turns))
         self._deck_size = int(opts.get("deck_size", self._deck_size))
 
-        self._players = [
-            self._new_player(self._heroes[self._agent_hero_id], hero_slot=0),
-            self._new_player(self._heroes[self._opponent_hero_id], hero_slot=1),
-        ]
+        min_cards, max_cards = self._format_deck_bounds()
+        self._deck_size = max(min_cards, min(self._deck_size, max_cards))
 
-        self._turn = 1
-        self._active_player = 0
-        self._phase = "action"
         self._pending_combat = None
-        self._last_event = "Game start"
+        self._selected_deck_option = None
+        self._selected_opponent_deck_option = None
 
-        self._draw_up(0)
-        self._draw_up(1)
-        self._start_turn(0)
+        if self._two_phase_deckbuild:
+            self._players = []
+            self._turn = 0
+            self._active_player = 0
+            self._phase = "deck_selection"
+            self._selection_stage = True
+            self._last_event = "Select a deck to begin the match"
+        else:
+            self._selection_stage = False
+            self._start_match(
+                agent_hero_id=self._agent_hero_id,
+                opponent_hero_id=self._opponent_hero_id,
+                agent_deck_style=self._agent_deck_style,
+                opponent_deck_style=self._opponent_deck_style,
+            )
 
         self._initialized = True
         return ResetResult(
             observation=self._observation(),
             info={
                 "legal_actions": self._legal_actions(),
-                "agent_hero": self._players[0].hero.name,
-                "opponent_hero": self._players[1].hero.name,
+                "agent_hero": (self._players[0].hero.name if self._players else None),
+                "opponent_hero": (self._players[1].hero.name if self._players else None),
+                "format": self._format,
+                "stage": ("deck_selection" if self._selection_stage else "play"),
             },
         )
 
     def step(self, action: Any) -> StepResult:
         if not self._initialized:
             raise RuntimeError("Call reset() before step().")
+
+        if self._selection_stage:
+            legal = self._legal_actions()
+            parsed = self._normalize_action(action)
+            if parsed not in legal:
+                if isinstance(action, int) and legal:
+                    parsed = legal[action % len(legal)]
+                else:
+                    return StepResult(
+                        observation=self._observation(),
+                        reward=-0.1,
+                        terminated=False,
+                        truncated=False,
+                        info={
+                            "error": f"Illegal action {parsed!r}",
+                            "legal_actions": legal,
+                        },
+                    )
+
+            choice_key = parsed.split(" ", 1)[1]
+            choice = next((o for o in self._deck_options_for_format() if o["key"] == choice_key), None)
+            if choice is None:
+                return StepResult(
+                    observation=self._observation(),
+                    reward=-0.1,
+                    terminated=False,
+                    truncated=False,
+                    info={"error": f"Unknown deck option: {choice_key}", "legal_actions": legal},
+                )
+
+            self._selected_deck_option = dict(choice)
+            self._agent_hero_id = str(choice["hero_id"])
+            self._deck_size = int(choice["deck_size"])
+
+            opp_choice = self._sample_opponent_matchup(agent_hero_id=self._agent_hero_id)
+            self._selected_opponent_deck_option = dict(opp_choice)
+            self._opponent_hero_id = str(opp_choice["hero_id"])
+
+            self._selection_stage = False
+            # Pass pre-resolved card IDs when a fabrary deck option was chosen.
+            agent_card_ids: Optional[list[str]] = choice.get("_card_ids")  # type: ignore[assignment]
+            opp_card_ids: Optional[list[str]] = opp_choice.get("_card_ids")  # type: ignore[assignment]
+            self._start_match(
+                agent_hero_id=self._agent_hero_id,
+                opponent_hero_id=self._opponent_hero_id,
+                agent_deck_style=str(choice["style"]),
+                opponent_deck_style=str(opp_choice["style"]),
+                agent_deck_ids=agent_card_ids,
+                opponent_deck_ids=opp_card_ids,
+            )
+            self._last_event = f"Deck selected: {choice['label']} | Matchup: {opp_choice['label']}"
+
+            info = {
+                "legal_actions": self._legal_actions(),
+                "phase": self._phase,
+                "last_event": self._last_event,
+                "turn": self._turn,
+                "stage": "play",
+            }
+            return StepResult(
+                observation=self._observation(),
+                reward=0.0,
+                terminated=False,
+                truncated=False,
+                info=info,
+            )
 
         legal = self._legal_actions()
         parsed = self._normalize_action(action)
@@ -335,7 +439,12 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         return TextSpace(min_length=1, max_length=32)
 
     def sample_action(self) -> str:
-        if not self._initialized or len(self._players) < 2:
+        if not self._initialized:
+            return "pass"
+        if self._selection_stage:
+            legal = self._legal_actions()
+            return self._rng.choice(legal) if legal else "pass"
+        if len(self._players) < 2:
             return "pass"
         legal = self._legal_actions()
         return self._rng.choice(legal) if legal else "pass"
@@ -383,11 +492,25 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         def _text(x: int, y: int, msg: str, font: Any, fill: tuple[int, int, int]) -> None:
             draw.text((x, y), msg, fill=fill, font=font)
 
+        if obs.get("stage") == "deck_selection":
+            _text(24, 20, "Flesh and Blood (Talishar-inspired)", font_title, fg)
+            _text(24, 58, f"Format: {obs['format']} | Stage: deck_selection", font_subtitle, sub)
+            _panel(20, 100, 1180, 680, panel)
+            _text(40, 128, "Choose a deck to start the episode", font_subtitle, accent)
+            for i, item in enumerate(obs.get("deck_options", [])[:12]):
+                _text(40, 170 + i * 34, f"[{i}] {item['label']} ({item['deck_size']} cards)", font_text, fg)
+            legal = ", ".join(obs.get("legal_actions", [])[:12])
+            _text(40, 640, f"Legal actions: {legal}", font_small, sub)
+            buf = BytesIO()
+            img.save(buf, format="PNG")
+            b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+            return RenderResult(mode="rgb_array", data=b64, width=width, height=height)
+
         _text(24, 20, "Flesh and Blood (Talishar-inspired)", font_title, fg)
         _text(
             24,
             58,
-            f"Turn {obs['turn']} | Phase: {obs['phase']} | Active: P{obs['active_player']}",
+            f"Turn {obs['turn']} | Format: {obs['format']} | Phase: {obs['phase']} | Active: P{obs['active_player']}",
             font_subtitle,
             sub,
         )
@@ -466,12 +589,15 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
         return RenderResult(mode="rgb_array", data=b64, width=width, height=height)
 
-    def _new_player(self, hero: Hero, hero_slot: int) -> PlayerState:
-        deck = self._build_deck(hero_slot)
+    def _new_player(self, hero: Hero, hero_slot: int, deck_style: str = "balanced", deck_ids: Optional[list[str]] = None) -> PlayerState:
+        if deck_ids is not None:
+            deck = list(deck_ids)
+        else:
+            deck = self._build_deck(hero, deck_style=deck_style)
         self._rng.shuffle(deck)
         return PlayerState(
             hero=hero,
-            life=hero.life,
+            life=self._starting_life(hero),
             resources=0,
             action_points=0,
             deck=deck,
@@ -479,43 +605,308 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
             discard=[],
         )
 
-    def _build_deck(self, hero_slot: int) -> list[str]:
-        warrior_pool = [
-            "warrior_savage_feast_red",
-            "warrior_snatch_red",
-            "warrior_hit_and_run_red",
-            "generic_raging_onslaught_red",
-            "generic_wounding_blow_red",
-            "generic_head_jab_red",
-            "generic_scar_for_a_scar_red",
-            "generic_red_pitch_card",
-            "generic_yellow_pitch_card",
-            "generic_blue_pitch_card",
-            "warrior_sink_below_red",
-            "warrior_fate_foreseen_red",
-            "warrior_unmovable_red",
-        ]
-        brute_pool = [
-            "brute_wild_ride_red",
-            "brute_pack_hunt_red",
-            "brute_wrecker_romp_red",
-            "generic_raging_onslaught_red",
-            "generic_wounding_blow_red",
-            "generic_head_jab_red",
-            "generic_scar_for_a_scar_red",
-            "generic_red_pitch_card",
-            "generic_yellow_pitch_card",
-            "generic_blue_pitch_card",
-            "warrior_sink_below_red",
-            "warrior_fate_foreseen_red",
-            "warrior_unmovable_red",
-        ]
+    def _build_deck(self, hero: Hero, deck_style: str = "balanced") -> list[str]:
+        candidates: list[Card] = []
+        for card in self._cards.values():
+            if not self._is_card_legal_for_format(card.id):
+                continue
+            if not self._is_card_compatible_with_hero(card, hero):
+                continue
+            if not self._is_deck_candidate(card):
+                continue
+            candidates.append(card)
 
-        pool = warrior_pool if hero_slot == 0 else brute_pool
+        if not candidates:
+            raise ValueError(f"No legal cards available for hero={hero.name!r} format={self._format}")
+
+        if deck_style == "aggro":
+            ranked = sorted(
+                candidates,
+                key=lambda c: (
+                    1 if "attack_action" in c.card_types else 0,
+                    c.power,
+                    -c.cost,
+                    c.defense,
+                ),
+                reverse=True,
+            )
+        elif deck_style == "control":
+            ranked = sorted(
+                candidates,
+                key=lambda c: (
+                    c.defense,
+                    c.pitch,
+                    1 if "defense_reaction" in c.card_types else 0,
+                    1 if "attack_action" in c.card_types else 0,
+                ),
+                reverse=True,
+            )
+        else:
+            ranked = sorted(
+                candidates,
+                key=lambda c: (
+                    (c.power + c.defense),
+                    c.pitch,
+                    1 if "attack_action" in c.card_types else 0,
+                ),
+                reverse=True,
+            )
+
+        copy_limit = 2 if self._format == "silver_age" else 3
         deck: list[str] = []
+        counts: dict[str, int] = {}
+
         while len(deck) < self._deck_size:
-            deck.extend(pool)
+            added_this_pass = False
+            for card in ranked:
+                cid = card.id
+                if counts.get(cid, 0) >= copy_limit:
+                    continue
+                deck.append(cid)
+                counts[cid] = counts.get(cid, 0) + 1
+                added_this_pass = True
+                if len(deck) >= self._deck_size:
+                    break
+            if not added_this_pass:
+                deck.append(self._rng.choice(ranked).id)
+
         return deck[: self._deck_size]
+
+    def _normalize_format(self, fmt: str) -> str:
+        normalized = _FORMAT_ALIASES.get(str(fmt).strip().lower())
+        if normalized is None:
+            allowed = ", ".join(sorted(set(_FORMAT_ALIASES.values())))
+            raise ValueError(f"Unknown format {fmt!r}. Expected one of: {allowed}")
+        return normalized
+
+    def _format_deck_bounds(self) -> tuple[int, int]:
+        if self._format == "silver_age":
+            return 40, 55
+        return 60, 80
+
+    def _deck_options_for_format(self) -> list[dict[str, Any]]:
+        min_cards, max_cards = self._format_deck_bounds()
+        secondary_size = min(max_cards, min_cards + 5)
+        options: list[dict[str, Any]] = []
+        for hero in self._hero_pool_for_format():
+            slug = hero.id.replace("hero_", "")
+            options.append(
+                {
+                    "key": f"{slug}_aggro",
+                    "label": f"{hero.name} Aggro",
+                    "hero_id": hero.id,
+                    "style": "aggro",
+                    "deck_size": min_cards,
+                }
+            )
+            options.append(
+                {
+                    "key": f"{slug}_control",
+                    "label": f"{hero.name} Control",
+                    "hero_id": hero.id,
+                    "style": "control",
+                    "deck_size": secondary_size,
+                }
+            )
+        # Append fabrary deck options (distinct keys prefixed with "fab_")
+        options.extend(self._fabrary_deck_options_for_format())
+        return options
+
+    def _sample_opponent_matchup(self, agent_hero_id: str) -> dict[str, Any]:
+        options = self._deck_options_for_format()
+        candidates = [o for o in options if str(o["hero_id"]) != agent_hero_id]
+        if not candidates:
+            candidates = options
+        return dict(self._rng.choice(candidates))
+
+    # ------------------------------------------------------------------
+    # Fabrary deck database
+    # ------------------------------------------------------------------
+
+    def _load_fabrary_db(self) -> list[dict[str, Any]]:
+        """Load and return raw deck entries from fabrary_decks.json."""
+        if not _FABRARY_DECKS_PATH.exists():
+            return []
+        try:
+            data = json.loads(_FABRARY_DECKS_PATH.read_text(encoding="utf-8"))
+            return list(data.get("decks", []))
+        except Exception:
+            return []
+
+    def _resolve_fabrary_deck(self, deck_entry: dict[str, Any]) -> list[str]:
+        """Map a fabrary deck entry to a list of card IDs legal for the current format.
+
+        Strategy:
+        - For each {name, count} entry look up all pitch versions of that card
+          that are legal and compatible with the hero.
+        - Include up to ``count`` copies of *each* pitch version found.
+        - Apply the per-card-ID copy limit (2 for silver_age, 3 for CC).
+        - If the list exceeds ``max_deck_size`` it is randomly trimmed.
+        - If it falls below ``min_deck_size`` it is padded with generic filler.
+        """
+        hero_id = str(deck_entry.get("hero_id", ""))
+        if hero_id not in self._heroes:
+            return []
+        hero = self._heroes[hero_id]
+
+        # Build name → [Card, ...] lookup restricted to this hero + format.
+        by_name: dict[str, list[Card]] = {}
+        for card in self._cards.values():
+            if not self._is_card_legal_for_format(card.id):
+                continue
+            if not self._is_deck_candidate(card):
+                continue
+            if not self._is_card_compatible_with_hero(card, hero):
+                continue
+            by_name.setdefault(card.name.lower(), []).append(card)
+
+        copy_limit = 2 if self._format == "silver_age" else 3
+        deck: list[str] = []
+
+        for entry in deck_entry.get("cards", []):
+            raw_name = str(entry.get("name", "")).strip()
+            count = max(1, int(entry.get("count", 1)))
+            matches = by_name.get(raw_name.lower(), [])
+            if not matches:
+                continue  # card not in DB or not legal/compatible for this hero+format
+            per_copy = min(count, copy_limit)
+            # Sort pitch=1 (red) first so trimming preserves the strongest copies.
+            for card in sorted(matches, key=lambda c: c.pitch):
+                deck.extend([card.id] * per_copy)
+
+        if not deck:
+            return []
+
+        min_cards, max_cards = self._format_deck_bounds()
+
+        # Trim excess randomly if deck exceeds format maximum.
+        if len(deck) > max_cards:
+            self._rng.shuffle(deck)
+            deck = deck[:max_cards]
+
+        # Pad below minimum with generic legal filler cards.
+        if len(deck) < min_cards:
+            existing_ids = set(deck)
+            filler_pool = [
+                c for c in self._cards.values()
+                if self._is_card_legal_for_format(c.id)
+                and self._is_deck_candidate(c)
+                and self._is_card_compatible_with_hero(c, hero)
+                and c.id not in existing_ids
+            ]
+            self._rng.shuffle(filler_pool)
+            for filler in filler_pool:
+                if len(deck) >= min_cards:
+                    break
+                deck.append(filler.id)
+
+        return deck
+
+    def _fabrary_deck_options_for_format(self) -> list[dict[str, Any]]:
+        """Return deck option dicts for all fabrary decks matching the current format.
+
+        Each option has the same shape as procedural options plus extra fields:
+        ``source``, ``source_url``, ``description``, and ``_card_ids``
+        (the pre-resolved card ID list used by ``_new_player``).
+        Keys are prefixed with ``"fab_"`` to avoid collisions with procedural keys.
+        """
+        raw_decks = self._load_fabrary_db()
+        options: list[dict[str, Any]] = []
+        for deck_entry in raw_decks:
+            if str(deck_entry.get("format", "")) != self._format:
+                continue
+            hero_id = str(deck_entry.get("hero_id", ""))
+            if hero_id not in self._heroes:
+                continue
+            card_ids = self._resolve_fabrary_deck(deck_entry)
+            if not card_ids:
+                continue
+            options.append(
+                {
+                    "key": deck_entry["id"],
+                    "label": deck_entry.get("name", deck_entry["id"]),
+                    "hero_id": hero_id,
+                    "style": str(deck_entry.get("style", "balanced")),
+                    "deck_size": len(card_ids),
+                    "source": "fabrary",
+                    "source_url": deck_entry.get("source_url", ""),
+                    "description": deck_entry.get("description", ""),
+                    "_card_ids": card_ids,
+                }
+            )
+        return options
+
+    def _start_match(
+        self,
+        *,
+        agent_hero_id: str,
+        opponent_hero_id: str,
+        agent_deck_style: str,
+        opponent_deck_style: str,
+        agent_deck_ids: Optional[list[str]] = None,
+        opponent_deck_ids: Optional[list[str]] = None,
+    ) -> None:
+        self._players = [
+            self._new_player(self._heroes[agent_hero_id], hero_slot=0, deck_style=agent_deck_style, deck_ids=agent_deck_ids),
+            self._new_player(self._heroes[opponent_hero_id], hero_slot=1, deck_style=opponent_deck_style, deck_ids=opponent_deck_ids),
+        ]
+        self._turn = 1
+        self._active_player = 0
+        self._phase = "action"
+        self._pending_combat = None
+        self._last_event = "Game start"
+        self._draw_up(0)
+        self._draw_up(1)
+        self._start_turn(0)
+
+    def _starting_life(self, hero: Hero) -> int:
+        # Talishar profile: Silver Age uses young-hero life profile.
+        if self._format == "silver_age":
+            return min(hero.life, 20)
+        return hero.life
+
+    def _is_deck_candidate(self, card: Card) -> bool:
+        if "hero" in card.card_types:
+            return False
+        if "attack_action" in card.card_types:
+            return True
+        if card.defense > 0:
+            return True
+        return False
+
+    def _is_card_compatible_with_hero(self, card: Card, hero: Hero) -> bool:
+        card_class = (card.card_class or "Generic").strip().upper()
+        hero_class = (hero.hero_class or "Generic").strip().upper()
+        if card_class not in {"", "GENERIC", "NONE"} and card_class != hero_class:
+            return False
+
+        card_talent = (card.talent or "").strip().upper()
+        hero_talent = (hero.talent or "").strip().upper()
+        if card_talent not in {"", "NONE"} and card_talent != hero_talent:
+            return False
+
+        return True
+
+    def _hero_pool_for_format(self) -> list[Hero]:
+        heroes = list(self._heroes.values())
+        if self._format == "silver_age":
+            filtered = [h for h in heroes if h.life < 30]
+        else:
+            filtered = [h for h in heroes if h.life >= 30]
+        if not filtered:
+            filtered = heroes
+        filtered.sort(key=lambda h: h.name.lower())
+        return filtered
+
+    def _is_card_legal_for_format(self, card_id: str) -> bool:
+        card = self._cards[card_id]
+        if self._format == "classic_constructed":
+            return str(card.legality.get("classic_constructed", "legal")).lower() == "legal"
+
+        if self._format == "silver_age":
+            return str(card.legality.get("silver_age", "banned")).lower() == "legal"
+
+        return True
 
     def _draw_card(self, player_idx: int) -> bool:
         p = self._players[player_idx]
@@ -805,6 +1196,8 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         self._opponent_turn()
 
     def _legal_actions(self) -> list[str]:
+        if self._selection_stage:
+            return [f"choose_deck {o['key']}" for o in self._deck_options_for_format()]
         if not self._initialized or len(self._players) < 2:
             return ["pass"]
         if self._is_terminal():
@@ -848,6 +1241,8 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         return self._players[0].life <= 0 or self._players[1].life <= 0
 
     def _normalize_action(self, action: Any) -> str:
+        if self._selection_stage and isinstance(action, str):
+            return action.strip().lower()
         if isinstance(action, int):
             if self._phase == "action":
                 return f"play {action}"
@@ -867,6 +1262,20 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         return text
 
     def _observation(self) -> dict[str, Any]:
+        if self._selection_stage:
+            return {
+                "turn": self._turn,
+                "format": self._format,
+                "stage": "deck_selection",
+                "phase": self._phase,
+                "active_player": self._active_player,
+                "deck_options": self._deck_options_for_format(),
+                "selected_deck": self._selected_deck_option,
+                "matchup": self._selected_opponent_deck_option,
+                "legal_actions": self._legal_actions(),
+                "last_event": self._last_event,
+            }
+
         agent = self._players[0]
         opp = self._players[1]
 
@@ -899,8 +1308,12 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
 
         return {
             "turn": self._turn,
+            "format": self._format,
+            "stage": "play",
             "phase": self._phase,
             "active_player": self._active_player,
+            "selected_deck": self._selected_deck_option,
+            "matchup": self._selected_opponent_deck_option,
             "agent": {
                 "hero": agent.hero.name,
                 "life": agent.life,
@@ -931,6 +1344,9 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
         """
         if obs is None:
             obs = self._observation()
+
+        if obs.get("stage") == "deck_selection":
+            return 0.5, 0.5
 
         agent = obs.get("agent") if isinstance(obs.get("agent"), dict) else {}
         opp = obs.get("opponent") if isinstance(obs.get("opponent"), dict) else {}
@@ -991,10 +1407,21 @@ class FleshAndBloodEnvironment(RLIPEnvironment):
 
     def _render_text(self) -> str:
         obs = self._observation()
+        if obs.get("stage") == "deck_selection":
+            lines = [
+                "Flesh and Blood (Talishar-inspired)",
+                f"Format: {obs['format']} | Stage: deck_selection",
+                "Choose a deck:",
+            ]
+            for item in obs.get("deck_options", []):
+                lines.append(f"  - {item['label']} ({item['deck_size']} cards) -> choose_deck {item['key']}")
+            lines.append("Legal actions: " + ", ".join(obs.get("legal_actions", [])))
+            return "\n".join(lines)
+
         p_agent, p_opp = self._estimate_win_probabilities(obs)
         lines = [
             "Flesh and Blood (Talishar-inspired)",
-            f"Turn: {obs['turn']} | Phase: {obs['phase']} | Active: P{obs['active_player']}",
+            f"Turn: {obs['turn']} | Format: {obs['format']} | Phase: {obs['phase']} | Active: P{obs['active_player']}",
             f"Agent ({obs['agent']['hero']}): life={obs['agent']['life']} hand={len(obs['agent']['hand'])} resources={obs['agent']['resources']} AP={obs['agent']['action_points']}",
             f"Opponent ({obs['opponent']['hero']}): life={obs['opponent']['life']} hand={obs['opponent']['hand_size']} resources={obs['opponent']['resources']} AP={obs['opponent']['action_points']}",
             f"Win % | Agent: {p_agent:.1%}  Opponent: {p_opp:.1%}",
@@ -1020,6 +1447,8 @@ class FleshAndBloodFactory(RLIPEnvironmentFactory):
         opponent_hero_id: str = "hero_rhinar_reckless_rampage",
         max_turns: int = 60,
         deck_size: int = 36,
+        format: str = "classic_constructed",
+        two_phase_deckbuild: bool = False,
         self_play: bool = False,
     ) -> None:
         self._env_id = env_id
@@ -1027,6 +1456,8 @@ class FleshAndBloodFactory(RLIPEnvironmentFactory):
         self._opponent_hero_id = opponent_hero_id
         self._max_turns = max_turns
         self._deck_size = deck_size
+        self._format = format
+        self._two_phase_deckbuild = two_phase_deckbuild
         self._self_play = self_play
 
     @property
@@ -1046,6 +1477,7 @@ class FleshAndBloodFactory(RLIPEnvironmentFactory):
                 "card-game",
                 "turn-based",
                 "simulator",
+                *( ["deck-selection"] if self._two_phase_deckbuild else [] ),
                 *(["self-play"] if self._self_play else []),
             ],
             namespace="flesh_and_blood",
@@ -1065,6 +1497,8 @@ class FleshAndBloodFactory(RLIPEnvironmentFactory):
             opponent_hero_id=kwargs.get("opponent_hero_id", self._opponent_hero_id),
             max_turns=int(kwargs.get("max_turns", self._max_turns)),
             deck_size=int(kwargs.get("deck_size", self._deck_size)),
+            format=str(kwargs.get("format", self._format)),
+            two_phase_deckbuild=bool(kwargs.get("two_phase_deckbuild", self._two_phase_deckbuild)),
             self_play=bool(kwargs.get("self_play", self._self_play)),
             render_mode=render_mode,
         )
@@ -1075,7 +1509,451 @@ FLESH_AND_BLOOD_SELFPLAY_V0 = FleshAndBloodFactory(
     "FleshAndBlood-SelfPlay-v0",
     self_play=True,
 )
+FLESH_AND_BLOOD_DECKBUILD_V0 = FleshAndBloodFactory(
+    "FleshAndBlood-DeckBuild-v0",
+    two_phase_deckbuild=True,
+)
 ALL_FAB_FACTORIES: list[FleshAndBloodFactory] = [
     FLESH_AND_BLOOD_TALISHAR_V0,
     FLESH_AND_BLOOD_SELFPLAY_V0,
+    FLESH_AND_BLOOD_DECKBUILD_V0,
 ]
+
+
+def register_mcp_tools(*, mcp: Any, registry: Any, log: Any) -> int:
+    """Register environment-specific MCP tools for Flesh and Blood.
+
+    This function is discovered and called by the MCP plugin at startup.
+    Returning an integer allows the plugin to report how many tools were added.
+    """
+    global _FAB_CUSTOM_TOOLS_REGISTERED
+    if _FAB_CUSTOM_TOOLS_REGISTERED:
+        return 0
+    if registry is None:
+        return 0
+
+    def _build_agent(agent_type: str, hyperparams: dict[str, Any]) -> Any:
+        if agent_type == "tabular_q":
+            mod = importlib.import_module("rlip.rl_agents.tabular_q")
+            return mod.TabularQAgent(
+                alpha=float(hyperparams.get("alpha", 0.1)),
+                gamma=float(hyperparams.get("gamma", 0.99)),
+                epsilon=float(hyperparams.get("epsilon", 1.0)),
+                epsilon_min=float(hyperparams.get("epsilon_min", 0.01)),
+                epsilon_decay=float(hyperparams.get("epsilon_decay", 0.995)),
+                seed=hyperparams.get("seed"),
+            )
+        if agent_type == "dqn":
+            mod = importlib.import_module("rlip.rl_agents.dqn")
+            return mod.DQNAgent(
+                hidden_size=int(hyperparams.get("hidden_size", 64)),
+                lr=float(hyperparams.get("lr", 1e-3)),
+                gamma=float(hyperparams.get("gamma", 0.99)),
+                epsilon=float(hyperparams.get("epsilon", 1.0)),
+                epsilon_min=float(hyperparams.get("epsilon_min", 0.01)),
+                epsilon_decay=float(hyperparams.get("epsilon_decay", 0.995)),
+                buffer_size=int(hyperparams.get("buffer_size", 10000)),
+                batch_size=int(hyperparams.get("batch_size", 64)),
+                target_update_freq=int(hyperparams.get("target_update_freq", 100)),
+                seed=hyperparams.get("seed"),
+            )
+        if agent_type == "ppo":
+            mod = importlib.import_module("rlip.rl_agents.ppo")
+            return mod.PPOAgent(
+                hidden_size=int(hyperparams.get("hidden_size", 64)),
+                lr_actor=float(hyperparams.get("lr_actor", 1e-3)),
+                lr_critic=float(hyperparams.get("lr_critic", 1e-3)),
+                gamma=float(hyperparams.get("gamma", 0.99)),
+                lam=float(hyperparams.get("lam", 0.95)),
+                clip_eps=float(hyperparams.get("clip_eps", 0.2)),
+                n_steps=int(hyperparams.get("n_steps", 256)),
+                ppo_epochs=int(hyperparams.get("ppo_epochs", 4)),
+                mini_batch_size=int(hyperparams.get("mini_batch_size", 64)),
+                seed=hyperparams.get("seed"),
+            )
+        raise ValueError(f"Unsupported agent type: {agent_type!r}")
+
+    def _run_eval_episode(env: Any, agent: Any, max_steps: int, seed: Optional[int]) -> dict[str, Any]:
+        reset_out = env.reset(seed=seed)
+        obs = reset_out.observation if hasattr(reset_out, "observation") else reset_out.get("observation", reset_out)
+        total_reward = 0.0
+        steps = 0
+        terminated = False
+        truncated = False
+
+        for step in range(1, max_steps + 1):
+            if hasattr(agent, "act_greedy"):
+                action = agent.act_greedy(obs)
+            else:
+                action = agent.act(obs)
+            out = env.step(action)
+            obs = out.observation if hasattr(out, "observation") else out.get("observation", obs)
+            reward = float(out.reward if hasattr(out, "reward") else out.get("reward", 0.0))
+            terminated = bool(out.terminated if hasattr(out, "terminated") else out.get("terminated", False))
+            truncated = bool(out.truncated if hasattr(out, "truncated") else out.get("truncated", False))
+            total_reward += reward
+            steps = step
+            if terminated or truncated:
+                break
+
+        return {
+            "steps": steps,
+            "total_reward": total_reward,
+            "terminated": terminated,
+            "truncated": truncated,
+            "final_observation": obs,
+        }
+
+    def _fab_win_probabilities(obs: Any) -> tuple[float, float]:
+        if not isinstance(obs, dict):
+            return 0.5, 0.5
+
+        agent = obs.get("agent") if isinstance(obs.get("agent"), dict) else {}
+        opp = obs.get("opponent") if isinstance(obs.get("opponent"), dict) else {}
+
+        agent_life = float(agent.get("life", 0.0))
+        opp_life = float(opp.get("life", 0.0))
+
+        if opp_life <= 0 < agent_life:
+            return 1.0, 0.0
+        if agent_life <= 0 < opp_life:
+            return 0.0, 1.0
+
+        agent_hand_size = len(agent.get("hand", [])) if isinstance(agent.get("hand"), list) else 0
+        opp_hand_size = int(opp.get("hand_size", 0) or 0)
+
+        agent_resources = float(agent.get("resources", 0.0))
+        opp_resources = float(opp.get("resources", 0.0))
+        agent_ap = float(agent.get("action_points", 0.0))
+        opp_ap = float(opp.get("action_points", 0.0))
+        agent_deck = float(agent.get("deck", 0.0))
+        opp_deck = float(opp.get("deck", 0.0))
+
+        agent_score = (
+            1.8 * agent_life
+            + 1.0 * agent_hand_size
+            + 0.6 * agent_resources
+            + 0.8 * agent_ap
+            + 0.05 * agent_deck
+        )
+        opp_score = (
+            1.8 * opp_life
+            + 1.0 * opp_hand_size
+            + 0.6 * opp_resources
+            + 0.8 * opp_ap
+            + 0.05 * opp_deck
+        )
+
+        pending = obs.get("pending_combat")
+        if isinstance(pending, dict):
+            atk = float(pending.get("attack_power", 0.0) or 0.0)
+            blk = float(pending.get("total_block", 0.0) or 0.0)
+            net = max(0.0, atk - blk)
+            attacker = int(pending.get("attacker", 0) or 0)
+            if attacker == 0:
+                agent_score += 1.5 * net
+            else:
+                opp_score += 1.5 * net
+
+        active_player = int(obs.get("active_player", 0) or 0)
+        if active_player == 0:
+            agent_score += 0.4
+        else:
+            opp_score += 0.4
+
+        diff = (agent_score - opp_score) / 8.0
+        agent_p = 1.0 / (1.0 + math.exp(-diff))
+        agent_p = max(0.0, min(1.0, agent_p))
+        return agent_p, 1.0 - agent_p
+
+    def _fab_outcome_score(obs: Any, *, terminated: bool) -> float:
+        if isinstance(obs, dict):
+            agent = obs.get("agent") if isinstance(obs.get("agent"), dict) else {}
+            opp = obs.get("opponent") if isinstance(obs.get("opponent"), dict) else {}
+            agent_life = float(agent.get("life", 0.0) or 0.0)
+            opp_life = float(opp.get("life", 0.0) or 0.0)
+            if terminated:
+                if opp_life <= 0 < agent_life:
+                    return 1.0
+                if agent_life <= 0 < opp_life:
+                    return 0.0
+                if agent_life == opp_life:
+                    return 0.5
+        p_agent, _ = _fab_win_probabilities(obs)
+        return float(p_agent)
+
+    def _get_deck_options(format_name: str, seed: Optional[int]) -> list[dict[str, Any]]:
+        env = registry.create("FleshAndBlood-DeckBuild-v0", render_mode=None, format=format_name)
+        try:
+            reset_out = env.reset(seed=seed, options={"format": format_name, "two_phase_deckbuild": True})
+            obs = reset_out.observation if hasattr(reset_out, "observation") else reset_out.get("observation", {})
+            options = obs.get("deck_options") if isinstance(obs, dict) else None
+            return list(options) if isinstance(options, list) else []
+        finally:
+            env.close()
+
+    def _evaluate_deck_vs_matchup(
+        *,
+        deck_option: dict[str, Any],
+        matchup_option: dict[str, Any],
+        format_name: str,
+        inner_agent_type: str,
+        inner_train_episodes: int,
+        inner_eval_episodes: int,
+        inner_max_steps: int,
+        seed: Optional[int],
+    ) -> dict[str, Any]:
+        env_kwargs: dict[str, Any] = {
+            "render_mode": None,
+            "format": format_name,
+            "agent_hero_id": str(deck_option.get("hero_id")),
+            "opponent_hero_id": str(matchup_option.get("hero_id")),
+            "deck_size": int(deck_option.get("deck_size", 40) or 40),
+            "agent_deck_style": str(deck_option.get("style", "balanced")),
+            "opponent_deck_style": str(matchup_option.get("style", "balanced")),
+        }
+
+        agent = _build_agent(inner_agent_type, {})
+        train_env = registry.create("FleshAndBlood-Talishar-v0", **env_kwargs)
+        try:
+            train_result = agent.train(
+                train_env,
+                n_episodes=inner_train_episodes,
+                max_steps=inner_max_steps,
+                seed=seed,
+            )
+        finally:
+            train_env.close()
+
+        eval_env = registry.create("FleshAndBlood-Talishar-v0", **env_kwargs)
+        eval_scores: list[float] = []
+        try:
+            base_seed = 0 if seed is None else int(seed)
+            for ep in range(inner_eval_episodes):
+                ep_seed = base_seed + 10_000 + ep
+                out = _run_eval_episode(eval_env, agent, max_steps=inner_max_steps, seed=ep_seed)
+                eval_scores.append(
+                    _fab_outcome_score(
+                        out.get("final_observation"),
+                        terminated=bool(out.get("terminated", False)),
+                    )
+                )
+        finally:
+            eval_env.close()
+
+        win_rate = (sum(eval_scores) / len(eval_scores)) if eval_scores else 0.5
+        return {
+            "win_rate": float(win_rate),
+            "train_mean_reward": float(train_result.mean_reward),
+            "train_best_reward": float(train_result.best_reward),
+        }
+
+    @mcp.tool()
+    def fab_list_deck_options(
+        format_name: str = "silver_age",
+        seed: Optional[int] = None,
+    ) -> str:
+        """List all available hero/deck options for a Flesh and Blood format."""
+        try:
+            options = _get_deck_options(format_name, seed)
+        except Exception as exc:
+            log.exception("fab_list_deck_options error")
+            return f"Error listing deck options: {exc}"
+
+        result = {
+            "format": format_name,
+            "deck_options_count": len(options),
+            "deck_options": options,
+        }
+        return json.dumps(result, indent=2)
+
+    @mcp.tool()
+    def fab_estimate_win_probabilities(observation_json: str) -> str:
+        """Estimate win probabilities for both players from a FaB observation."""
+        try:
+            obs = json.loads(observation_json)
+        except json.JSONDecodeError as exc:
+            return f"Error: invalid JSON - {exc}"
+
+        try:
+            agent_p, opp_p = _fab_win_probabilities(obs)
+        except Exception as exc:
+            log.exception("fab_estimate_win_probabilities error")
+            return f"Error computing win probabilities: {exc}"
+
+        agent = obs.get("agent") if isinstance(obs.get("agent"), dict) else {}
+        opp = obs.get("opponent") if isinstance(obs.get("opponent"), dict) else {}
+
+        result = {
+            "agent_win_probability": round(agent_p, 4),
+            "opponent_win_probability": round(opp_p, 4),
+            "inputs": {
+                "agent_life": agent.get("life"),
+                "opponent_life": opp.get("life"),
+                "agent_hand_size": len(agent.get("hand", [])) if isinstance(agent.get("hand"), list) else agent.get("hand_size"),
+                "opponent_hand_size": opp.get("hand_size"),
+                "active_player": obs.get("active_player"),
+            },
+            "reasoning": (
+                "Logistic model over life totals (x1.8), hand size (x1.0), "
+                "resources (x0.6), action points (x0.8), deck size (x0.05), "
+                "pending combat net damage (x1.5), and initiative bonus (+/-0.4)."
+            ),
+        }
+        return json.dumps(result, indent=2)
+
+    @mcp.tool()
+    def fab_evaluate_deck_matchup(
+        deck_key: str,
+        matchup_key: str,
+        format_name: str = "silver_age",
+        inner_agent_type: str = "tabular_q",
+        inner_train_episodes: int = 50,
+        inner_eval_episodes: int = 10,
+        inner_max_steps: int = 200,
+        seed: Optional[int] = None,
+    ) -> str:
+        """Train and evaluate an inner gameplay agent for one FaB deck/matchup pair."""
+        try:
+            all_options = _get_deck_options(format_name, seed)
+        except Exception as exc:
+            return f"Error fetching deck options: {exc}"
+
+        deck_option = next((o for o in all_options if str(o.get("key")) == deck_key), None)
+        matchup_option = next((o for o in all_options if str(o.get("key")) == matchup_key), None)
+
+        if deck_option is None:
+            known = [str(o.get("key")) for o in all_options]
+            return (
+                f"Error: deck_key {deck_key!r} not found for format {format_name!r}.\n"
+                f"Known keys: {known}"
+            )
+        if matchup_option is None:
+            known = [str(o.get("key")) for o in all_options]
+            return (
+                f"Error: matchup_key {matchup_key!r} not found for format {format_name!r}.\n"
+                f"Known keys: {known}"
+            )
+
+        try:
+            stats = _evaluate_deck_vs_matchup(
+                deck_option=deck_option,
+                matchup_option=matchup_option,
+                format_name=format_name,
+                inner_agent_type=inner_agent_type,
+                inner_train_episodes=inner_train_episodes,
+                inner_eval_episodes=inner_eval_episodes,
+                inner_max_steps=inner_max_steps,
+                seed=seed,
+            )
+        except Exception as exc:
+            log.exception("fab_evaluate_deck_matchup error")
+            return f"Error evaluating deck matchup: {exc}"
+
+        result = {
+            "deck_key": deck_key,
+            "deck_label": deck_option.get("label", deck_key),
+            "matchup_key": matchup_key,
+            "matchup_label": matchup_option.get("label", matchup_key),
+            "format": format_name,
+            "inner_agent_type": inner_agent_type,
+            "inner_train_episodes": inner_train_episodes,
+            "inner_eval_episodes": inner_eval_episodes,
+            **stats,
+        }
+        return json.dumps(result, indent=2)
+
+    @mcp.tool()
+    def fab_meta_reward_for_deck(
+        deck_key: str,
+        format_name: str = "silver_age",
+        inner_agent_type: str = "tabular_q",
+        inner_train_episodes: int = 50,
+        inner_eval_episodes: int = 10,
+        matchups_per_deck: int = 3,
+        inner_max_steps: int = 200,
+        seed: Optional[int] = None,
+    ) -> str:
+        """Compute the meta-reward for a FaB deck by sampling matchups."""
+        try:
+            all_options = _get_deck_options(format_name, seed)
+        except Exception as exc:
+            return f"Error fetching deck options: {exc}"
+
+        deck_option = next((o for o in all_options if str(o.get("key")) == deck_key), None)
+        if deck_option is None:
+            known = [str(o.get("key")) for o in all_options]
+            return (
+                f"Error: deck_key {deck_key!r} not found for format {format_name!r}.\n"
+                f"Known keys: {known}"
+            )
+
+        opponent_pool = [o for o in all_options if str(o.get("hero_id")) != str(deck_option.get("hero_id"))]
+        if not opponent_pool:
+            opponent_pool = [o for o in all_options if str(o.get("key")) != deck_key]
+        if not opponent_pool:
+            opponent_pool = list(all_options)
+
+        rng = random.Random(seed)
+        if matchups_per_deck >= len(opponent_pool):
+            sampled = list(opponent_pool)
+        else:
+            sampled = rng.sample(opponent_pool, matchups_per_deck)
+
+        matchup_results: list[dict[str, Any]] = []
+        base_seed = 0 if seed is None else int(seed)
+
+        for i, matchup in enumerate(sampled):
+            ep_seed = base_seed + i * 1000
+            try:
+                stats = _evaluate_deck_vs_matchup(
+                    deck_option=deck_option,
+                    matchup_option=matchup,
+                    format_name=format_name,
+                    inner_agent_type=inner_agent_type,
+                    inner_train_episodes=inner_train_episodes,
+                    inner_eval_episodes=inner_eval_episodes,
+                    inner_max_steps=inner_max_steps,
+                    seed=ep_seed,
+                )
+                matchup_results.append(
+                    {
+                        "matchup_key": str(matchup.get("key", "")),
+                        "matchup_label": str(matchup.get("label", matchup.get("key", "unknown"))),
+                        "hero_id": matchup.get("hero_id"),
+                        "win_rate": float(stats["win_rate"]),
+                        "train_mean_reward": float(stats["train_mean_reward"]),
+                        "error": None,
+                    }
+                )
+            except Exception as exc:
+                log.exception("fab_meta_reward_for_deck matchup error")
+                matchup_results.append(
+                    {
+                        "matchup_key": str(matchup.get("key", "")),
+                        "matchup_label": str(matchup.get("label", "")),
+                        "hero_id": matchup.get("hero_id"),
+                        "win_rate": 0.5,
+                        "error": str(exc),
+                    }
+                )
+
+        valid = [r for r in matchup_results if r.get("error") is None]
+        meta_reward = (sum(r["win_rate"] for r in valid) / len(valid)) if valid else 0.5
+
+        result = {
+            "deck_key": deck_key,
+            "deck_label": deck_option.get("label", deck_key),
+            "format": format_name,
+            "inner_agent_type": inner_agent_type,
+            "inner_train_episodes": inner_train_episodes,
+            "inner_eval_episodes": inner_eval_episodes,
+            "matchups_per_deck": matchups_per_deck,
+            "meta_reward": round(meta_reward, 4),
+            "matchups_evaluated": len(matchup_results),
+            "matchup_results": matchup_results,
+        }
+        return json.dumps(result, indent=2)
+
+    _FAB_CUSTOM_TOOLS_REGISTERED = True
+    return 4

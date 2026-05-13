@@ -18,6 +18,7 @@ from .flesh_and_blood import (
     FleshAndBloodFactory,
     FLESH_AND_BLOOD_TALISHAR_V0,
     FLESH_AND_BLOOD_SELFPLAY_V0,
+    FLESH_AND_BLOOD_DECKBUILD_V0,
     ALL_FAB_FACTORIES,
 )
 
@@ -91,6 +92,7 @@ __all__ = [
     "FleshAndBloodFactory",
     "FLESH_AND_BLOOD_TALISHAR_V0",
     "FLESH_AND_BLOOD_SELFPLAY_V0",
+    "FLESH_AND_BLOOD_DECKBUILD_V0",
     "ALL_FAB_FACTORIES",
     # Chess (optional — requires python-chess)
     "ChessEnvironment",

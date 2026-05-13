@@ -1,5 +1,515 @@
 [
   {
+    "id": "hero_arakni",
+    "name": "Arakni",
+    "class": "Assassin",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_arakni_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_arakni_5l_p3d_7hru_7h3_cr4x",
+    "name": "Arakni, 5L!p3d 7hRu 7h3 cR4X",
+    "class": "Assassin",
+    "talent": "Chaos",
+    "life": 38,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_arakni_5l_p3d_7hru_7h3_cr4x_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_arakni_huntsman",
+    "name": "Arakni, Huntsman",
+    "class": "Assassin",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_arakni_huntsman_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_arakni_marionette",
+    "name": "Arakni, Marionette",
+    "class": "Assassin",
+    "talent": "Chaos",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_arakni_marionette_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_arakni_solitary_confinement",
+    "name": "Arakni, Solitary Confinement",
+    "class": "Assassin",
+    "talent": null,
+    "life": 19,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_arakni_solitary_confinement_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_arakni_web_of_deceit",
+    "name": "Arakni, Web of Deceit",
+    "class": "Assassin",
+    "talent": "Chaos",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_arakni_web_of_deceit_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_aurora",
+    "name": "Aurora",
+    "class": "Runeblade",
+    "talent": "Elemental",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_aurora_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_aurora_shooting_star",
+    "name": "Aurora, Shooting Star",
+    "class": "Runeblade",
+    "talent": "Elemental",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_aurora_shooting_star_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_azalea",
+    "name": "Azalea",
+    "class": "Ranger",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_azalea_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_azalea_ace_in_the_hole",
+    "name": "Azalea, Ace in the Hole",
+    "class": "Ranger",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_azalea_ace_in_the_hole_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_benji_the_piercing_wind",
+    "name": "Benji, the Piercing Wind",
+    "class": "Ninja",
+    "talent": null,
+    "life": 17,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_benji_the_piercing_wind_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_betsy",
+    "name": "Betsy",
+    "class": "Guardian",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_betsy_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_betsy_skin_in_the_game",
+    "name": "Betsy, Skin in the Game",
+    "class": "Guardian",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_betsy_skin_in_the_game_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_blaze_firemind",
+    "name": "Blaze, Firemind",
+    "class": "Wizard",
+    "talent": null,
+    "life": 17,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_blaze_firemind_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_bolfar_bear_hands",
+    "name": "Bolfar, Bear Hands",
+    "class": "Guardian",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_bolfar_bear_hands_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_boltyn",
+    "name": "Boltyn",
+    "class": "Warrior",
+    "talent": "Light",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_boltyn_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_bravo",
+    "name": "Bravo",
+    "class": "Guardian",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_bravo_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_bravo_flattering_showman",
+    "name": "Bravo, Flattering Showman",
+    "class": "Guardian",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_bravo_flattering_showman_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_bravo_showstopper",
+    "name": "Bravo, Showstopper",
+    "class": "Guardian",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_bravo_showstopper_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_bravo_star_of_the_show",
+    "name": "Bravo, Star of the Show",
+    "class": "Guardian",
+    "talent": "Elemental",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_bravo_star_of_the_show_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_brevant_civic_protector",
+    "name": "Brevant, Civic Protector",
+    "class": "Guardian",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_brevant_civic_protector_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_briar",
+    "name": "Briar",
+    "class": "Runeblade",
+    "talent": "Elemental",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_briar_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_briar_warden_of_thorns",
+    "name": "Briar, Warden of Thorns",
+    "class": "Runeblade",
+    "talent": "Elemental",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_briar_warden_of_thorns_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_brutus_summa_rudis",
+    "name": "Brutus, Summa Rudis",
+    "class": "Generic",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_brutus_summa_rudis_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_chane",
+    "name": "Chane",
+    "class": "Runeblade",
+    "talent": "Shadow",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_chane_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_chane_bound_by_shadow",
+    "name": "Chane, Bound by Shadow",
+    "class": "Runeblade",
+    "talent": "Shadow",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_chane_bound_by_shadow_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_cindra",
+    "name": "Cindra",
+    "class": "Ninja",
+    "talent": "Draconic",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_cindra_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_cindra_dracai_of_retribution",
+    "name": "Cindra, Dracai of Retribution",
+    "class": "Ninja",
+    "talent": "Draconic",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_cindra_dracai_of_retribution_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_dash",
+    "name": "Dash",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_dash_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_dash_i_o",
+    "name": "Dash I/O",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 36,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_dash_i_o_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_dash_database",
+    "name": "Dash, Database",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 18,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_dash_database_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_dash_inventor_extraordinaire",
+    "name": "Dash, Inventor Extraordinaire",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_dash_inventor_extraordinaire_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_data_doll_mkii",
+    "name": "Data Doll MKII",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 20,
+    "intellect": 3,
+    "weapon": {
+      "id": "weapon_data_doll_mkii_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_dorinthea",
+    "name": "Dorinthea",
+    "class": "Warrior",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_dorinthea_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
     "id": "hero_dorinthea_ironsong",
     "name": "Dorinthea Ironsong",
     "class": "Warrior",
@@ -7,11 +517,1046 @@
     "life": 40,
     "intellect": 4,
     "weapon": {
-      "id": "weapon_dawnblade",
-      "name": "Dawnblade",
+      "id": "weapon_dorinthea_ironsong_basic",
+      "name": "Basic Weapon",
       "attack": 3,
       "cost": 1,
-      "type_line": "Weapon - Sword"
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_dorinthea_quicksilver_prodigy",
+    "name": "Dorinthea, Quicksilver Prodigy",
+    "class": "Warrior",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_dorinthea_quicksilver_prodigy_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_dromai",
+    "name": "Dromai",
+    "class": "Illusionist",
+    "talent": "Draconic",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_dromai_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_dromai_ash_artist",
+    "name": "Dromai, Ash Artist",
+    "class": "Illusionist",
+    "talent": "Draconic",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_dromai_ash_artist_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_emperor_dracai_of_aesir",
+    "name": "Emperor, Dracai of Aesir",
+    "class": "Warrior",
+    "talent": "Draconic",
+    "life": 15,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_emperor_dracai_of_aesir_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_enigma",
+    "name": "Enigma",
+    "class": "Illusionist",
+    "talent": "Mystic",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_enigma_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_enigma_ledger_of_ancestry",
+    "name": "Enigma, Ledger of Ancestry",
+    "class": "Illusionist",
+    "talent": "Mystic",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_enigma_ledger_of_ancestry_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_enigma_new_moon",
+    "name": "Enigma, New Moon",
+    "class": "Illusionist",
+    "talent": "Mystic",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_enigma_new_moon_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_fai",
+    "name": "Fai",
+    "class": "Ninja",
+    "talent": "Draconic",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_fai_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_fai_rising_rebellion",
+    "name": "Fai, Rising Rebellion",
+    "class": "Ninja",
+    "talent": "Draconic",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_fai_rising_rebellion_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_fang",
+    "name": "Fang",
+    "class": "Warrior",
+    "talent": "Draconic",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_fang_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_fang_dracai_of_blades",
+    "name": "Fang, Dracai of Blades",
+    "class": "Warrior",
+    "talent": "Draconic",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_fang_dracai_of_blades_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_fightmaster_kox",
+    "name": "Fightmaster Kox",
+    "class": "Guardian",
+    "talent": null,
+    "life": 19,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_fightmaster_kox_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_florian",
+    "name": "Florian",
+    "class": "Runeblade",
+    "talent": "Elemental",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_florian_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_florian_rotwood_harbinger",
+    "name": "Florian, Rotwood Harbinger",
+    "class": "Runeblade",
+    "talent": "Elemental",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_florian_rotwood_harbinger_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_frankie_make_ends_meat",
+    "name": "Frankie, Make Ends Meat",
+    "class": "Generic",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_frankie_make_ends_meat_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_genis_wotchuneed",
+    "name": "Genis Wotchuneed",
+    "class": "Generic",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_genis_wotchuneed_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_gravy_bones",
+    "name": "Gravy Bones",
+    "class": "Generic",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_gravy_bones_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_gravy_bones_shipwrecked_looter",
+    "name": "Gravy Bones, Shipwrecked Looter",
+    "class": "Generic",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_gravy_bones_shipwrecked_looter_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_groundbreaker_crix",
+    "name": "Groundbreaker Crix",
+    "class": "Guardian",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_groundbreaker_crix_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_hala",
+    "name": "Hala",
+    "class": "Warrior",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_hala_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_hala_bladesaint_of_the_vow",
+    "name": "Hala, Bladesaint of the Vow",
+    "class": "Warrior",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_hala_bladesaint_of_the_vow_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_ira_crimson_haze",
+    "name": "Ira, Crimson Haze",
+    "class": "Ninja",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_ira_crimson_haze_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_ira_scarlet_revenger",
+    "name": "Ira, Scarlet Revenger",
+    "class": "Ninja",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_ira_scarlet_revenger_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_iyslander",
+    "name": "Iyslander",
+    "class": "Wizard",
+    "talent": "Elemental",
+    "life": 18,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_iyslander_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_iyslander_stormbind",
+    "name": "Iyslander, Stormbind",
+    "class": "Wizard",
+    "talent": "Elemental",
+    "life": 36,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_iyslander_stormbind_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_jarl_vetrei_i",
+    "name": "Jarl Vetrei\u00f0i",
+    "class": "Guardian",
+    "talent": "Elemental",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_jarl_vetrei_i_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kano",
+    "name": "Kano",
+    "class": "Wizard",
+    "talent": null,
+    "life": 15,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kano_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kano_dracai_of_aether",
+    "name": "Kano, Dracai of Aether",
+    "class": "Wizard",
+    "talent": null,
+    "life": 30,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kano_dracai_of_aether_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kassai",
+    "name": "Kassai",
+    "class": "Warrior",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kassai_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kassai_of_the_golden_sand",
+    "name": "Kassai of the Golden Sand",
+    "class": "Warrior",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kassai_of_the_golden_sand_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kassai_cintari_sellsword",
+    "name": "Kassai, Cintari Sellsword",
+    "class": "Warrior",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kassai_cintari_sellsword_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_katsu",
+    "name": "Katsu",
+    "class": "Ninja",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_katsu_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_katsu_the_wanderer",
+    "name": "Katsu, the Wanderer",
+    "class": "Ninja",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_katsu_the_wanderer_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kavdaen_trader_of_skins",
+    "name": "Kavdaen, Trader of Skins",
+    "class": "Generic",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kavdaen_trader_of_skins_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kayo",
+    "name": "Kayo",
+    "class": "Brute",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kayo_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kayo_armed_and_dangerous",
+    "name": "Kayo, Armed and Dangerous",
+    "class": "Brute",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kayo_armed_and_dangerous_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kayo_berserker_runt",
+    "name": "Kayo, Berserker Runt",
+    "class": "Brute",
+    "talent": null,
+    "life": 19,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kayo_berserker_runt_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kayo_strong_arm",
+    "name": "Kayo, Strong-arm",
+    "class": "Brute",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kayo_strong_arm_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_kayo_underhanded_cheat",
+    "name": "Kayo, Underhanded Cheat",
+    "class": "Brute",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_kayo_underhanded_cheat_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_levia",
+    "name": "Levia",
+    "class": "Brute",
+    "talent": "Shadow",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_levia_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_levia_shadowborn_abomination",
+    "name": "Levia, Shadowborn Abomination",
+    "class": "Brute",
+    "talent": "Shadow",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_levia_shadowborn_abomination_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_lexi",
+    "name": "Lexi",
+    "class": "Ranger",
+    "talent": "Elemental",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_lexi_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_lexi_livewire",
+    "name": "Lexi, Livewire",
+    "class": "Ranger",
+    "talent": "Elemental",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_lexi_livewire_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_lyath_goldmane",
+    "name": "Lyath Goldmane",
+    "class": "Guardian",
+    "talent": null,
+    "life": 20,
+    "intellect": 5,
+    "weapon": {
+      "id": "weapon_lyath_goldmane_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_lyath_goldmane_vile_savant",
+    "name": "Lyath Goldmane, Vile Savant",
+    "class": "Guardian",
+    "talent": null,
+    "life": 40,
+    "intellect": 5,
+    "weapon": {
+      "id": "weapon_lyath_goldmane_vile_savant_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_marlynn",
+    "name": "Marlynn",
+    "class": "Ranger",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_marlynn_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_marlynn_treasure_hunter",
+    "name": "Marlynn, Treasure Hunter",
+    "class": "Ranger",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_marlynn_treasure_hunter_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_maxx_the_hype_nitro",
+    "name": "Maxx 'The Hype' Nitro",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_maxx_the_hype_nitro_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_maxx_nitro",
+    "name": "Maxx Nitro",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_maxx_nitro_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_melody_sing_along",
+    "name": "Melody, Sing-along",
+    "class": "Generic",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_melody_sing_along_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_nuu",
+    "name": "Nuu",
+    "class": "Assassin",
+    "talent": "Mystic",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_nuu_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_nuu_alluring_desire",
+    "name": "Nuu, Alluring Desire",
+    "class": "Assassin",
+    "talent": "Mystic",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_nuu_alluring_desire_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_oldhim",
+    "name": "Oldhim",
+    "class": "Guardian",
+    "talent": "Elemental",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_oldhim_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_oldhim_grandfather_of_eternity",
+    "name": "Oldhim, Grandfather of Eternity",
+    "class": "Guardian",
+    "talent": "Elemental",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_oldhim_grandfather_of_eternity_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_olympia",
+    "name": "Olympia",
+    "class": "Warrior",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_olympia_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_olympia_prized_fighter",
+    "name": "Olympia, Prized Fighter",
+    "class": "Warrior",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_olympia_prized_fighter_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_oscilio",
+    "name": "Oscilio",
+    "class": "Wizard",
+    "talent": "Elemental",
+    "life": 18,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_oscilio_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_oscilio_constella_intelligence",
+    "name": "Oscilio, Constella Intelligence",
+    "class": "Wizard",
+    "talent": "Elemental",
+    "life": 36,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_oscilio_constella_intelligence_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_pleiades",
+    "name": "Pleiades",
+    "class": "Guardian",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_pleiades_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_pleiades_superstar",
+    "name": "Pleiades, Superstar",
+    "class": "Guardian",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_pleiades_superstar_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_prism",
+    "name": "Prism",
+    "class": "Illusionist",
+    "talent": "Light",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_prism_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_prism_advent_of_thrones",
+    "name": "Prism, Advent of Thrones",
+    "class": "Illusionist",
+    "talent": "Light",
+    "life": 16,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_prism_advent_of_thrones_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_prism_awakener_of_sol",
+    "name": "Prism, Awakener of Sol",
+    "class": "Illusionist",
+    "talent": "Light",
+    "life": 32,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_prism_awakener_of_sol_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_prism_sculptor_of_arc_light",
+    "name": "Prism, Sculptor of Arc Light",
+    "class": "Illusionist",
+    "talent": "Light",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_prism_sculptor_of_arc_light_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_professor_teklovossen",
+    "name": "Professor Teklovossen",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_professor_teklovossen_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_puffin",
+    "name": "Puffin",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_puffin_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_puffin_hightail",
+    "name": "Puffin, Hightail",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_puffin_hightail_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_reya_the_unyielding",
+    "name": "Reya, the Unyielding",
+    "class": "Guardian",
+    "talent": null,
+    "life": 21,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_reya_the_unyielding_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_rhinar",
+    "name": "Rhinar",
+    "class": "Brute",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_rhinar_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
     }
   },
   {
@@ -22,11 +1567,491 @@
     "life": 40,
     "intellect": 4,
     "weapon": {
-      "id": "weapon_mandible_claw",
-      "name": "Mandible Claw",
+      "id": "weapon_rhinar_reckless_rampage_basic",
+      "name": "Basic Weapon",
       "attack": 3,
       "cost": 1,
-      "type_line": "Weapon - Claw"
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_riptide",
+    "name": "Riptide",
+    "class": "Ranger",
+    "talent": null,
+    "life": 19,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_riptide_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_riptide_lurker_of_the_deep",
+    "name": "Riptide, Lurker of the Deep",
+    "class": "Ranger",
+    "talent": null,
+    "life": 38,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_riptide_lurker_of_the_deep_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_ruu_di_gem_keeper",
+    "name": "Ruu'di, Gem Keeper",
+    "class": "Generic",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_ruu_di_gem_keeper_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_scurv_stowaway",
+    "name": "Scurv, Stowaway",
+    "class": "Generic",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_scurv_stowaway_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_ser_boltyn_breaker_of_dawn",
+    "name": "Ser Boltyn, Breaker of Dawn",
+    "class": "Warrior",
+    "talent": "Light",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_ser_boltyn_breaker_of_dawn_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_shiyana_diamond_gemini",
+    "name": "Shiyana, Diamond Gemini",
+    "class": "Generic",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_shiyana_diamond_gemini_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_squizzy_floof",
+    "name": "Squizzy & Floof",
+    "class": "Generic",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_squizzy_floof_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_taipanis_dracai_of_judgement",
+    "name": "Taipanis, Dracai of Judgement",
+    "class": "Generic",
+    "talent": "Draconic",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_taipanis_dracai_of_judgement_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_taylor",
+    "name": "Taylor",
+    "class": "Generic",
+    "talent": null,
+    "life": 18,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_taylor_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_teklovossen",
+    "name": "Teklovossen",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_teklovossen_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_teklovossen_esteemed_magnate",
+    "name": "Teklovossen, Esteemed Magnate",
+    "class": "Mechanologist",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_teklovossen_esteemed_magnate_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_terra",
+    "name": "Terra",
+    "class": "Guardian",
+    "talent": "Elemental",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_terra_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_theryon_magister_of_justice",
+    "name": "Theryon, Magister of Justice",
+    "class": "Generic",
+    "talent": "Light",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_theryon_magister_of_justice_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_tuffnut",
+    "name": "Tuffnut",
+    "class": "Brute",
+    "talent": null,
+    "life": 20,
+    "intellect": 3,
+    "weapon": {
+      "id": "weapon_tuffnut_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_tuffnut_bumbling_hulkster",
+    "name": "Tuffnut, Bumbling Hulkster",
+    "class": "Brute",
+    "talent": null,
+    "life": 40,
+    "intellect": 3,
+    "weapon": {
+      "id": "weapon_tuffnut_bumbling_hulkster_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_uzuri",
+    "name": "Uzuri",
+    "class": "Assassin",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_uzuri_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_uzuri_switchblade",
+    "name": "Uzuri, Switchblade",
+    "class": "Assassin",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_uzuri_switchblade_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_valda_brightaxe",
+    "name": "Valda Brightaxe",
+    "class": "Guardian",
+    "talent": null,
+    "life": 21,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_valda_brightaxe_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_valda_seismic_impact",
+    "name": "Valda, Seismic Impact",
+    "class": "Guardian",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_valda_seismic_impact_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_verdance",
+    "name": "Verdance",
+    "class": "Wizard",
+    "talent": "Elemental",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_verdance_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_verdance_thorn_of_the_rose",
+    "name": "Verdance, Thorn of the Rose",
+    "class": "Wizard",
+    "talent": "Elemental",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_verdance_thorn_of_the_rose_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_victor_goldmane",
+    "name": "Victor Goldmane",
+    "class": "Guardian",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_victor_goldmane_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_victor_goldmane_high_and_mighty",
+    "name": "Victor Goldmane, High and Mighty",
+    "class": "Guardian",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_victor_goldmane_high_and_mighty_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_victor_goldmane_match_fixer",
+    "name": "Victor Goldmane, Match Fixer",
+    "class": "Guardian",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_victor_goldmane_match_fixer_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_viserai",
+    "name": "Viserai",
+    "class": "Runeblade",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_viserai_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_viserai_rune_blood",
+    "name": "Viserai, Rune Blood",
+    "class": "Runeblade",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_viserai_rune_blood_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_vynnset",
+    "name": "Vynnset",
+    "class": "Runeblade",
+    "talent": "Shadow",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_vynnset_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_vynnset_iron_maiden",
+    "name": "Vynnset, Iron Maiden",
+    "class": "Runeblade",
+    "talent": "Shadow",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_vynnset_iron_maiden_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_yoji_royal_protector",
+    "name": "Yoji, Royal Protector",
+    "class": "Guardian",
+    "talent": null,
+    "life": 22,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_yoji_royal_protector_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_yorick_weaver_of_tales",
+    "name": "Yorick, Weaver of Tales",
+    "class": "Generic",
+    "talent": null,
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_yorick_weaver_of_tales_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_zen",
+    "name": "Zen",
+    "class": "Ninja",
+    "talent": "Mystic",
+    "life": 20,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_zen_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
+    }
+  },
+  {
+    "id": "hero_zen_tamer_of_purpose",
+    "name": "Zen, Tamer of Purpose",
+    "class": "Ninja",
+    "talent": "Mystic",
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_zen_tamer_of_purpose_basic",
+      "name": "Basic Weapon",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon"
     }
   }
 ]
