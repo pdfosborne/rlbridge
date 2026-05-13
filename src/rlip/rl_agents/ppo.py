@@ -171,11 +171,16 @@ class _MLP:
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _softmax(x: np.ndarray) -> np.ndarray:
+    x = np.where(np.isfinite(x), x, 0.0)  # replace NaN/inf before softmax
     e = np.exp(x - x.max(axis=-1, keepdims=True))
-    return e / e.sum(axis=-1, keepdims=True)
+    s = e.sum(axis=-1, keepdims=True)
+    # If sum is zero (all -inf inputs), return uniform
+    s = np.where(s == 0, 1.0, s)
+    return e / s
 
 
 def _log_softmax(x: np.ndarray) -> np.ndarray:
+    x = np.where(np.isfinite(x), x, 0.0)  # replace NaN/inf before log-softmax
     m = x.max(axis=-1, keepdims=True)
     return x - m - np.log(np.exp(x - m).sum(axis=-1, keepdims=True))
 
@@ -293,13 +298,30 @@ class PPOAgent(AgentBase):
         self._actor  = _MLP(obs_dim, self.hidden_size, self.n_actions, self.lr_actor,  s)
         self._critic = _MLP(obs_dim, self.hidden_size, 1,              self.lr_critic, s)
 
+    def _obs_to_vec(self, obs: Any) -> np.ndarray:
+        """Flatten and coerce *obs* to a fixed-size vector.
+
+        If obs dimensionality changes across steps (common for dict/list states),
+        vectors are padded/truncated to the first observed dimension.
+        """
+        vec = np.array(_flat_obs(obs), dtype=np.float64)
+        vec = np.where(np.isfinite(vec), vec, 0.0)  # sanitize NaN/inf
+        if self.obs_dim <= 0:
+            return vec
+        if vec.shape[0] == self.obs_dim:
+            return vec
+        if vec.shape[0] < self.obs_dim:
+            pad = np.zeros(self.obs_dim - vec.shape[0], dtype=np.float64)
+            return np.concatenate([vec, pad])
+        return vec[: self.obs_dim]
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def act(self, obs: Any) -> int:
         """Sample an action from the current policy (stochastic)."""
         if self._actor is None:
             return 0
-        x = np.array(_flat_obs(obs), dtype=np.float64)
+        x = self._obs_to_vec(obs)
         logits = self._actor.predict(x)
         probs = _softmax(logits)
         return int(self._rng_np.choice(self.n_actions, p=probs))
@@ -308,7 +330,7 @@ class PPOAgent(AgentBase):
         """Return the most probable action (greedy / deterministic)."""
         if self._actor is None:
             return 0
-        x = np.array(_flat_obs(obs), dtype=np.float64)
+        x = self._obs_to_vec(obs)
         logits = self._actor.predict(x)
         return int(np.argmax(logits))
 
@@ -361,6 +383,7 @@ class PPOAgent(AgentBase):
         obs = _get(reset_out, "observation", reset_out)
         obs_vec = np.array(_flat_obs(obs), dtype=np.float64)
         self._init_nets(obs_vec.shape[0])
+        obs_vec = self._obs_to_vec(obs)
         current_ep_reward = 0.0
         current_ep_steps  = 0
         current_ep_history: list[tuple] = []
@@ -415,10 +438,10 @@ class PPOAgent(AgentBase):
                     ep_seed = (seed + completed_episodes) if seed is not None else None
                     reset_out = env.reset(seed=ep_seed)
                     obs = _get(reset_out, "observation", reset_out)
-                    obs_vec = np.array(_flat_obs(obs), dtype=np.float64)
+                    obs_vec = self._obs_to_vec(obs)
                 else:
                     obs = next_obs
-                    obs_vec = np.array(_flat_obs(next_obs), dtype=np.float64)
+                    obs_vec = self._obs_to_vec(next_obs)
 
                 if global_step >= total_steps:
                     break

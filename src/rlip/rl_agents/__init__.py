@@ -33,7 +33,11 @@ Quick start
 """
 
 from .tabular_q import TabularQAgent, TabularQTrainResult
-from .dqn import DQNAgent, DQNTrainResult
+try:
+    from .dqn import DQNAgent, DQNTrainResult
+except ImportError:
+    DQNAgent = None  # type: ignore[assignment,misc]
+    DQNTrainResult = None  # type: ignore[assignment,misc]
 from .ppo import PPOAgent, PPOTrainResult
 
 __all__ = [

@@ -58,6 +58,17 @@ def _flat_obs(obs: Any) -> list[float]:
         for v in obs:
             out.extend(_flat_obs(v))
         return out
+    if isinstance(obs, dict):
+        out: list[float] = []
+        # Sort keys for deterministic ordering across calls.
+        for k in sorted(obs.keys(), key=lambda x: str(x)):
+            out.extend(_flat_obs(str(k)))
+            out.extend(_flat_obs(obs[k]))
+        return out
+    if obs is None:
+        return [0.0]
+    if isinstance(obs, bool):
+        return [1.0 if obs else 0.0]
     try:
         import numpy as np  # noqa: PLC0415
         if isinstance(obs, np.ndarray):

@@ -267,12 +267,27 @@ class TabularQAgent(AgentBase):
 
 def _hashable(obs: Any) -> Any:
     """Convert an observation to a hashable dict key."""
-    if isinstance(obs, list):
-        return tuple(round(v, 6) if isinstance(v, float) else v for v in obs)
+    if isinstance(obs, dict):
+        # Deterministic ordering for stable Q-table keys.
+        return tuple(
+            (str(k), _hashable(v))
+            for k, v in sorted(obs.items(), key=lambda item: str(item[0]))
+        )
+    if isinstance(obs, (list, tuple)):
+        return tuple(_hashable(v) for v in obs)
+    if isinstance(obs, float):
+        return round(obs, 6)
+    if obs is None:
+        return None
     try:
         import numpy as np  # noqa: PLC0415
         if isinstance(obs, np.ndarray):
-            return tuple(obs.flatten().tolist())
+            return tuple(_hashable(v) for v in obs.flatten().tolist())
     except ImportError:
         pass
-    return obs
+    # Last resort: coerce unhashable objects to a stable string representation.
+    try:
+        hash(obs)
+        return obs
+    except TypeError:
+        return repr(obs)

@@ -102,6 +102,11 @@ _ADDR_E_MAX_HP_LO     = 0xCFF5  # enemy max HP low byte
 # Turn indicator (valid during battle)
 _ADDR_BATTLE_TURN     = 0xFFF3  # 0=player, 1=opponent
 
+# Overworld state (Gen 1 WRAM; best-effort for text observations)
+_ADDR_MAP_ID          = 0xD35E
+_ADDR_PLAYER_Y        = 0xD361
+_ADDR_PLAYER_X        = 0xD362
+
 # ── Lookup tables ─────────────────────────────────────────────────────────────
 
 # Pokemon Red internal species index → display name (International).
@@ -179,6 +184,14 @@ _MOVES: dict[int, str] = {
 
 # Valid button strings accepted by PyBoy
 _VALID_BUTTONS = frozenset({"a", "b", "up", "down", "left", "right", "start", "select"})
+
+# Auto-start tuning: clear intro/dialogue after loading battle save state
+# so the agent can begin from an actionable turn.
+_AUTO_START_MAX_PRESSES = 180
+_AUTO_START_TICKS_PER_PRESS = 6
+
+_AUTO_NEW_GAME_MAX_STEPS = 1200
+_AUTO_NEW_GAME_TICKS_PER_STEP = 8
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -314,7 +327,7 @@ class PokemonRedEnvironment(RLIPEnvironment):
 
         if self._rom_path is None:
             self._rom_path = _find_rom()
-        if self._state_path is None:
+        if self._variant == "gary_battle" and self._state_path is None:
             self._state_path = _find_state(self._variant)
 
         self._pyboy = PyBoy(
@@ -325,6 +338,104 @@ class PokemonRedEnvironment(RLIPEnvironment):
         )
         self._pyboy.set_emulation_speed(0)  # maximum speed for training
 
+    def _boot_to_new_game_start(self) -> int:
+        """
+        Auto-progress from ROM boot through title/intro/new-game setup.
+
+        Returns number of injected button presses.
+        """
+        def _press_button(name: str) -> None:
+            """Send a short button pulse (press+release) when supported."""
+            # Preferred path: explicit press/release events (more reliable on title/menu screens).
+            try:
+                from pyboy.utils import WindowEvent  # noqa: PLC0415
+
+                evt_map = {
+                    "a": ("PRESS_BUTTON_A", "RELEASE_BUTTON_A"),
+                    "b": ("PRESS_BUTTON_B", "RELEASE_BUTTON_B"),
+                    "up": ("PRESS_ARROW_UP", "RELEASE_ARROW_UP"),
+                    "down": ("PRESS_ARROW_DOWN", "RELEASE_ARROW_DOWN"),
+                    "left": ("PRESS_ARROW_LEFT", "RELEASE_ARROW_LEFT"),
+                    "right": ("PRESS_ARROW_RIGHT", "RELEASE_ARROW_RIGHT"),
+                    "start": ("PRESS_BUTTON_START", "RELEASE_BUTTON_START"),
+                    "select": ("PRESS_BUTTON_SELECT", "RELEASE_BUTTON_SELECT"),
+                }
+                press_name, release_name = evt_map[name]
+                press_evt = getattr(WindowEvent, press_name)
+                release_evt = getattr(WindowEvent, release_name)
+                self._pyboy.send_input(press_evt)
+                self._pyboy.tick()
+                self._pyboy.send_input(release_evt)
+                return
+            except Exception:
+                pass
+
+            # Fallback path: convenience helper (works on older PyBoy APIs).
+            self._pyboy.button(name)
+
+        presses = 0
+
+        def _tick_after_press() -> None:
+            for _ in range(_AUTO_NEW_GAME_TICKS_PER_STEP):
+                self._pyboy.tick()
+
+        def _is_overworld_playable() -> bool:
+            return self._u8(_ADDR_BATTLE_TYPE) == 0 and self._u8(_ADDR_MAP_ID) != 0
+
+        def _do_press(name: str) -> bool:
+            nonlocal presses
+            _press_button(name)
+            _tick_after_press()
+            presses += 1
+            return _is_overworld_playable()
+
+        def _do_press_many(name: str, count: int) -> bool:
+            for _ in range(count):
+                if _do_press(name):
+                    return True
+            return False
+
+        def _choose_preset_name(down_presses: int) -> bool:
+            # Name menu cursor starts at NEW NAME; move to requested preset.
+            if _do_press_many("up", 4):
+                return True
+            if _do_press_many("down", down_presses):
+                return True
+            if _do_press("a"):
+                return True
+            return False
+
+        # 1) Clear title and intro text quickly.
+        if _do_press_many("start", 80):
+            return presses
+        if _do_press_many("a", 220):
+            return presses
+        if _do_press_many("start", 40):
+            return presses
+        if _do_press_many("a", 80):
+            return presses
+
+        # 2) Deterministically pick names requested by user:
+        #    player = RED (preset index 1), rival = GARY (preset index 2).
+        for _ in range(6):
+            if _choose_preset_name(down_presses=1):
+                return presses
+            if _do_press_many("a", 24):
+                return presses
+            if _choose_preset_name(down_presses=2):
+                return presses
+            if _do_press_many("a", 30):
+                return presses
+
+        # 3) Finish Oak intro and hand off when overworld control is available.
+        while presses < _AUTO_NEW_GAME_MAX_STEPS:
+            if _do_press("a"):
+                return presses
+            if presses % 20 == 0 and _do_press("start"):
+                return presses
+
+        return presses
+
     def reset(
         self,
         seed: Optional[int] = None,
@@ -333,9 +444,24 @@ class PokemonRedEnvironment(RLIPEnvironment):
         with self._lock:
             self._boot_emulator()
 
-            # Restore emulator to the saved battle state
-            with open(self._state_path, "rb") as fh:
-                self._pyboy.load_state(fh)
+            auto_start_presses = 0
+
+            if self._variant == "gary_battle":
+                # Restore emulator to the saved battle state
+                with open(self._state_path, "rb") as fh:
+                    self._pyboy.load_state(fh)
+            else:
+                # Start from cold boot and auto-create/enter a new game.
+                auto_start_presses = self._boot_to_new_game_start()
+                if not (self._u8(_ADDR_BATTLE_TYPE) == 0 and self._u8(_ADDR_MAP_ID) != 0):
+                    bt = self._u8(_ADDR_BATTLE_TYPE)
+                    mid = self._u8(_ADDR_MAP_ID)
+                    raise RuntimeError(
+                        "Pokemon Red auto-start could not reach playable overworld control. "
+                        "Try increasing _AUTO_NEW_GAME_MAX_STEPS or verify ROM/version compatibility. "
+                        f"Auto-start presses attempted: {auto_start_presses}. "
+                        f"Observed battle_type={bt}, map_id={mid}."
+                    )
 
             # Force fastest text speed and disable battle animations so the
             # agent doesn't have to wait through long display sequences.
@@ -348,11 +474,23 @@ class PokemonRedEnvironment(RLIPEnvironment):
             for _ in range(10):
                 self._pyboy.tick()
 
+            # For battle variant, auto-progress opening dialogue so the agent
+            # starts from an actionable battle state.
+            if self._variant == "gary_battle":
+                auto_start_presses += self._advance_to_playable_start()
+
             self._steps = 0
             self._initialized = True
             return ResetResult(
                 observation=self._build_obs(),
-                info=self._build_info(),
+                info={
+                    **self._build_info(),
+                    "auto_start_presses": auto_start_presses,
+                    "playable_start_reached": (
+                        self._is_playable_turn() if self._variant == "gary_battle"
+                        else (self._u8(_ADDR_BATTLE_TYPE) == 0)
+                    ),
+                },
             )
 
     def step(self, action: Any) -> StepResult:
@@ -399,10 +537,43 @@ class PokemonRedEnvironment(RLIPEnvironment):
         """Read a big-endian 16-bit value from two consecutive bytes."""
         return (self._pyboy.memory[hi_addr] << 8) | self._pyboy.memory[hi_addr + 1]
 
+    def _is_playable_turn(self) -> bool:
+        """True when trainer battle is active and the player can choose an action."""
+        if self._u8(_ADDR_BATTLE_TYPE) != 2:
+            return False
+        if self._u8(_ADDR_BATTLE_TURN) != 0:
+            return False
+        return any(
+            self._u8(addr) != 0
+            for addr in (_ADDR_P_MOVE1, _ADDR_P_MOVE2, _ADDR_P_MOVE3, _ADDR_P_MOVE4)
+        )
+
+    def _advance_to_playable_start(self) -> int:
+        """
+        Auto-clear intro/dialogue so reset lands on the first actionable turn.
+
+        Returns the number of injected button presses used.
+        """
+        presses = 0
+        if self._is_playable_turn():
+            return presses
+
+        while presses < _AUTO_START_MAX_PRESSES and not self._is_playable_turn():
+            self._pyboy.button("a")
+            for _ in range(_AUTO_START_TICKS_PER_PRESS):
+                self._pyboy.tick()
+            presses += 1
+
+        return presses
+
     # ── Battle outcome ────────────────────────────────────────────────────────
 
     def _check_battle_outcome(self) -> tuple[float, bool]:
         """Return (reward, terminated) based on current memory state."""
+        if self._variant != "gary_battle":
+            # Overworld free-play variant: no terminal battle reward.
+            return 0.0, False
+
         battle_type = self._u8(_ADDR_BATTLE_TYPE)
 
         if battle_type == 0:
@@ -422,6 +593,21 @@ class PokemonRedEnvironment(RLIPEnvironment):
 
     def _build_obs(self) -> str:
         battle_type = self._u8(_ADDR_BATTLE_TYPE)
+
+        if self._variant != "gary_battle":
+            map_id = self._u8(_ADDR_MAP_ID)
+            x = self._u8(_ADDR_PLAYER_X)
+            y = self._u8(_ADDR_PLAYER_Y)
+            status = "In battle" if battle_type != 0 else "Overworld"
+            return "\n".join([
+                "=== Pokemon Red Overworld ===",
+                f"Status: {status}",
+                f"Map ID: {map_id}",
+                f"Position: x={x}, y={y}",
+                "",
+                "Buttons: a  b  up  down  left  right  start  select",
+                "(Use d-pad to move; A/B for dialogue/menus.)",
+            ])
 
         player_species = self._u8(_ADDR_P_SPECIES)
         player_name    = _species_name(player_species)
@@ -484,7 +670,11 @@ class PokemonRedEnvironment(RLIPEnvironment):
         enemy_hp     = self._u16(_ADDR_E_HP_HI)
         enemy_maxhp  = self._u16(_ADDR_E_MAX_HP_HI)
         return {
+            "variant":      self._variant,
             "battle_type":   battle_type,
+            "map_id":        self._u8(_ADDR_MAP_ID),
+            "player_x":      self._u8(_ADDR_PLAYER_X),
+            "player_y":      self._u8(_ADDR_PLAYER_Y),
             "player_hp":     player_hp,
             "player_max_hp": player_maxhp,
             "player_species": _species_name(self._u8(_ADDR_P_SPECIES)),
@@ -536,6 +726,14 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float]] = {
         300,
         1.0,
     ),
+    "overworld_start": (
+        "Pokemon Red overworld free-play from a fresh boot each episode. "
+        "The environment auto-advances launch -> intro -> new game start so "
+        "the agent can control movement between battles.",
+        ["pokemon-red", "game-boy", "rpg", "overworld", "text"],
+        1200,
+        0.0,
+    ),
 }
 
 
@@ -582,9 +780,11 @@ class PokemonRedFactory(RLIPEnvironmentFactory):
 # ── Pre-built singletons ──────────────────────────────────────────────────────
 
 POKEMON_RED_GARY_BATTLE_V0 = PokemonRedFactory("gary_battle")
+POKEMON_RED_OVERWORLD_START_V0 = PokemonRedFactory("overworld_start")
 
 ALL_POKEMON_RED_FACTORIES: list[PokemonRedFactory] = [
     POKEMON_RED_GARY_BATTLE_V0,
+    POKEMON_RED_OVERWORLD_START_V0,
 ]
 
 # ── Interactive setup helper ──────────────────────────────────────────────────

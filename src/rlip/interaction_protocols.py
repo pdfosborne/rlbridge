@@ -175,11 +175,15 @@ def _make_sampler(env: _EnvLike, seed: Optional[int]) -> Callable[[], Any]:
 
     # Try the environment's own sampler
     if hasattr(env, "sample_action"):
-        try:
-            env.sample_action()  # test that it works
-            return env.sample_action  # type: ignore[return-value]
-        except NotImplementedError:
-            pass
+        def _safe_env_sample() -> Any:
+            try:
+                return env.sample_action()
+            except NotImplementedError:
+                return 0
+            except Exception:
+                # Some environments only support sampling after reset().
+                return 0
+        return _safe_env_sample
 
     # Last resort
     return lambda: 0

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "hero_dorinthea_ironsong",
+    "name": "Dorinthea Ironsong",
+    "class": "Warrior",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_dawnblade",
+      "name": "Dawnblade",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon - Sword"
+    }
+  },
+  {
+    "id": "hero_rhinar_reckless_rampage",
+    "name": "Rhinar, Reckless Rampage",
+    "class": "Brute",
+    "talent": null,
+    "life": 40,
+    "intellect": 4,
+    "weapon": {
+      "id": "weapon_mandible_claw",
+      "name": "Mandible Claw",
+      "attack": 3,
+      "cost": 1,
+      "type_line": "Weapon - Claw"
+    }
+  }
+]

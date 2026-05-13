@@ -13,6 +13,13 @@ from .gridworld import (
     GRIDWORLD_V0,
     ALL_GRIDWORLD_FACTORIES,
 )
+from .flesh_and_blood import (
+    FleshAndBloodEnvironment,
+    FleshAndBloodFactory,
+    FLESH_AND_BLOOD_TALISHAR_V0,
+    FLESH_AND_BLOOD_SELFPLAY_V0,
+    ALL_FAB_FACTORIES,
+)
 
 # Chess (python-chess) is an optional dependency; skip if not installed.
 try:
@@ -80,6 +87,11 @@ __all__ = [
     "GridWorldFactory",
     "GRIDWORLD_V0",
     "ALL_GRIDWORLD_FACTORIES",
+    "FleshAndBloodEnvironment",
+    "FleshAndBloodFactory",
+    "FLESH_AND_BLOOD_TALISHAR_V0",
+    "FLESH_AND_BLOOD_SELFPLAY_V0",
+    "ALL_FAB_FACTORIES",
     # Chess (optional — requires python-chess)
     "ChessEnvironment",
     "ChessFactory",

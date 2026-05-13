@@ -313,13 +313,30 @@ class DQNAgent(AgentBase):
         self._target.copy_weights_from(self._online)
         self._buffer = _ReplayBuffer(self.buffer_size, self._rng_np)
 
+    def _obs_to_vec(self, obs: Any) -> np.ndarray:
+        """Flatten and coerce *obs* to a fixed-size vector.
+
+        If obs dimensionality changes across steps (common for dict/list states),
+        vectors are padded/truncated to the first observed dimension.
+        """
+        vec = np.array(_flat_obs(obs), dtype=np.float64)
+        vec = np.where(np.isfinite(vec), vec, 0.0)  # sanitize NaN/inf
+        if self.obs_dim <= 0:
+            return vec
+        if vec.shape[0] == self.obs_dim:
+            return vec
+        if vec.shape[0] < self.obs_dim:
+            pad = np.zeros(self.obs_dim - vec.shape[0], dtype=np.float64)
+            return np.concatenate([vec, pad])
+        return vec[: self.obs_dim]
+
     # ── Public API ────────────────────────────────────────────────────────────
 
     def act(self, obs: Any) -> int:
         """Greedy action selection (no exploration)."""
         if self._online is None:
             return 0  # not yet trained
-        x = np.array(_flat_obs(obs), dtype=np.float64)
+        x = self._obs_to_vec(obs)
         q_vals = self._online.predict(x)
         return int(np.argmax(q_vals))
 
@@ -364,6 +381,7 @@ class DQNAgent(AgentBase):
 
             # Build networks on first observation
             self._init_nets(obs_vec.shape[0])
+            obs_vec = self._obs_to_vec(obs)
 
             total_reward = 0.0
             ep_history: list[tuple] = []
@@ -384,7 +402,7 @@ class DQNAgent(AgentBase):
                 truncated  = bool(_get(step_out, "truncated", False))
                 done = terminated or truncated
 
-                next_obs_vec = np.array(_flat_obs(next_obs), dtype=np.float64)
+                next_obs_vec = self._obs_to_vec(next_obs)
                 self._buffer.push(obs_vec, action, reward, next_obs_vec, done)  # type: ignore[union-attr]
                 total_reward += reward
                 obs_vec = next_obs_vec

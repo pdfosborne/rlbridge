@@ -83,14 +83,18 @@ from .environments.builder import (
     load_cached_environments,
 )
 
-from .rl_agents import (
-    TabularQAgent,
-    TabularQTrainResult,
-    DQNAgent,
-    DQNTrainResult,
-    PPOAgent,
-    PPOTrainResult,
-)
+try:
+    from .rl_agents import (
+        TabularQAgent,
+        TabularQTrainResult,
+        DQNAgent,
+        DQNTrainResult,
+        PPOAgent,
+        PPOTrainResult,
+    )
+    _RL_AGENTS_AVAILABLE = True
+except ImportError:
+    _RL_AGENTS_AVAILABLE = False
 
 __all__ = [
     "__version__",
@@ -153,11 +157,14 @@ __all__ = [
     "BuiltEnvironment",
     "EnvironmentBuilder",
     "load_cached_environments",
-    # Agents
-    "TabularQAgent",
-    "TabularQTrainResult",
-    "DQNAgent",
-    "DQNTrainResult",
-    "PPOAgent",
-    "PPOTrainResult",
 ]
+
+if _RL_AGENTS_AVAILABLE:
+    __all__.extend([
+        "TabularQAgent",
+        "TabularQTrainResult",
+        "DQNAgent",
+        "DQNTrainResult",
+        "PPOAgent",
+        "PPOTrainResult",
+    ])
