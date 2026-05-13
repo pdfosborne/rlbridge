@@ -1,46 +1,41 @@
 """
 RLIP Training Analysis & Reporting
-====================================
-Generates a multi-panel training report figure combining:
+==================================
+Comparison-first report generation for one or many trained agents.
 
-- **Reward curve** – per-episode reward and a rolling average over the full
-  training run.
-- **Sample frames** – evenly-spaced RGB frames from the best training episode
-  replayed through the policy (requires a ``PolicyRenderResult``).
-- **Metadata table** – agent type, hyper-parameters, training statistics, and
-  any caller-supplied extra facts.
-- **Sub-goal panel** – when instruction-following / sub-goal shaping was used,
-  shows the cosine-similarity trajectory over the steps of the best episode
-  with markers at each step the threshold was met.
-
-Quick start
------------
-::
-
-    from rlip.analysis import create_training_report
-
-    fig = create_training_report(
-        train_result=train_result,          # TrainResult from agent.train()
-        render_result=render_result,        # PolicyRenderResult (optional)
-        subgoal_steps=subgoal_steps,        # list of (step, sim, reached)
-        subgoal_info={"instruction": "...", "sub_goal_language": "...",
-                      "threshold": 0.5, "bonus": 1.0},
-        metadata={"env_id": "Sailing-v0", "match_id": "abc123"},
-        output_path="report.png",
-    )
+The report focuses on:
+- Reward convergence during training.
+- "Optimal policy" reward at breakpoints in training (best-so-far proxy).
+- Instruction and best matched observation with similarity percentage.
+- Metadata and hyper-parameters used for each run.
 """
 
 from __future__ import annotations
 
+import textwrap
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from ._agent_base import TrainResult
-from .policy_rendering import PolicyRenderResult
 
 
-# ── Rolling mean ──────────────────────────────────────────────────────────────
+@dataclass
+class AgentReportRun:
+    """Normalized report input for one trained agent run."""
+
+    label: str
+    train_result: TrainResult
+    metadata: dict[str, Any] = field(default_factory=dict)
+    hyperparameters: dict[str, Any] = field(default_factory=dict)
+    instruction: Optional[str] = None
+    best_match_observation: Optional[Any] = None
+    best_match_similarity: Optional[float] = None
+    breakpoints: list[tuple[int, float]] = field(default_factory=list)
+
 
 def _rolling_mean(values: list[float], window: int) -> list[float]:
+    if not values:
+        return []
     out: list[float] = []
     for i in range(len(values)):
         start = max(0, i - window + 1)
@@ -49,488 +44,436 @@ def _rolling_mean(values: list[float], window: int) -> list[float]:
     return out
 
 
-def _sample_evenly(items: list[Any], n: int) -> list[Any]:
-    """Return at most *n* evenly-spaced items from *items*."""
-    if not items:
+def _stable_eps_for_convergence(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    span = max(values) - min(values)
+    return max(1e-6, span * 0.05)
+
+
+def _estimate_convergence_episode(rolling: list[float], stable_window: int) -> Optional[int]:
+    """
+    First episode where rolling reward reaches/stays near terminal behavior.
+
+    Uses the mean of the final stable_window as the terminal target and finds
+    the first index where the remaining sequence stays within +/-5% reward-span.
+    """
+    if not rolling:
+        return None
+    n = len(rolling)
+    stable_window = max(3, min(stable_window, n))
+    tail = rolling[-stable_window:]
+    target = sum(tail) / len(tail)
+    eps = _stable_eps_for_convergence(rolling)
+
+    for i in range(n):
+        remainder = rolling[i:]
+        if all(abs(v - target) <= eps for v in remainder):
+            return i + 1
+    return None
+
+
+def _compute_breakpoints_best_so_far(
+    rewards: list[float],
+    n_breakpoints: int,
+) -> list[tuple[int, float]]:
+    """
+    Breakpoint evaluation as best-so-far reward proxy.
+
+    For breakpoint episode k, reward is max(rewards[:k]).
+    Schedule: every 10 episodes for 1-100, then larger intervals (50-episode gaps) for >100.
+    """
+    if not rewards:
         return []
-    if len(items) <= n:
-        return items
-    if n == 1:
-        return [items[0]]
-    step = (len(items) - 1) / (n - 1)
-    return [items[round(i * step)] for i in range(n)]
+
+    n = len(rewards)
+    del n_breakpoints
+
+    # Phase 1: every 10 episodes for the first 100 episodes
+    points: list[int] = list(range(10, min(101, n + 1), 10))
+    
+    # Phase 2: larger intervals for episodes > 100 (every 50 episodes)
+    if n > 100:
+        points.extend(ep for ep in range(150, n + 1, 50))
+        if n not in points:
+            points.append(n)
+    
+    points = sorted(set(points))  # Remove duplicates and sort
+
+    out: list[tuple[int, float]] = []
+    running_best = float("-inf")
+    next_point_idx = 0
+
+    for ep_idx, reward in enumerate(rewards, start=1):
+        running_best = max(running_best, reward)
+        while next_point_idx < len(points) and ep_idx >= points[next_point_idx]:
+            out.append((points[next_point_idx], running_best))
+            next_point_idx += 1
+
+    return out
 
 
-# ── Public entry-point ────────────────────────────────────────────────────────
+def _truncate(value: Any, max_len: int = 70) -> str:
+    s = str(value)
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 3] + "..."
+
+
+def _wrap_text(value: Any, width: int) -> str:
+    text = str(value) if value is not None else "-"
+    # Keep table cells and side panels readable by wrapping long values.
+    return textwrap.fill(text, width=max(8, width), break_long_words=False)
+
+
+def _flag_enabled(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    s = str(value).strip().lower()
+    return s in {"1", "true", "yes", "on"}
+
+
+def _legend_label(run: AgentReportRun) -> str:
+    use_lang = _flag_enabled(run.metadata.get("use_language_state"))
+    use_instr = _flag_enabled(run.metadata.get("uses_instructions"))
+    if not use_instr:
+        match_id = str(run.metadata.get("match_id") or "").strip()
+        use_instr = bool(match_id and match_id != "-")
+
+    tags: list[str] = []
+    if use_lang:
+        tags.append("lang")
+    if use_instr:
+        tags.append("instr")
+    if not tags:
+        return run.label
+    return f"{run.label} ({'+'.join(tags)})"
+
+
+def _normalize_runs(
+    train_result: Optional[TrainResult],
+    comparison_runs: Optional[list[dict[str, Any]]],
+    metadata: Optional[dict[str, Any]],
+    subgoal_info: Optional[dict[str, Any]],
+    n_breakpoints: int,
+) -> list[AgentReportRun]:
+    runs: list[AgentReportRun] = []
+
+    if comparison_runs:
+        for i, raw in enumerate(comparison_runs, start=1):
+            tr = raw.get("train_result")
+            if tr is None:
+                raise ValueError(f"comparison_runs[{i}] missing train_result")
+            run = AgentReportRun(
+                label=str(raw.get("label") or f"run-{i}"),
+                train_result=tr,
+                metadata=dict(raw.get("metadata") or {}),
+                hyperparameters=dict(raw.get("hyperparameters") or {}),
+                instruction=raw.get("instruction"),
+                best_match_observation=raw.get("best_match_observation"),
+                best_match_similarity=raw.get("best_match_similarity"),
+                breakpoints=list(raw.get("breakpoints") or []),
+            )
+            if not run.breakpoints:
+                run.breakpoints = _compute_breakpoints_best_so_far(
+                    run.train_result.episode_rewards,
+                    n_breakpoints=n_breakpoints,
+                )
+            runs.append(run)
+        return runs
+
+    if train_result is None:
+        raise ValueError("Provide train_result or comparison_runs")
+
+    legacy_instruction = None
+    legacy_best_match_obs = None
+    legacy_best_match_sim = None
+    if subgoal_info:
+        legacy_instruction = subgoal_info.get("instruction")
+        legacy_best_match_obs = subgoal_info.get("best_match_observation") or subgoal_info.get("sub_goal_language")
+        legacy_best_match_sim = subgoal_info.get("best_match_similarity")
+
+    single = AgentReportRun(
+        label=train_result.agent_name,
+        train_result=train_result,
+        metadata=dict(metadata or {}),
+        hyperparameters={},
+        instruction=legacy_instruction,
+        best_match_observation=legacy_best_match_obs,
+        best_match_similarity=legacy_best_match_sim,
+        breakpoints=_compute_breakpoints_best_so_far(train_result.episode_rewards, n_breakpoints=n_breakpoints),
+    )
+    runs.append(single)
+    return runs
+
 
 def create_training_report(
-    train_result: TrainResult,
-    render_result: Optional[PolicyRenderResult] = None,
+    train_result: Optional[TrainResult] = None,
+    render_result: Optional[Any] = None,
     metadata: Optional[dict[str, Any]] = None,
     subgoal_steps: Optional[list[tuple[int, float, bool]]] = None,
     subgoal_info: Optional[dict[str, Any]] = None,
     *,
+    comparison_runs: Optional[list[dict[str, Any]]] = None,
     output_path: Optional[str] = None,
     rolling_window: Optional[int] = None,
-    n_sample_frames: int = 6,
-    fig_width: float = 16.0,
+    n_breakpoints: int = 6,
+    fig_width: float = 17.0,
     dpi: int = 120,
+    n_sample_frames: int = 0,
 ) -> Any:
     """
-    Generate a multi-panel RL training report figure.
+    Generate a redesigned training report.
 
-    Parameters
-    ----------
-    train_result:
-        ``TrainResult`` (or subclass) returned by an agent's ``.train()``
-        method.
-    render_result:
-        Optional ``PolicyRenderResult`` from ``render_optimal_policy()``.
-        When provided, evenly-sampled RGB frames from the best episode
-        are shown in a strip.
-    metadata:
-        Extra key-value pairs added to the metadata table (e.g.
-        ``{"env_id": "Sailing-v0", "use_language_state": True}``).
-        Values are coerced to ``str`` and truncated to 60 characters.
-    subgoal_steps:
-        Per-step sub-goal similarity data for the sub-goal panel.
-        Each element is a 3-tuple ``(step: int, similarity: float,
-        reached: bool)``.  Computed externally (e.g. by post-hoc analysis
-        of the best training trajectory) and passed here so this module
-        stays side-effect-free.
-    subgoal_info:
-        Descriptive metadata about the sub-goal shown as a text block in
-        the sub-goal panel.  Recognised keys:
-        ``instruction``, ``sub_goal_language``, ``threshold``, ``bonus``,
-        ``n_subgoals``, ``match_id``.
-    output_path:
-        If given, the figure is saved to this path (format inferred from
-        extension: ``.png``, ``.pdf``, ``.svg``, …).  The figure is also
-        returned.
-    rolling_window:
-        Number of episodes for the rolling reward average.  Defaults to
-        5 % of total episodes, minimum 10.
-    n_sample_frames:
-        Maximum number of evenly-spaced frames to show from the best
-        episode (only used when *render_result* is provided).
-    fig_width:
-        Figure width in inches.
-    dpi:
-        Output resolution (PNG / raster formats only).
+    Backward compatibility:
+    - Existing single-agent callers can keep passing train_result.
+    - comparison_runs enables side-by-side multi-agent comparison.
 
-    Returns
-    -------
-    matplotlib.figure.Figure
-        The completed figure.  Use ``plt.show()`` to display interactively
-        or ``fig.savefig(path)`` to export manually.
+    Notes
+    -----
+    Breakpoint "optimal policy reward" is reported as a best-so-far proxy:
+    for each breakpoint episode k, value is max(train_reward[1..k]).
     """
+    del render_result
+    del subgoal_steps
+    del n_sample_frames
+
     try:
         import matplotlib
         matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
         import matplotlib.gridspec as gridspec
+        import matplotlib.pyplot as plt
     except ImportError as exc:
         raise ImportError(
-            "matplotlib is required for training reports.  "
-            "Install it with:  pip install matplotlib"
+            "matplotlib is required for training reports. Install with: pip install matplotlib"
         ) from exc
 
-    episodes = train_result.episode_rewards
-    n_ep = len(episodes)
-    window = rolling_window or max(10, int(n_ep * 0.05))
-    rolling = _rolling_mean(episodes, window)
-
-    # Collect sample frames (RGB frames with PNG data)
-    frames_with_png = [
-        f for f in (render_result.frames if render_result else [])
-        if f.png_data
-    ]
-    sample_frames = _sample_evenly(frames_with_png, n_sample_frames)
-    has_frames = bool(sample_frames)
-
-    has_subgoal = bool(subgoal_steps)
-
-    # ── Figure layout ─────────────────────────────────────────────────────────
-    # Row 0: reward curve  (always, taller)
-    # Row 1: frames strip  (optional)
-    # Row 2: metadata table (left)  +  sub-goal panel (right)
-    row_heights: list[float] = [3.0]
-    if has_frames:
-        row_heights.append(2.5)
-    row_heights.append(2.5)
-
-    n_rows = len(row_heights)
-    fig_height = sum(row_heights) + 0.7 * n_rows
-    fig = plt.figure(figsize=(fig_width, fig_height), dpi=dpi)
-    fig.patch.set_facecolor("#f8f9fa")
-
-    gs = gridspec.GridSpec(
-        n_rows, 2,
-        figure=fig,
-        hspace=0.60,
-        wspace=0.30,
-        height_ratios=row_heights,
+    runs = _normalize_runs(
+        train_result=train_result,
+        comparison_runs=comparison_runs,
+        metadata=metadata,
+        subgoal_info=subgoal_info,
+        n_breakpoints=n_breakpoints,
     )
 
-    # Row 0: reward curve (spans both columns)
-    ax_reward = fig.add_subplot(gs[0, :])
-    _draw_reward_curve(ax_reward, episodes, rolling, window, train_result)
+    max_episodes = max(len(r.train_result.episode_rewards) for r in runs)
+    default_window = max(10, int(max_episodes * 0.05))
+    window = rolling_window or default_window
 
-    bottom_row = n_rows - 1
+    fig = plt.figure(figsize=(fig_width, 12.5), dpi=dpi)
+    fig.patch.set_facecolor("#f7f7f4")
+    gs = gridspec.GridSpec(
+        3,
+        2,
+        figure=fig,
+        hspace=0.45,
+        wspace=0.25,
+        height_ratios=[2.8, 2.2, 2.4],
+    )
 
-    # Row 1 (optional): frames strip
-    if has_frames:
-        _draw_frames_strip(fig, gs, 1, sample_frames, render_result)
+    ax_conv = fig.add_subplot(gs[0, :])
+    _draw_convergence_panel(ax_conv, runs, window)
 
-    # Bottom row left: metadata table
-    ax_meta = fig.add_subplot(gs[bottom_row, 0])
-    _draw_metadata_table(ax_meta, train_result, render_result, metadata)
+    ax_bp = fig.add_subplot(gs[1, :])
+    _draw_breakpoint_panel(ax_bp, runs)
 
-    # Bottom row right: sub-goal panel
-    ax_sg = fig.add_subplot(gs[bottom_row, 1])
-    if has_subgoal:
-        _draw_subgoal_panel(ax_sg, subgoal_steps, subgoal_info)
-    else:
-        _draw_no_subgoal(ax_sg, subgoal_info)
+    ax_inst = fig.add_subplot(gs[2, 0])
+    _draw_instruction_panel(ax_inst, runs)
 
-    # Super-title
-    env_label = ""
-    if render_result:
-        env_label = f"  ·  {render_result.env_id}"
-    elif metadata and "env_id" in metadata:
-        env_label = f"  ·  {metadata['env_id']}"
+    ax_cfg = fig.add_subplot(gs[2, 1])
+    _draw_config_panel(ax_cfg, runs)
+
+    env_names = sorted({str(r.metadata.get("env_id", "")) for r in runs if r.metadata.get("env_id")})
+    env_label = f" | env={', '.join(env_names)}" if env_names else ""
     fig.suptitle(
-        f"RLIP Training Report  ·  {train_result.agent_name}{env_label}",
+        f"RLIP Comparative Training Report ({len(runs)} agent(s)){env_label}",
         fontsize=14,
         fontweight="bold",
-        y=1.005,
-        color="#1a1a2e",
+        color="#1b1f24",
+        y=0.99,
+    )
+
+    fig.text(
+        0.01,
+        0.01,
+        "Breakpoint optimal-policy evaluation uses best-so-far reward at episodes 10..100 (step 10).",
+        fontsize=7.5,
+        color="#555555",
     )
 
     if output_path:
-        fig.savefig(
-            output_path,
-            dpi=dpi,
-            bbox_inches="tight",
-            facecolor=fig.get_facecolor(),
-        )
+        fig.savefig(output_path, dpi=dpi, bbox_inches="tight", facecolor=fig.get_facecolor())
 
     return fig
 
 
-# ── Sub-plot renderers ────────────────────────────────────────────────────────
-
-def _draw_reward_curve(
-    ax: Any,
-    episodes: list[float],
-    rolling: list[float],
-    window: int,
-    result: TrainResult,
-) -> None:
-    """Per-episode reward + rolling average + best-episode marker."""
-    xs = list(range(1, len(episodes) + 1))
-
+def _draw_convergence_panel(ax: Any, runs: list[AgentReportRun], window: int) -> None:
     ax.set_facecolor("#ffffff")
-    ax.plot(
-        xs, episodes,
-        color="#b0c4de", linewidth=0.7, alpha=0.55,
-        label="Episode reward",
-    )
-    ax.plot(
-        xs, rolling,
-        color="#e07b39", linewidth=2.0,
-        label=f"Rolling mean (w={window})",
-    )
+    palette = [
+        "#0072B2",
+        "#D55E00",
+        "#009E73",
+        "#CC79A7",
+        "#E69F00",
+        "#56B4E9",
+    ]
 
-    # Mark best episode
-    best_idx = max(range(len(episodes)), key=lambda i: episodes[i])
-    ax.axvline(
-        best_idx + 1,
-        color="#27ae60", linestyle="--", linewidth=1.2,
-        label=f"Best ep #{best_idx + 1}  (R={episodes[best_idx]:.2f})",
-    )
-    ax.scatter([best_idx + 1], [episodes[best_idx]], color="#27ae60", s=60, zorder=5)
+    for i, run in enumerate(runs):
+        rewards = run.train_result.episode_rewards
+        xs = list(range(1, len(rewards) + 1))
+        rolling = _rolling_mean(rewards, window)
+        color = palette[i % len(palette)]
 
-    ax.set_xlabel("Episode", fontsize=10)
-    ax.set_ylabel("Total Reward", fontsize=10)
-    ax.set_title("Training Reward Curve", fontsize=11, fontweight="bold")
-    ax.legend(fontsize=8, loc="upper left")
+        label = _legend_label(run)
+        ax.plot(xs, rewards, color=color, alpha=0.18, linewidth=0.8)
+        ax.plot(xs, rolling, color=color, linewidth=2.0, label=f"{label} rolling")
+
+        conv_ep = _estimate_convergence_episode(rolling, stable_window=max(8, window // 2))
+        if conv_ep is not None and conv_ep <= len(rolling):
+            conv_y = rolling[conv_ep - 1]
+            ax.scatter([conv_ep], [conv_y], color=color, s=36, zorder=5)
+            ax.axvline(conv_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.6)
+            ax.text(
+                conv_ep,
+                conv_y,
+                f"  {label} conv@{conv_ep}",
+                fontsize=7,
+                color=color,
+                va="bottom",
+            )
+
+    ax.set_title("Training Reward Convergence", fontsize=11, fontweight="bold")
+    ax.set_xlabel("Episode", fontsize=9)
+    ax.set_ylabel("Reward", fontsize=9)
     ax.grid(True, linestyle=":", alpha=0.4)
+    ax.legend(fontsize=7, loc="upper left")
     ax.spines[["top", "right"]].set_visible(False)
 
-    # Summary stats annotation
-    stats = (
-        f"mean={result.mean_reward:.3f}   "
-        f"best={result.best_reward:.3f}   "
-        f"last 10%={result.last_n_mean:.3f}   "
-        f"ε_final={result.final_epsilon:.4f}"
-    )
-    ax.text(
-        0.99, 0.04, stats,
-        transform=ax.transAxes,
-        fontsize=8, ha="right", va="bottom",
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="#f0f0f0", alpha=0.80),
-    )
+
+def _draw_breakpoint_panel(ax: Any, runs: list[AgentReportRun]) -> None:
+    ax.set_facecolor("#ffffff")
+    palette = [
+        "#0072B2",
+        "#D55E00",
+        "#009E73",
+        "#CC79A7",
+        "#E69F00",
+        "#56B4E9",
+    ]
+
+    for i, run in enumerate(runs):
+        points = run.breakpoints or _compute_breakpoints_best_so_far(run.train_result.episode_rewards, 6)
+        if not points:
+            continue
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        color = palette[i % len(palette)]
+        ax.plot(xs, ys, marker="o", linewidth=1.8, markersize=4, color=color, label=_legend_label(run))
+
+    ax.set_title("Optimal-Policy Reward at Training Breakpoints", fontsize=11, fontweight="bold")
+    ax.set_xlabel("Breakpoint episode", fontsize=9)
+    ax.set_ylabel("Best-so-far reward", fontsize=9)
+    ax.grid(True, linestyle=":", alpha=0.4)
+    ax.legend(fontsize=7, loc="lower right")
+    ax.spines[["top", "right"]].set_visible(False)
 
 
-def _draw_frames_strip(
-    fig: Any,
-    gs: Any,
-    row: int,
-    frames: list[Any],
-    render_result: PolicyRenderResult,
-) -> None:
-    """Evenly-sampled RGB frames from the best policy episode."""
-    from io import BytesIO
-
-    try:
-        from PIL import Image  # noqa: PLC0415
-    except ImportError:
-        return  # silently skip if Pillow not available
-
-    n = len(frames)
-    if n == 0:
-        return
-
-    inner_gs = gs[row, :].subgridspec(1, n, wspace=0.04)
-
-    last_ax = None
-    for col, frame in enumerate(frames):
-        ax = fig.add_subplot(inner_gs[0, col])
-        last_ax = ax
-        img = Image.open(BytesIO(frame.png_data)).convert("RGB")
-        ax.imshow(img)
-        ax.axis("off")
-
-        # Title under each frame
-        parts = [f"step {frame.step}  r={frame.reward:+.2f}"]
-        if frame.language_obs:
-            parts.append(frame.language_obs[:40])
-        if frame.sub_goal_reached:
-            parts.append("◀ sub-goal reached")
-        ax.set_title("\n".join(parts), fontsize=6.5, pad=2)
-
-        # Red border for sub-goal frames
-        if frame.sub_goal_reached:
-            for spine in ax.spines.values():
-                spine.set_edgecolor("#e74c3c")
-                spine.set_linewidth(2)
-                spine.set_visible(True)
-
-    # Section label above the strip
-    if last_ax is not None:
-        y1 = last_ax.get_subplotspec().get_gridspec().get_subplot_params().top
-        fig.text(
-            0.5,
-            y1 + 0.005,
-            f"Sample Frames — Best Episode  "
-            f"(R={render_result.best_episode_reward:.3f}, "
-            f"{render_result.best_episode_steps} steps)",
-            ha="center", fontsize=10, fontweight="bold",
-            transform=fig.transFigure,
-        )
-
-
-def _draw_metadata_table(
-    ax: Any,
-    result: TrainResult,
-    render_result: Optional[PolicyRenderResult],
-    extra: Optional[dict[str, Any]],
-) -> None:
-    """Left panel: agent and training metadata as a styled table."""
+def _draw_instruction_panel(ax: Any, runs: list[AgentReportRun]) -> None:
     ax.axis("off")
     ax.set_facecolor("#ffffff")
+    ax.set_title("Instruction Match Summary", fontsize=10, fontweight="bold", pad=8)
 
-    rows: list[tuple[str, str]] = []
-
-    rows.append(("Agent type", result.agent_name))
-    rows.append(("Training episodes", str(result.n_episodes)))
-    rows.append(("Mean reward", f"{result.mean_reward:.4f}"))
-    rows.append(("Best reward", f"{result.best_reward:.4f}"))
-    rows.append(("Last 10% mean", f"{result.last_n_mean:.4f}"))
-    rows.append(("Final ε", f"{result.final_epsilon:.6f}"))
-
-    # Agent-type specific fields
-    for attr, label in [
-        ("q_table_size",  "Q-table size"),
-        ("obs_dim",       "Obs dimension"),
-        ("mean_loss",     "Mean train loss"),
-    ]:
-        val = getattr(result, attr, None)
-        if val is not None:
-            fmt = f"{val:.6f}" if isinstance(val, float) else str(val)
-            rows.append((label, fmt))
-
-    if render_result:
-        rows.append(("Environment", render_result.env_id))
-        rows.append(("Best ep reward", f"{render_result.best_episode_reward:.4f}"))
-        rows.append(("Best ep steps", str(render_result.best_episode_steps)))
-        rows.append(("Policy states", str(render_result.policy_size)))
-
-    if extra:
-        for k, v in extra.items():
-            display_key = str(k).replace("_", " ").title()
-            display_val = str(v)[:60]
-            rows.append((display_key, display_val))
-
-    cell_text = [[r[0], r[1]] for r in rows]
-    col_labels = ["Parameter", "Value"]
+    rows: list[list[str]] = []
+    for run in runs:
+        sim = "-"
+        if run.best_match_similarity is not None:
+            sim = f"{max(0.0, min(1.0, float(run.best_match_similarity))) * 100.0:.2f}%"
+        rows.append(
+            [
+                _truncate(run.label, 24),
+                _wrap_text(run.instruction or "-", 42),
+                _wrap_text(run.best_match_observation or "-", 34),
+                sim,
+            ]
+        )
 
     tbl = ax.table(
-        cellText=cell_text,
-        colLabels=col_labels,
+        cellText=rows,
+        colLabels=["Agent", "Instruction", "Best match observation", "Sim %"],
         loc="center",
         cellLoc="left",
+        colWidths=[0.16, 0.45, 0.29, 0.10],
     )
     tbl.auto_set_font_size(False)
-    tbl.set_fontsize(8)
-    tbl.scale(1.0, 1.35)
+    tbl.set_fontsize(6.8)
+    tbl.scale(1.0, 2.0)
 
-    # Header row
-    for col in range(2):
+    for col in range(4):
         tbl[(0, col)].set_facecolor("#2c3e50")
         tbl[(0, col)].set_text_props(color="white", fontweight="bold")
-    # Alternating rows
+        tbl[(0, col)].get_text().set_wrap(True)
     for row_i in range(1, len(rows) + 1):
-        bg = "#f0f4f8" if row_i % 2 == 0 else "#ffffff"
-        for col in range(2):
+        bg = "#f3f6f8" if row_i % 2 == 0 else "#ffffff"
+        for col in range(4):
             tbl[(row_i, col)].set_facecolor(bg)
-            tbl[(row_i, col)].set_edgecolor("#dddddd")
+            tbl[(row_i, col)].set_edgecolor("#d9d9d9")
+            tbl[(row_i, col)].get_text().set_wrap(True)
 
-    ax.set_title("Agent & Training Metadata", fontsize=10, fontweight="bold", pad=8)
 
-
-def _draw_subgoal_panel(
-    ax: Any,
-    subgoal_steps: list[tuple[int, float, bool]],
-    subgoal_info: Optional[dict[str, Any]],
-) -> None:
-    """
-    Right panel: cosine-similarity trajectory and sub-goal reach events.
-
-    Parameters
-    ----------
-    subgoal_steps:
-        Per-step data as ``(step, similarity, reached)`` tuples.
-    subgoal_info:
-        Descriptive metadata shown in a text box below the chart.
-    """
-    steps   = [s for s, _, _ in subgoal_steps]
-    sims    = [sim for _, sim, _ in subgoal_steps]
-    reached = [(s, sim) for s, sim, hit in subgoal_steps if hit]
-
-    threshold = 0.5
-    if subgoal_info:
-        threshold = float(subgoal_info.get("threshold", threshold))
-
+def _draw_config_panel(ax: Any, runs: list[AgentReportRun]) -> None:
+    ax.axis("off")
     ax.set_facecolor("#ffffff")
-    ax.plot(steps, sims, color="#3498db", linewidth=1.5, label="Similarity")
-    ax.fill_between(steps, sims, alpha=0.12, color="#3498db")
-    ax.axhline(
-        threshold, color="#e74c3c", linestyle="--", linewidth=1.0,
-        label=f"Threshold ({threshold})",
-    )
+    ax.set_title("Metadata & Hyper-parameters", fontsize=10, fontweight="bold", pad=8)
 
-    if reached:
-        r_steps, r_sims = zip(*reached)
-        ax.scatter(
-            r_steps, r_sims,
-            color="#27ae60", s=80, zorder=5, label="Sub-goal reached",
-        )
-        for s in r_steps:
-            ax.axvline(s, color="#27ae60", linestyle=":", linewidth=0.9, alpha=0.6)
+    lines: list[str] = []
+    panel_width = 66
+    for idx, run in enumerate(runs, start=1):
+        lines.append(f"[{idx}] {run.label}")
 
-    # Summary text
-    peak = max(sims) if sims else 0.0
-    summary_lines = [
-        f"Peak sim: {peak:.4f}",
-        (f"Sub-goal reached {len(reached)}× (first: step {reached[0][0]})"
-         if reached else "Sub-goal never reached in best episode"),
-    ]
-    if subgoal_info:
-        instr = subgoal_info.get("instruction", "")
-        if instr:
-            summary_lines.insert(0, f"Instruction: {instr[:55]!r}")
-        sg_lang = subgoal_info.get("sub_goal_language", "")
-        if sg_lang:
-            summary_lines.append(f"Sub-goal: {sg_lang[:55]!r}")
-        bonus = subgoal_info.get("bonus")
-        if bonus is not None:
-            summary_lines.append(f"Bonus: {bonus}  Threshold: {threshold}")
+        if run.metadata:
+            lines.append("  metadata:")
+            for k, v in sorted(run.metadata.items()):
+                wrapped = _wrap_text(v, 34).splitlines()
+                lines.append(f"    {k}: {wrapped[0]}")
+                for extra in wrapped[1:]:
+                    lines.append(f"      {extra}")
+        else:
+            lines.append("  metadata: -")
+
+        if run.hyperparameters:
+            lines.append("  hyper-parameters:")
+            for k, v in sorted(run.hyperparameters.items()):
+                wrapped = _wrap_text(v, 34).splitlines()
+                lines.append(f"    {k}: {wrapped[0]}")
+                for extra in wrapped[1:]:
+                    lines.append(f"      {extra}")
+        else:
+            lines.append("  hyper-parameters: -")
+
+        rewards = run.train_result.episode_rewards
+        if rewards:
+            summary = (
+                f"episodes={len(rewards)}, mean={run.train_result.mean_reward:.4f}, "
+                f"best={run.train_result.best_reward:.4f}, last10%={run.train_result.last_n_mean:.4f}"
+            )
+            lines.append("  summary:")
+            for sline in textwrap.wrap(summary, width=panel_width - 4):
+                lines.append(f"    {sline}")
+        lines.append("")
 
     ax.text(
-        0.99, 0.04,
-        "\n".join(summary_lines),
+        0.02,
+        0.98,
+        "\n".join(lines).rstrip(),
         transform=ax.transAxes,
-        fontsize=7, ha="right", va="bottom",
-        bbox=dict(boxstyle="round,pad=0.3", facecolor="#f0f0f0", alpha=0.85),
+        ha="left",
+        va="top",
+        fontsize=7.0,
+        family="monospace",
+        color="#1f2933",
     )
 
-    ax.set_xlabel("Step (best training episode)", fontsize=9)
-    ax.set_ylabel("Cosine similarity to sub-goal", fontsize=9)
-    ax.set_ylim(-0.05, 1.05)
-    ax.set_title("Sub-goal / Instruction Similarity", fontsize=10, fontweight="bold")
-    ax.legend(fontsize=7, loc="upper left")
-    ax.grid(True, linestyle=":", alpha=0.4)
-    ax.spines[["top", "right"]].set_visible(False)
 
-
-def _draw_no_subgoal(
-    ax: Any,
-    subgoal_info: Optional[dict[str, Any]],
-) -> None:
-    """Placeholder when no sub-goal similarity data is available."""
-    ax.set_facecolor("#f8f9fa")
-    ax.axis("off")
-    ax.set_title("Sub-goal / Instruction Similarity", fontsize=10, fontweight="bold")
-
-    if subgoal_info:
-        # Sub-goal shaping WAS used but we have no per-step similarity data
-        lines = ["Sub-goal shaping was applied during training.\n"]
-        for key, label in [
-            ("instruction",       "Instruction"),
-            ("sub_goal_language", "Matched state"),
-            ("threshold",         "Threshold"),
-            ("bonus",             "Reward bonus"),
-            ("match_id",          "Match ID"),
-        ]:
-            val = subgoal_info.get(key)
-            if val is not None:
-                val_str = str(val)
-                if len(val_str) > 60:
-                    val_str = val_str[:57] + "…"
-                lines.append(f"{label}: {val_str}")
-        ax.text(
-            0.5, 0.55,
-            "\n".join(lines),
-            ha="center", va="center",
-            transform=ax.transAxes,
-            fontsize=8.5, color="#2c3e50",
-            linespacing=1.6,
-        )
-        ax.text(
-            0.5, 0.08,
-            "Per-step similarity data not available.\n"
-            "Re-train and call rl_create_training_report() to capture it.",
-            ha="center", va="center",
-            transform=ax.transAxes,
-            fontsize=7.5, color="#888888",
-        )
-    else:
-        ax.text(
-            0.5, 0.58,
-            "No instruction / sub-goal used.",
-            ha="center", va="center",
-            transform=ax.transAxes,
-            fontsize=10, color="#666666",
-        )
-        ax.text(
-            0.5, 0.40,
-            "Train with  match_id=…  (from rl_match_instruction)\nto enable sub-goal similarity tracking.",
-            ha="center", va="center",
-            transform=ax.transAxes,
-            fontsize=8, color="#999999",
-        )
-
-
-__all__ = ["create_training_report"]
+__all__ = ["AgentReportRun", "create_training_report"]

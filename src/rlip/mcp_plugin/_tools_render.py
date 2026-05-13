@@ -12,8 +12,17 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
+from ._env_wrappers import _LangStateEnv
 from ._dispatch import _dispatch
-from ._state import _RENDERS_DIR, _in_process, _registry, _trained_agents, log, mcp
+from ._state import (
+    _RENDERS_DIR,
+    _custom_translators,
+    _in_process,
+    _registry,
+    _trained_agents,
+    log,
+    mcp,
+)
 
 
 # ── MCP Resources ─────────────────────────────────────────────────────────────
@@ -105,6 +114,19 @@ def rl_render_policy(
             # This avoids re-running the greedy policy, which may cycle for
             # agents like TabularQ whose Q-values didn't fully propagate.
             stored = _trained_agents[agent_id]
+            use_lang_state = bool(stored.get("use_language_state", False))
+            translator = None
+            if use_lang_state:
+                from ..language_translation import get_translator  # noqa: PLC0415
+
+                translator = _custom_translators.get(env_id) or get_translator(env_id)
+                if translator is None:
+                    return (
+                        f"Agent '{agent_id}' was trained with use_language_state=True, "
+                        f"but no translator is registered for '{env_id}'.\n"
+                        "Register one with rl_set_translator_code() first."
+                    )
+
             training_history = stored.get("best_episode_history", [])
             if training_history:
                 from ..policy_rendering import PolicyRenderer  # noqa: PLC0415
@@ -113,6 +135,8 @@ def rl_render_policy(
 
                 policy = {_hashable_obs(obs): act for obs, act in training_history}
                 render_env = factory.create(render_mode="rgb_array")
+                if use_lang_state:
+                    render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
                 renderer = PolicyRenderer(env=render_env, policy=policy)
                 frames = renderer.run(max_steps=max_steps, seed=seed)
 
@@ -138,6 +162,10 @@ def rl_render_policy(
 
             # Fallback: no stored history — run greedy evaluation episodes
             agent = stored["agent"]
+
+            if use_lang_state:
+                train_env = _LangStateEnv(train_env, translator=translator, env_id=env_id)
+
             def _greedy_fn(obs: Any) -> Any:
                 if hasattr(agent, "act_greedy"):
                     return agent.act_greedy(obs)

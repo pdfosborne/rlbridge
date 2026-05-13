@@ -480,25 +480,128 @@ def save_gif(
 
         if annotate:
             draw = ImageDraw.Draw(img)
-            # Build annotation text
-            parts = [f"step={frame.step}  r={frame.reward:+.3f}"]
-            if frame.sub_goal_similarity is not None:
-                parts.append(f"sim={frame.sub_goal_similarity:.3f}")
-            if frame.sub_goal_reached:
-                parts.append("◀ sub-goal!")
-            text = "  ".join(parts)
-            # Draw a semi-transparent background box
-            font: Any
+
+            def _normalize_text(value: Optional[str]) -> str:
+                if not value:
+                    return ""
+                return " ".join(str(value).split()).strip()
+
+            def _is_unknown_sailing(value: str) -> bool:
+                return value.lower().startswith("unknown sailing state")
+
+            def _clip_for_width(
+                text: str,
+                prefix: str,
+                font_obj: Any,
+                pad: int = 12,
+                ellipsis: bool = True,
+            ) -> str:
+                # Clip by rendered width (not just character count).
+                available = max(40, img.width - pad)
+                full = f"{prefix}{text}"
+                if draw.textbbox((0, 0), full, font=font_obj)[2] <= available:
+                    return full
+                clipped = text
+                suffix = "..." if ellipsis else ""
+                while clipped and draw.textbbox((0, 0), f"{prefix}{clipped}{suffix}", font=font_obj)[2] > available:
+                    clipped = clipped[:-1]
+                if clipped:
+                    return f"{prefix}{clipped}{suffix}"
+                return prefix + ("..." if ellipsis else "")
+
+            def _wrap_two_lines(text: str, prefix: str, font_obj: Any, pad: int = 12) -> list[str]:
+                # Return up to two lines for metadata text.
+                one_line = _clip_for_width(text, prefix, font_obj, pad=pad, ellipsis=False)
+                if one_line == f"{prefix}{text}":
+                    return [one_line]
+
+                available = max(40, img.width - pad)
+                words = text.split()
+                if not words:
+                    return [prefix]
+
+                first_words: list[str] = []
+                for w in words:
+                    cand = " ".join(first_words + [w])
+                    if draw.textbbox((0, 0), f"{prefix}{cand}", font=font_obj)[2] <= available:
+                        first_words.append(w)
+                    else:
+                        break
+
+                if not first_words:
+                    first = _clip_for_width(text, prefix, font_obj, pad=pad, ellipsis=False)
+                    # If even one character cannot fit cleanly, fallback to ellipsis clip.
+                    if first == prefix:
+                        return [_clip_for_width(text, prefix, font_obj, pad=pad, ellipsis=True)]
+                    consumed = first[len(prefix):].strip()
+                    rest = text[len(consumed):].strip() if consumed else text
+                    if not rest:
+                        return [first]
+                    second = _clip_for_width(rest, "  ", font_obj, pad=pad, ellipsis=True)
+                    return [first, second]
+
+                first_text = " ".join(first_words)
+                first = f"{prefix}{first_text}"
+                rest = " ".join(words[len(first_words):]).strip()
+                if not rest:
+                    return [first]
+                second = _clip_for_width(rest, "  ", font_obj, pad=pad, ellipsis=True)
+                return [first, second]
+
+            # Load fonts: compact metadata lines use a smaller font.
             try:
-                font = ImageFont.truetype("DejaVuSansMono.ttf", 14)
+                font_main = ImageFont.truetype("DejaVuSansMono.ttf", 14)
+                font_meta = ImageFont.truetype("DejaVuSansMono.ttf", 11)
             except (IOError, OSError):
-                font = ImageFont.load_default()
-            bbox = draw.textbbox((4, 4), text, font=font)
-            draw.rectangle(
-                [bbox[0] - 2, bbox[1] - 2, bbox[2] + 2, bbox[3] + 2],
-                fill=(0, 0, 0, 160),
-            )
-            draw.text((4, 4), text, fill=(255, 255, 255, 255), font=font)
+                font_main = ImageFont.load_default()
+                font_meta = ImageFont.load_default()
+
+            lines: list[tuple[str, Any]] = []
+            lines.append((f"step={frame.step}  r={frame.reward:+.3f}", font_main))
+
+            obs_text = _normalize_text(frame.observation if isinstance(frame.observation, str) else "")
+            lang_text = _normalize_text(frame.language_obs)
+
+            # Hide noisy placeholder text from translator fallbacks.
+            if _is_unknown_sailing(obs_text):
+                obs_text = ""
+            if _is_unknown_sailing(lang_text):
+                lang_text = ""
+
+            # If state and language text are the same, keep only one line.
+            if obs_text and lang_text and obs_text.casefold() == lang_text.casefold():
+                lang_text = ""
+
+            if obs_text:
+                lines.append((_clip_for_width(obs_text, "s:", font_meta), font_meta))
+            if lang_text:
+                for wrapped in _wrap_two_lines(lang_text, "l:", font_meta):
+                    lines.append((wrapped, font_meta))
+
+            if frame.sub_goal_similarity is not None or frame.sub_goal_reached:
+                sim_text = f"sim={frame.sub_goal_similarity:.3f}" if frame.sub_goal_similarity is not None else ""
+                goal_text = "◀ sub-goal!" if frame.sub_goal_reached else ""
+                suffix_line = "  ".join(filter(None, [sim_text, goal_text]))
+                if suffix_line:
+                    lines.append((suffix_line, font_meta))
+
+            # Calculate compact per-line sizes and draw one background box.
+            line_heights: list[int] = []
+            max_box_width = 0
+            for text, font_obj in lines:
+                bbox = draw.textbbox((0, 0), text, font=font_obj)
+                w = bbox[2] - bbox[0]
+                h = bbox[3] - bbox[1]
+                max_box_width = max(max_box_width, w)
+                line_heights.append(max(11, h + 2))
+
+            total_height = sum(line_heights) + 6
+            draw.rectangle([2, 2, max_box_width + 8, total_height + 2], fill=(0, 0, 0, 160))
+
+            y = 4
+            for idx, (text, font_obj) in enumerate(lines):
+                draw.text((4, y), text, fill=(255, 255, 255, 255), font=font_obj)
+                y += line_heights[idx]
 
         images.append(img.convert("P", palette=Image.ADAPTIVE))
 

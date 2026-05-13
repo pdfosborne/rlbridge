@@ -73,12 +73,17 @@ from typing import Any, Callable, Optional
 
 from .instruction_matching import BaseEncoder, TextEncoder, TFIDFEncoder
 from .interaction_protocols import (
+    EpisodeResult,
     InstructionFollowingProtocol,
+    InteractionResult,
     RandomEpisodeProtocol,
+    StepRecord,
     _BaseProtocol,
     _EnvLike,
     _TranslateArg,
+    _get,
     _get as _get_field,
+    _make_sampler,
 )
 from .language_translation import get_translator
 from .language_translation.base import LanguageTranslator
@@ -554,6 +559,138 @@ def match_instruction(
 
 # ── High-level builder ────────────────────────────────────────────────────────
 
+def build_sequential_instruction_following_protocol(
+    instructions: list[str],
+    env: _EnvLike,
+    *,
+    encoder: Optional[BaseEncoder] = None,
+    translator: Optional[LanguageTranslator] = None,
+    exploration_protocol: Optional[_BaseProtocol] = None,
+    policy_fn: Optional[Callable[[Any], Any]] = None,
+    max_steps: int = 200,
+    seed: Optional[int] = None,
+    similarity_band: float = 0.05,
+    sub_goal_bonus: Optional[float] = None,
+    sub_goal_threshold: float = 0.5,
+    record_history: bool = True,
+) -> "SequentialInstructionFollowingProtocol":
+    """
+    End-to-end builder for sequential multi-step instruction following.
+
+    Takes a list of instructions that must be completed in order. The protocol:
+
+    1. Explores and matches each instruction to its sub-goal state
+    2. During training, gives reward only for the **current** active instruction
+    3. When the current instruction is reached, moves to the next one
+    4. Continues until all instructions are completed
+
+    This allows decomposed multi-step goals to be learned sequentially with
+    progressive sub-goal shaping.
+
+    Parameters
+    ----------
+    instructions:
+        List of natural-language instructions in order of completion.
+        Example: ``["sail to the beach", "drop anchor", "return to harbor"]``
+    env:
+        RLIP environment to explore and train on.
+    encoder:
+        Text encoder for matching. Defaults to TFIDFEncoder when *None*.
+    translator:
+        Language translator. Auto-resolved from *env*'s ``env_id`` when *None*.
+    exploration_protocol:
+        Protocol used to collect exploration trajectory. Defaults to
+        RandomEpisodeProtocol.
+    policy_fn:
+        Training policy ``Callable[[obs], action]``. Defaults to random sampling.
+    max_steps:
+        Step budget for exploration and training episodes.
+    seed:
+        Reproducibility seed.
+    similarity_band:
+        States within *similarity_band* of the best similarity score are
+        treated as equivalent sub-goals.
+    sub_goal_bonus:
+        Reward bonus per instruction when sub-goal is reached.
+        Auto-scaled via :func:`scale_sub_goal_bonus` when *None*.
+    sub_goal_threshold:
+        Cosine similarity threshold (0–1) to count as reaching a sub-goal.
+    record_history:
+        Whether to retain full step history in the result.
+
+    Returns
+    -------
+    SequentialInstructionFollowingProtocol
+        Ready-to-run protocol. Call with *env* to execute training.
+
+    Example
+    -------
+    ::
+
+        protocol = build_sequential_instruction_following_protocol(
+            instructions=[
+                "sail towards the beach",
+                "approach the dock",
+                "return to starting position"
+            ],
+            env=env,
+            seed=42,
+        )
+        result = protocol(env)
+        # Agent trained to complete all 3 instructions in sequence
+    """
+    if not instructions:
+        raise ValueError("instructions list cannot be empty")
+
+    # Match each instruction to find its sub-goal
+    matches: list[InstructionMatch] = []
+    env_id = getattr(env, "env_id", type(env).__name__)
+
+    for instr in instructions:
+        match = match_instruction(
+            instr,
+            env,
+            encoder=encoder,
+            translator=translator,
+            exploration_protocol=exploration_protocol if matches == [] else None,
+            max_steps=max_steps,
+            seed=seed,
+            similarity_band=similarity_band,
+        )
+        matches.append(match)
+
+    # Retrieve cache entries for success tracking
+    cache_entries = [
+        _INSTRUCTION_CACHE.get(env_id, {}).get(instr)
+        for instr in instructions
+    ]
+
+    state_instr_map = _STATE_INSTRUCTIONS.setdefault(env_id, {})
+    translate_arg: _TranslateArg = translator if translator is not None else True
+
+    # Auto-scale bonus distributed across all instructions
+    n_sub_goals = sum(len(m.matched_states) for m in matches)
+    effective_bonus: float = (
+        sub_goal_bonus
+        if sub_goal_bonus is not None
+        else scale_sub_goal_bonus(env, n_instructions=len(instructions))
+    )
+
+    return SequentialInstructionFollowingProtocol(
+        instructions=instructions,
+        matches=matches,
+        policy_fn=policy_fn,
+        sub_goal_bonus=effective_bonus,
+        sub_goal_threshold=sub_goal_threshold,
+        max_steps=max_steps,
+        seed=seed,
+        record_history=record_history,
+        translate=translate_arg,
+        _stats_trackers=cache_entries,
+        _state_instruction_map=state_instr_map,
+    )
+
+
 def build_instruction_following_protocol(
     instruction: str,
     env: _EnvLike,
@@ -739,6 +876,216 @@ def build_instruction_following_protocol(
         _stats_tracker=cache_entry,
         _state_instruction_map=state_instr_map,
     )
+
+
+# ── Sequential instruction-following protocol ──────────────────────────────────
+
+class SequentialInstructionFollowingProtocol(_BaseProtocol):
+    """
+    Episode protocol with sequential multi-step instruction following.
+
+    Takes an ordered list of instructions and adds reward shaping for each
+    one. The protocol:
+
+    1. At each step, computes similarity to the **current** active instruction
+    2. Gives a bonus reward when similarity threshold is met
+    3. Upon reaching the current instruction, advances to the next one
+    4. Continues until all instructions are completed
+
+    This enables decomposed multi-step goals to be learned with progressive
+    sub-goal shaping.
+
+    Parameters
+    ----------
+    instructions:
+        List of natural-language instructions in order.
+    matches:
+        Corresponding list of :class:`InstructionMatch` objects (one per
+        instruction), each containing sub-goal language descriptions and
+        observations.
+    policy_fn:
+        Policy ``Callable[[obs], action]``. Defaults to random sampling.
+    sub_goal_bonus:
+        Bonus reward per instruction when similarity threshold is met.
+    sub_goal_threshold:
+        Cosine similarity threshold (0–1) required to reach sub-goal.
+    max_steps:
+        Hard cap on episode length.
+    seed:
+        Seed for environment reset and random action sampling.
+    record_history:
+        Store full step trajectory in the result.
+    translate:
+        Translation source. Defaults to *True* (auto-lookup).
+    """
+
+    name = "sequential_instruction_following"
+
+    def __init__(
+        self,
+        instructions: list[str],
+        matches: list[InstructionMatch],
+        policy_fn: Optional[Callable[[Any], Any]] = None,
+        sub_goal_bonus: float = 0.1,
+        sub_goal_threshold: float = 0.5,
+        max_steps: int = 200,
+        seed: Optional[int] = None,
+        record_history: bool = True,
+        translate: _TranslateArg = True,
+        encoder_factory: Optional[Any] = None,
+        _stats_trackers: Optional[list[Any]] = None,
+        _state_instruction_map: Optional[dict] = None,
+    ) -> None:
+        if len(instructions) != len(matches):
+            raise ValueError("instructions and matches must have the same length")
+        
+        self.instructions = instructions
+        self.matches = matches
+        self.policy_fn = policy_fn
+        self.sub_goal_bonus = sub_goal_bonus
+        self.sub_goal_threshold = sub_goal_threshold
+        self.max_steps = max_steps
+        self.seed = seed
+        self.record_history = record_history
+        self.translate = translate
+        self._encoder_factory = encoder_factory
+        self._stats_trackers = _stats_trackers or [None] * len(instructions)
+        self._state_instruction_map = _state_instruction_map
+        
+        self._encoders: list[Any] = []
+        self._sub_goal_vecs: list[list[Any]] = []
+
+    def __call__(self, env: _EnvLike) -> InteractionResult:
+        from .instruction_matching import TextEncoder  # noqa: PLC0415
+
+        env_id = self._env_id(env)
+        result = InteractionResult(protocol_name=self.name, env_id=env_id)
+        translator = self._get_effective_translator(self.translate, env_id, None, 0, "")
+
+        # Build encoders for each instruction if not already built
+        if not self._encoders:
+            factory = self._encoder_factory if self._encoder_factory is not None else TextEncoder
+            for match in self.matches:
+                corpus = [match.instruction] + [lg for lg, _, _ in match.matched_states]
+                encoder = factory().fit(corpus)
+                self._encoders.append(encoder)
+                vecs = [encoder.encode(lg) for lg, _, _ in match.matched_states]
+                self._sub_goal_vecs.append(vecs)
+
+        reset_out = env.reset(seed=self.seed)
+        obs = _get(reset_out, "observation", reset_out)
+
+        sampler = _make_sampler(env, self.seed)
+        policy = self.policy_fn if self.policy_fn is not None else (lambda _obs: sampler())
+
+        total_reward = 0.0
+        history: list[StepRecord] = []
+        action_history: list[Any] = []
+        
+        # Track which instruction is currently active (0 = first, etc.)
+        current_instr_idx = 0
+        instr_reached_flags = [False] * len(self.instructions)
+
+        step_n = 0
+        terminated = False
+        truncated = False
+
+        for step_n in range(1, self.max_steps + 1):
+            action = policy(obs)
+            step_out = env.step(action)
+            action_history.append(action)
+
+            obs        = _get(step_out, "observation", obs)
+            reward     = float(_get(step_out, "reward", 0.0))
+            terminated = bool(_get(step_out, "terminated", False))
+            truncated  = bool(_get(step_out, "truncated", False))
+            info       = dict(_get(step_out, "info", {}) or {})
+
+            # ── Language-based sequential sub-goal shaping ────────────────────
+            language_obs: Optional[str] = None
+            if translator:
+                language_obs = translator.translate(obs, action_history=action_history)
+
+                # Annotate steps with associated instructions
+                if self._state_instruction_map and language_obs in self._state_instruction_map:
+                    associated = self._state_instruction_map[language_obs]
+                    if associated:
+                        info["associated_instructions"] = list(associated)
+
+                # Only check similarity for the current active instruction
+                if current_instr_idx < len(self.instructions):
+                    current_match = self.matches[current_instr_idx]
+                    encoder = self._encoders[current_instr_idx]
+                    obs_vec = encoder.encode(language_obs)
+                    
+                    # Max similarity across all states for current instruction
+                    sim = max(
+                        encoder.cosine_similarity(obs_vec, sg_vec)
+                        for sg_vec in self._sub_goal_vecs[current_instr_idx]
+                    )
+                    info["sub_goal_similarity"] = round(sim, 4)
+                    info["current_instruction"] = current_instr_idx
+                    info["total_instructions"] = len(self.instructions)
+
+                    if sim >= self.sub_goal_threshold and not instr_reached_flags[current_instr_idx]:
+                        # Reached current instruction — give bonus and advance
+                        reward += self.sub_goal_bonus
+                        instr_reached_flags[current_instr_idx] = True
+                        info["sub_goal_reached"] = True
+                        info["instruction_reached"] = self.instructions[current_instr_idx]
+                        
+                        # Move to next instruction if available
+                        if current_instr_idx + 1 < len(self.instructions):
+                            current_instr_idx += 1
+
+            total_reward += reward
+
+            if self.record_history:
+                history.append(StepRecord(
+                    step=step_n, action=action, observation=obs,
+                    reward=reward, terminated=terminated,
+                    truncated=truncated, info=info,
+                    language_obs=language_obs,
+                ))
+
+            if terminated or truncated:
+                break
+
+        # Record final success metrics for each instruction
+        n_complete = sum(instr_reached_flags)
+        result.metadata = {
+            "instructions_completed": n_complete,
+            "total_instructions": len(self.instructions),
+            "completion_rate": n_complete / len(self.instructions),
+        }
+        
+        # Update stats trackers for each instruction
+        for idx, tracker in enumerate(self._stats_trackers):
+            if tracker is not None:
+                tracker.record_episode(instr_reached_flags[idx])
+
+        end_reason = (
+            "terminated" if terminated
+            else "truncated" if truncated
+            else "max_steps"
+        )
+
+        result.episodes.append(
+            EpisodeResult(
+                episode=len(result.episodes),
+                steps=step_n,
+                total_reward=total_reward,
+                terminated=terminated,
+                history=history,
+                metadata={
+                    "end_reason": end_reason,
+                    "instructions_reached": sum(instr_reached_flags),
+                    "instructions_completed": n_complete,
+                },
+            )
+        )
+
+        return result
 
 
 # ── Language-tracking environment wrapper ────────────────────────────────────
@@ -1159,6 +1506,8 @@ __all__ = [
     "InstructionCacheEntry",
     "match_instruction",
     "build_instruction_following_protocol",
+    "build_sequential_instruction_following_protocol",
+    "SequentialInstructionFollowingProtocol",
     # Reward scaling
     "infer_max_reward",
     "scale_sub_goal_bonus",

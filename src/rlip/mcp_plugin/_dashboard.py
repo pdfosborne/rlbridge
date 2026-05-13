@@ -40,6 +40,7 @@ class _AgentState:
 
     __slots__ = (
         "agent_id", "agent_type", "env_id",
+        "use_language_state", "uses_instructions", "instructions",
         "n_episodes", "completed", "episode_rewards",
         "epsilon", "best_reward", "last_reward",
         "policy_text", "policy_gif_b64", "policy_frames",
@@ -52,10 +53,16 @@ class _AgentState:
         agent_type: str,
         env_id: str,
         n_episodes: int,
+        use_language_state: bool = False,
+        uses_instructions: bool = False,
+        instructions: Optional[list[str]] = None,
     ) -> None:
         self.agent_id        = agent_id
         self.agent_type      = agent_type
         self.env_id          = env_id
+        self.use_language_state = use_language_state
+        self.uses_instructions = uses_instructions
+        self.instructions = list(instructions or [])
         self.n_episodes      = n_episodes
         self.completed       = 0
         self.episode_rewards: list[float] = []
@@ -88,6 +95,9 @@ class TrainingDashboard:
         agent_type: str,
         env_id: str,
         n_episodes: int,
+        use_language_state: bool = False,
+        uses_instructions: bool = False,
+        instructions: Optional[list[str]] = None,
     ) -> None:
         with self._lock:
             self._agents[agent_id] = _AgentState(
@@ -95,6 +105,9 @@ class TrainingDashboard:
                 agent_type=agent_type,
                 env_id=env_id,
                 n_episodes=n_episodes,
+                use_language_state=use_language_state,
+                uses_instructions=uses_instructions,
+                instructions=instructions,
             )
             self._version += 1
 
@@ -232,6 +245,8 @@ h1   { font-size: 1.4rem; font-weight: 700; color: #f8fafc;
                border-radius: 4px; padding: 2px 7px; font-weight: 600; }
 .type-badge  { font-size: 0.7rem; background: #7c3aed; color: #fff;
                border-radius: 4px; padding: 2px 7px; }
+.meta-badge  { font-size: 0.68rem; background: #334155; color: #e2e8f0;
+               border-radius: 4px; padding: 2px 7px; border: 1px solid #475569; }
 .done-badge  { font-size: 0.7rem; background: #22c55e; color: #fff;
                border-radius: 4px; padding: 2px 7px; }
 .metrics     { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -247,6 +262,12 @@ h1   { font-size: 1.4rem; font-weight: 700; color: #f8fafc;
                border: 1px solid #1e3a5f; margin-top: 10px; }
 .policy-lbl  { font-size: 0.72rem; color: #64748b; text-transform: uppercase;
                letter-spacing: 0.06em; margin-top: 10px; margin-bottom: 4px; }
+.policy-grid { display: grid; grid-template-columns: minmax(180px, 1fr) 2fr;
+               gap: 10px; align-items: start; }
+.inst-box    { background: #0f172a; border: 1px solid #1e3a5f; border-radius: 6px;
+               padding: 8px; font-size: 0.72rem; color: #cbd5e1; }
+.inst-list   { margin: 0; padding-left: 16px; }
+.inst-list li { margin-bottom: 5px; line-height: 1.25; overflow-wrap: anywhere; }
 .idle        { color: #475569; font-size: 0.9rem; padding: 24px 0; text-align: center; }
 #refresh-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
                background: #22c55e; margin-left: 6px; vertical-align: middle; }
@@ -295,32 +316,71 @@ def _render_agent_card(state: _AgentState) -> str:
     mean_recent  = sum(recent) / len(recent) if recent else 0.0
 
     done_badge = '<span class="done-badge">✓ Done</span>' if done else ""
+    lang_tag = '<span class="meta-badge">Language translation</span>' if state.use_language_state else ''
+    instr_tag = '<span class="meta-badge">Instructions</span>' if state.uses_instructions else ''
+
+    instruction_panel = ""
+    if state.uses_instructions:
+        items = state.instructions or ["(instruction text unavailable)"]
+        li = "".join(f"<li>{html.escape(it)}</li>" for it in items)
+        instruction_panel = (
+            '<div class="inst-box">'
+            '<div style="font-size:0.68rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Instructions used</div>'
+            f'<ul class="inst-list">{li}</ul>'
+            '</div>'
+        )
 
     # ── Policy render section ─────────────────────────────────────────────────
     policy_section = ""
     if done:
         if state.policy_gif_b64:
             # Animated GIF of the best training episode
-            policy_section = (
-                '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
-                f'<img src="data:image/gif;base64,{state.policy_gif_b64}" '
-                'style="max-width:100%;border-radius:6px;border:1px solid #1e3a5f;'
-                'margin-top:6px;display:block" alt="policy replay gif">'
-            )
+            if instruction_panel:
+                policy_section = (
+                    '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
+                    '<div class="policy-grid">'
+                    f'{instruction_panel}'
+                    f'<img src="data:image/gif;base64,{state.policy_gif_b64}" '
+                    'style="max-width:100%;border-radius:6px;border:1px solid #1e3a5f;'
+                    'margin-top:6px;display:block" alt="policy replay gif">'
+                    '</div>'
+                )
+            else:
+                policy_section = (
+                    '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
+                    f'<img src="data:image/gif;base64,{state.policy_gif_b64}" '
+                    'style="max-width:100%;border-radius:6px;border:1px solid #1e3a5f;'
+                    'margin-top:6px;display:block" alt="policy replay gif">'
+                )
         elif state.policy_frames:
             # ANSI / text frames — show as a cycling JS slideshow
             frames_json = json.dumps(state.policy_frames)
             card_id = f"pf_{state.agent_id}"
-            policy_section = (
-                '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
-                f'<div class="policy-pre" id="{card_id}"></div>'
-                f'<script>(function(){{'
-                f'var frames={frames_json},i=0,el=document.getElementById("{card_id}");'
-                f'if(!el)return;'
-                f'el.textContent=frames[0];'
-                f'setInterval(function(){{i=(i+1)%frames.length;el.textContent=frames[i];}},600);'
-                f'}})();</script>'
-            )
+            if instruction_panel:
+                policy_section = (
+                    '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
+                    '<div class="policy-grid">'
+                    f'{instruction_panel}'
+                    f'<div class="policy-pre" id="{card_id}"></div>'
+                    '</div>'
+                    f'<script>(function(){{'
+                    f'var frames={frames_json},i=0,el=document.getElementById("{card_id}");'
+                    f'if(!el)return;'
+                    f'el.textContent=frames[0];'
+                    f'setInterval(function(){{i=(i+1)%frames.length;el.textContent=frames[i];}},600);'
+                    f'}})();</script>'
+                )
+            else:
+                policy_section = (
+                    '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
+                    f'<div class="policy-pre" id="{card_id}"></div>'
+                    f'<script>(function(){{'
+                    f'var frames={frames_json},i=0,el=document.getElementById("{card_id}");'
+                    f'if(!el)return;'
+                    f'el.textContent=frames[0];'
+                    f'setInterval(function(){{i=(i+1)%frames.length;el.textContent=frames[i];}},600);'
+                    f'}})();</script>'
+                )
         elif state.policy_text:
             policy_section = (
                 '<div class="policy-lbl">Current policy snapshot</div>'
@@ -338,6 +398,8 @@ def _render_agent_card(state: _AgentState) -> str:
     <span style="font-size:1rem;font-weight:700;color:#f1f5f9">{html.escape(state.agent_id)}</span>
     <span class="env-badge">{html.escape(state.env_id)}</span>
     <span class="type-badge">{html.escape(state.agent_type)}</span>
+        {lang_tag}
+        {instr_tag}
     {done_badge}
   </div>
   <div style="margin-bottom:10px">{_progress_bar(state.completed, state.n_episodes)}</div>

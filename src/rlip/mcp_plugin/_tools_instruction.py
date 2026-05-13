@@ -1,7 +1,12 @@
 """
 Instruction-following MCP tools for the RLIP plugin.
 
-Tools: rl_clear_obs_cache, rl_match_instruction, rl_instruction_run_episode.
+Tools:
+- rl_clear_obs_cache
+- rl_match_instruction
+- rl_instruction_run_episode
+- rl_match_sequential_instructions
+- rl_sequential_instruction_run_episode
 
 Uses the shared ``_instruction_protocols`` cache from ``_state`` so that
 rl_train_agent (in _tools_agents) can access previously-matched sub-goals.
@@ -10,6 +15,7 @@ rl_train_agent (in _tools_agents) can access previously-matched sub-goals.
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 from typing import Any, Optional
 
@@ -32,8 +38,7 @@ async def _decompose_instruction_with_llm(
     Ask the host LLM to break *instruction* into clear, ordered sub-steps
     grounded in the language descriptions actually observed in the environment.
 
-    Returns a list of sub-step strings, or an empty list on any failure
-    (so callers always get graceful degradation).
+    Returns a list of sub-step strings, or an empty list on any failure.
     """
     import mcp.types as _t
 
@@ -50,9 +55,12 @@ async def _decompose_instruction_with_llm(
         f"  \"{instruction}\"\n\n"
         f"Below is a sample of language descriptions of states actually observed "
         f"in this environment:\n{obs_block}\n\n"
-        f"Break the instruction into 2–5 concrete, ordered sub-steps that the agent "
-        f"should achieve in sequence to complete the task.  Each sub-step must be a "
-        f"short natural-language phrase grounded in the vocabulary above.  "
+        f"Break the instruction into 2-5 concrete, distinct, ordered sub-steps that the agent "
+        f"should achieve in sequence to complete the task.  The first sub-step must focus on "
+        f"what to do at the START of the episode (initial orientation / setup / first move). "
+        f"Each sub-step must be a short natural-language phrase grounded in the vocabulary above.  "
+        f"Avoid duplicates and near-duplicates. "
+        f"ALL instructions should be written to match the problem context and language."
         f"Output ONLY a numbered list, one sub-step per line, with no extra text."
     )
 
@@ -83,12 +91,55 @@ async def _decompose_instruction_with_llm(
         if not line:
             continue
         # Strip leading "1.", "1)", "-", "*"
-        import re as _re
-        cleaned = _re.sub(r"^[\d]+[.)]\s*|^[-*]\s*", "", line).strip()
+        cleaned = re.sub(r"^[\d]+[.)]\s*|^[-*]\s*", "", line).strip()
         if cleaned:
             sub_steps.append(cleaned)
 
     return sub_steps
+
+
+def _fallback_decompose_instruction(instruction: str) -> list[str]:
+    """Deterministic decomposition when LLM output is unavailable."""
+    parts = [
+        p.strip(" .")
+        for p in re.split(r"\bthen\b|\band\b|,|;|->|=>", instruction, flags=re.IGNORECASE)
+        if p.strip(" .")
+    ]
+    unique_parts: list[str] = []
+    seen: set[str] = set()
+    for p in parts:
+        k = re.sub(r"\s+", " ", p).lower()
+        if len(k) < 3 or k in seen:
+            continue
+        seen.add(k)
+        unique_parts.append(p)
+    if len(unique_parts) >= 2:
+        return unique_parts[:5]
+    core = instruction.strip().rstrip(".")
+    return [
+        f"start by orienting to the initial state for: {core}",
+        f"move toward the main objective: {core}",
+        f"complete the objective: {core}",
+    ]
+
+
+def _normalize_sequential_steps(instruction: str, llm_steps: list[str]) -> list[str]:
+    """Return ordered, distinct sequential steps with at least 2 entries."""
+    raw = llm_steps if llm_steps else _fallback_decompose_instruction(instruction)
+    out: list[str] = []
+    seen: set[str] = set()
+    for step in raw:
+        cleaned = re.sub(r"\s+", " ", step).strip(" .")
+        key = cleaned.lower()
+        if not cleaned or len(cleaned) < 3 or key in seen:
+            continue
+        seen.add(key)
+        out.append(cleaned)
+        if len(out) >= 5:
+            break
+    if len(out) < 2:
+        return _fallback_decompose_instruction(instruction)
+    return out
 
 
 class _ExplorationProgressEnv:
@@ -191,14 +242,13 @@ async def rl_match_instruction(
 ) -> str:
     """
     Explore an RL environment, translate observed states to language, and
-    find which observed state best matches a natural-language instruction
-    using TF-IDF cosine similarity.
+    find which observed state best matches a natural-language instruction.
 
     After exploration the tool calls the host LLM to decompose *instruction*
-    into clear, ordered sub-steps grounded in the observed environment
-    vocabulary.  Each sub-step is matched against the corpus and added as
-    an additional co-equal sub-goal so the agent receives shaping rewards
-    for visiting relevant intermediate states throughout the trajectory.
+    into clear, distinct, ordered sub-steps grounded in the observed
+    environment vocabulary. The first step is forced to focus on episode
+    start behavior. These steps are then trained with the sequential
+    instruction process.
 
     This is the first step of instruction-following RL.  After calling this
     tool you can run rl_instruction_run_episode() to train with the matched
@@ -222,11 +272,14 @@ async def rl_match_instruction(
     Returns
     -------
     A text summary of the best-matched state, its similarity score,
-    the LLM-derived sub-steps (when available), and a match_id you can
+    the LLM-derived sequential sub-steps, and a match_id you can
     pass to rl_instruction_run_episode().
     """
     import uuid
-    from ..instruction_following import match_instruction, build_instruction_following_protocol
+    from ..instruction_following import (
+        build_sequential_instruction_following_protocol,
+        match_instruction,
+    )
     from ..environments.registry import registry as _env_registry
 
     try:
@@ -273,19 +326,15 @@ async def rl_match_instruction(
     # so the rest of the tool always runs even when sampling is unavailable.
     from ..instruction_following import obs_cache_langs
     observed_langs = obs_cache_langs(env_id)
-    sub_steps = await _decompose_instruction_with_llm(ctx, instruction, env_id, observed_langs)
+    sub_steps_raw = await _decompose_instruction_with_llm(ctx, instruction, env_id, observed_langs)
+    sub_steps = _normalize_sequential_steps(instruction, sub_steps_raw)
 
-    # Build and cache the ready-to-run protocol so the agent can immediately
-    # call rl_instruction_run_episode without re-running exploration.
-    # The obs cache is now populated so build_instruction_following_protocol
-    # skips re-exploration entirely.  Each sub-step is matched against the
-    # cached corpus and added as an extra co-equal sub-goal.
-    protocol = build_instruction_following_protocol(
-        instruction,
+    # Build and cache a sequential protocol by default.
+    protocol = build_sequential_instruction_following_protocol(
+        sub_steps,
         env,
         seed=seed,
         max_steps=exploration_steps,
-        extra_sub_goals=sub_steps if sub_steps else None,
     )
     # The env was consumed by exploration; protocol will reset it on __call__.
     match_id = uuid.uuid4().hex[:12]
@@ -293,6 +342,16 @@ async def rl_match_instruction(
         "protocol": protocol,
         "env_id":   env_id,
         "env":      env,
+        "match":    match,
+        "match_summary": {
+            "instruction": instruction,
+            "best_match_language": match.matched_language,
+            "best_match_observation": match.matched_observation,
+            "best_match_similarity": match.similarity_score,
+        },
+        "is_sequential": True,
+        "instructions": sub_steps,
+        "decomposition": sub_steps,
     }
 
     top_k = max(1, min(top_k, 10))
@@ -301,13 +360,9 @@ async def rl_match_instruction(
         for i, (lg, sc) in enumerate(match.all_scores[:top_k])
     ]
 
-    # Format the decomposed sub-steps block (shown only when the LLM decomposed them).
-    if sub_steps:
-        steps_block = "Decomposed sub-steps (LLM):\n" + "\n".join(
-            f"  {i+1}. {s}" for i, s in enumerate(sub_steps)
-        ) + f"\n  → {len(protocol._all_sub_goal_languages)} total sub-goal state(s) matched\n\n"
-    else:
-        steps_block = ""
+    steps_block = "Decomposed sequential steps:\n" + "\n".join(
+        f"  {i+1}. {s}" for i, s in enumerate(sub_steps)
+    ) + "\n\n"
 
     return (
         f"Instruction matched for '{env_id}':\n\n"
@@ -318,7 +373,7 @@ async def rl_match_instruction(
         + steps_block
         + f"Top {top_k} candidates:\n" + "\n".join(top_lines) + "\n\n"
         f"Use rl_instruction_run_episode(match_id='{match_id}') to run a "
-        f"training episode with this state as a sub-goal."
+        f"training episode with sequential instruction shaping."
     )
 
 
@@ -376,6 +431,16 @@ def rl_instruction_run_episode(
     protocol = entry["protocol"]
     env = entry["env"]
 
+    # Route sequential entries to the sequential execution path.
+    if entry.get("is_sequential"):
+        return rl_sequential_instruction_run_episode(
+            match_id=match_id,
+            max_steps=max_steps,
+            sub_goal_bonus=sub_goal_bonus,
+            sub_goal_threshold=sub_goal_threshold,
+            seed=seed,
+        )
+
     # Auto-scale bonus when caller passed 0.0 (the sentinel for "auto").
     if sub_goal_bonus == 0.0:
         from ..instruction_following import scale_sub_goal_bonus  # noqa: PLC0415
@@ -431,3 +496,287 @@ def rl_instruction_run_episode(
         + peak_line
         + "\n\nTrajectory excerpt:\n" + "\n".join(excerpt_lines)
     )
+
+
+@mcp.tool()
+async def rl_match_sequential_instructions(
+    ctx: Context,
+    env_id: str,
+    instructions: list[str],
+    exploration_steps: int = 100,
+    seed: Optional[int] = None,
+) -> str:
+    """
+    Explore an RL environment and match multiple natural-language instructions
+    that must be completed in sequence.
+
+    This tool automatically:
+    1. Explores the environment and builds a language state corpus
+    2. Matches each instruction to observed states via TF-IDF similarity
+    3. Uses the host LLM to decompose each instruction into clear sub-steps
+    4. Sets up sequential reward shaping for training
+
+    The environment is explored once and all instructions are matched against
+    the same observation corpus, making this efficient for decomposed tasks.
+    Each instruction is automatically decomposed into sub-steps grounded in
+    the environment's actual vocabulary.
+
+    After calling this tool, use rl_sequential_instruction_run_episode() with
+    the returned match_id to train with sequential sub-goal shaping.
+
+    Parameters
+    ----------
+    env_id:
+        A registered RLIP environment ID, e.g. "Sailing-v0".
+    instructions:
+        List of natural-language instructions in completion order, e.g.
+        ["sail towards the beach", "approach the dock", "return to harbor"].
+    exploration_steps:
+        Number of random steps used to build the observation corpus.
+        50–200 is usually sufficient.
+    seed:
+        Optional integer seed for reproducible exploration.
+
+    Returns
+    -------
+    A text summary of each instruction's decomposition, best match, and
+    similarity scores. Includes a match_id for use with
+    rl_sequential_instruction_run_episode().
+    """
+    import uuid
+    from ..instruction_following import (
+        build_sequential_instruction_following_protocol,
+        match_instruction,
+        obs_cache_langs,
+    )
+    from ..environments.registry import registry as _env_registry
+
+    if not instructions:
+        return "Error: instructions list cannot be empty."
+
+    try:
+        factory = _env_registry.get(env_id)
+        env = factory.create()
+    except KeyError:
+        return (
+            f"Environment '{env_id}' is not registered.  "
+            "Call rl_list_environments() to see what is available."
+        )
+
+    progress_env = _ExplorationProgressEnv(env, total_steps=exploration_steps, env_id=env_id)
+
+    async def _poll_exploration() -> None:
+        while True:
+            await asyncio.sleep(0.5)
+            await ctx.report_progress(progress_env._steps, exploration_steps)
+
+    poll_task = asyncio.create_task(_poll_exploration())
+    try:
+        try:
+            # Match all instructions (first one runs exploration, rest reuse cache)
+            matches: list[Any] = []
+            for idx, instr in enumerate(instructions):
+                match = await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    lambda i=instr, first=(idx == 0): match_instruction(
+                        i,
+                        progress_env if first else env,
+                        seed=seed,
+                        max_steps=exploration_steps,
+                    ),
+                )
+                matches.append(match)
+        except ValueError as exc:
+            return f"Instruction matching failed: {exc}"
+    finally:
+        poll_task.cancel()
+        try:
+            await poll_task
+        except asyncio.CancelledError:
+            pass
+        progress_env._bar.close()
+
+    # ── LLM sub-goal decomposition for each instruction ───────────────────────
+    # Decompose each instruction into sub-steps grounded in observed vocabulary
+    from ..instruction_following import obs_cache_langs
+    observed_langs = obs_cache_langs(env_id)
+    
+    all_decompositions: list[list[str]] = []
+    for instr in instructions:
+        sub_steps_raw = await _decompose_instruction_with_llm(ctx, instr, env_id, observed_langs)
+        all_decompositions.append(_normalize_sequential_steps(instr, sub_steps_raw))
+
+    # Flatten decompositions into a single ordered sequence.
+    sequential_instructions: list[str] = []
+    seen_seq: set[str] = set()
+    for steps in all_decompositions:
+        for step in steps:
+            key = step.lower().strip()
+            if key and key not in seen_seq:
+                seen_seq.add(key)
+                sequential_instructions.append(step)
+    protocol = build_sequential_instruction_following_protocol(
+        sequential_instructions,
+        env,
+        seed=seed,
+        max_steps=exploration_steps,
+    )
+
+    match_id = uuid.uuid4().hex[:12]
+    _instruction_protocols[match_id] = {
+        "protocol": protocol,
+        "env_id": env_id,
+        "env": env,
+        "matches": matches,
+        "decompositions": all_decompositions,
+        "is_sequential": True,
+        "instructions": sequential_instructions,
+        "original_instructions": instructions,
+    }
+
+    # Build output showing each instruction, its decomposition, and best match
+    output_lines = [
+        f"Sequential instructions matched for '{env_id}':\n"
+    ]
+
+    for idx, (instr, match, sub_steps) in enumerate(zip(instructions, matches, all_decompositions)):
+        output_lines.append(
+            f"\n  {idx + 1}. Instruction: {instr!r}\n"
+            f"     Best match:  {match.matched_language}\n"
+            f"     Similarity:  {match.similarity_score:.4f}\n"
+            f"     Sub-goals:   {len(match.matched_states)} state(s)"
+        )
+        if sub_steps:
+            output_lines.append("     Decomposed sub-steps (LLM):")
+            for step_idx, step in enumerate(sub_steps):
+                output_lines.append(f"       {step_idx + 1}. {step}")
+        output_lines.append("")
+
+    output_lines.append(
+        f"\n  Match ID: {match_id}\n\n"
+        f"  Effective sequential steps: {len(sequential_instructions)}\n"
+        f"Use rl_sequential_instruction_run_episode(match_id='{match_id}') to run a\n"
+        f"training episode that completes these steps in sequence."
+    )
+
+    return "\n".join(output_lines)
+
+
+@mcp.tool()
+def rl_sequential_instruction_run_episode(
+    match_id: str,
+    max_steps: int = 200,
+    sub_goal_bonus: float = 0.0,
+    sub_goal_threshold: float = 0.5,
+    seed: Optional[int] = None,
+) -> str:
+    """
+    Run a sequential multi-step instruction-following RL training episode.
+
+    Must be called after rl_match_sequential_instructions().  The protocol
+    applies reward shaping for each instruction in sequence:
+
+    1. Initially, only the first instruction's sub-goal receives reward
+    2. When the agent reaches the first instruction's sub-goal, it advances to
+       the second instruction
+    3. Shaping reward now applies only to the second instruction's sub-goal
+    4. Process continues until all instructions are completed or max_steps reached
+
+    This enables learning of multi-step behaviors with progressive sub-goal
+    shaping at each stage.
+
+    Parameters
+    ----------
+    match_id:
+        The match_id returned by rl_match_sequential_instructions().
+    max_steps:
+        Maximum steps for the training episode.
+    sub_goal_bonus:
+        Bonus reward per instruction when sub-goal is reached.
+        Set to 0.0 (default) to auto-scale: ``max_reward / (100 × n_instructions)``
+        where *max_reward* is inferred from the environment's reward range.
+        Pass an explicit positive value to override.
+    sub_goal_threshold:
+        Cosine similarity threshold (0–1) required to award the bonus.
+        Lower values make sub-goals easier to reach.
+    seed:
+        Optional seed for the training episode reset.
+
+    Returns
+    -------
+    A detailed summary of the episode including which instructions were
+    completed, step counts, total reward, and a trajectory excerpt showing
+    when each instruction was reached.
+    """
+    entry = _instruction_protocols.get(match_id)
+    if entry is None or not entry.get("is_sequential"):
+        return (
+            f"Match ID '{match_id}' not found or is not sequential.  "
+            "Run rl_match_sequential_instructions() first to obtain a valid match_id."
+        )
+
+    protocol = entry["protocol"]
+    env = entry["env"]
+    instructions = entry.get("instructions", [])
+
+    # Auto-scale bonus when caller passed 0.0 (the sentinel for "auto").
+    if sub_goal_bonus == 0.0:
+        from ..instruction_following import scale_sub_goal_bonus  # noqa: PLC0415
+        sub_goal_bonus = scale_sub_goal_bonus(env, n_instructions=len(instructions))
+
+    # Apply per-call overrides
+    protocol.max_steps = max_steps
+    protocol.sub_goal_bonus = sub_goal_bonus
+    protocol.sub_goal_threshold = sub_goal_threshold
+    if seed is not None:
+        protocol.seed = seed
+
+    result = protocol(env)
+    ep = result.episodes[0]
+
+    # Collect information about instruction completion
+    instr_reached_steps: dict[int, int] = {}  # instruction_idx → step_reached
+    for rec in ep.history:
+        if rec.info.get("sub_goal_reached"):
+            instr_idx = rec.info.get("current_instruction", 0)
+            if instr_idx not in instr_reached_steps:
+                instr_reached_steps[instr_idx] = rec.step
+
+    n_complete = result.metadata.get("instructions_completed", 0)
+
+    # Build a readable trajectory excerpt showing instruction progression
+    excerpt_lines: list[str] = []
+    for rec in ep.history[:15]:
+        curr_instr = rec.info.get("current_instruction", 0)
+        sim = rec.info.get("sub_goal_similarity", "n/a")
+        hit = " ◀ instruction reached" if rec.info.get("sub_goal_reached") else ""
+        lang = (rec.language_obs or "")[:70]
+        instr_label = f"[instr {curr_instr + 1}]" if curr_instr < len(instructions) else "[complete]"
+        excerpt_lines.append(
+            f"  step {rec.step:3d}  r={rec.reward:+.3f}  sim={sim}  {instr_label}  {lang}{hit}"
+        )
+    if len(ep.history) > 15:
+        excerpt_lines.append(f"  … ({len(ep.history) - 15} more steps not shown)")
+
+    # Format instruction completion summary
+    completion_lines = []
+    for idx, instr in enumerate(instructions):
+        if idx in instr_reached_steps:
+            step = instr_reached_steps[idx]
+            completion_lines.append(f"    {idx + 1}. ✓ {instr[:70]}  (reached at step {step})")
+        else:
+            completion_lines.append(f"    {idx + 1}. ✗ {instr[:70]}  (not reached)")
+
+    return (
+        f"Sequential instruction-following episode complete\n"
+        f"  Environment:       {result.env_id}\n"
+        f"  Total instructions: {len(instructions)}\n"
+        f"  Completed:         {n_complete} / {len(instructions)}\n"
+        f"  Threshold:         {sub_goal_threshold}  Bonus: {sub_goal_bonus:.6g}\n\n"
+        f"  Steps:             {ep.steps}\n"
+        f"  Total reward:      {ep.total_reward:.4f}\n"
+        f"  End reason:        {ep.metadata.get('end_reason', 'unknown')}\n\n"
+        f"Instructions:\n" + "\n".join(completion_lines) +
+        f"\n\nTrajectory excerpt:\n" + "\n".join(excerpt_lines)
+    )
+

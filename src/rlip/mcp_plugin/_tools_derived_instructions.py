@@ -17,6 +17,7 @@ Tools:
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import uuid
 from typing import Any, Optional
@@ -35,6 +36,102 @@ from ._state import (
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
+async def _decompose_instruction_with_llm(
+    ctx: Context,
+    instruction: str,
+    env_id: str,
+    observed_langs: list[str],
+) -> list[str]:
+    """Decompose one instruction into ordered, distinct sub-steps."""
+    import mcp.types as _t
+
+    sample = observed_langs[:60]
+    obs_block = "\n".join(f"  - {lg}" for lg in sample)
+    if len(observed_langs) > 60:
+        obs_block += f"\n  ... ({len(observed_langs) - 60} more)"
+
+    prompt = (
+        f"You are helping set up sequential reward shaping for RL in environment '{env_id}'.\n\n"
+        f"High-level instruction:\n  '{instruction}'\n\n"
+        f"Observed environment language states:\n{obs_block}\n\n"
+        "Break the instruction into 2-5 ordered, distinct, concrete sub-steps. "
+        "The FIRST step must focus on what to do at episode start. "
+        "Use environment vocabulary. Avoid duplicate or overlapping steps. "
+        "Output ONLY a numbered list, one step per line."
+    )
+
+    try:
+        result = await ctx.session.create_message(
+            messages=[_t.SamplingMessage(
+                role="user",
+                content=_t.TextContent(type="text", text=prompt),
+            )],
+            max_tokens=256,
+        )
+    except Exception:
+        return []
+
+    content = result.content
+    if hasattr(content, "text"):
+        raw = content.text
+    elif isinstance(content, list) and content:
+        raw = getattr(content[0], "text", "") or ""
+    else:
+        raw = str(content)
+
+    out: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        cleaned = re.sub(r"^[\d]+[.)]\s*|^[-*]\s*", "", line).strip(" .")
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
+def _fallback_decompose_instruction(instruction: str) -> list[str]:
+    """Deterministic decomposition when LLM output is unavailable."""
+    parts = [
+        p.strip(" .")
+        for p in re.split(r"\bthen\b|\band\b|,|;|->|=>", instruction, flags=re.IGNORECASE)
+        if p.strip(" .")
+    ]
+    uniq: list[str] = []
+    seen: set[str] = set()
+    for p in parts:
+        k = re.sub(r"\s+", " ", p).lower()
+        if len(k) < 3 or k in seen:
+            continue
+        seen.add(k)
+        uniq.append(p)
+    if len(uniq) >= 2:
+        return uniq[:5]
+    core = instruction.strip().rstrip(".")
+    return [
+        f"start by orienting to the initial state for: {core}",
+        f"move toward the main objective: {core}",
+        f"complete the objective: {core}",
+    ]
+
+
+def _normalize_steps(instruction: str, llm_steps: list[str]) -> list[str]:
+    raw = llm_steps if llm_steps else _fallback_decompose_instruction(instruction)
+    out: list[str] = []
+    seen: set[str] = set()
+    for step in raw:
+        cleaned = re.sub(r"\s+", " ", step).strip(" .")
+        key = cleaned.lower()
+        if not cleaned or len(cleaned) < 3 or key in seen:
+            continue
+        seen.add(key)
+        out.append(cleaned)
+        if len(out) >= 5:
+            break
+    if len(out) < 2:
+        return _fallback_decompose_instruction(instruction)
+    return out
 
 class _TrackingProgressEnv:
     """
@@ -403,7 +500,8 @@ def rl_clear_instruction_cache(env_id: str = "") -> str:
 
 
 @mcp.tool()
-def rl_apply_derived_instruction(
+async def rl_apply_derived_instruction(
+    ctx: Context,
     env_id: str,
     instruction: str,
     sub_goal_bonus: float = 0.0,
@@ -413,13 +511,14 @@ def rl_apply_derived_instruction(
     seed: Optional[int] = None,
 ) -> str:
     """
-    Look up a cached instruction (from rl_list_cached_instructions) and
-    convert it into a live InstructionFollowingProtocol, returning a
+    Look up a cached instruction (from rl_list_cached_instructions), decompose
+    it into ordered steps, and convert it into a live sequential protocol,
+    returning a
     match_id that can be passed to rl_instruction_run_episode() or
     rl_train_agent(match_id=...).
 
     This is the bridge between automatically derived instructions and the
-    existing instruction-following workflow.  The obs cache is already
+    sequential instruction-following workflow. The obs cache is already
     populated (from training), so no re-exploration is needed.
 
     Parameters
@@ -428,12 +527,13 @@ def rl_apply_derived_instruction(
         The environment the instruction belongs to.
     instruction:
         The exact instruction string from rl_list_cached_instructions().
-    sub_goal_bonus:\n        Bonus reward when the sub-goal similarity threshold is met.  Set to\n        0.0 (default) to auto-scale: ``max_reward / (100 \u00d7 n_sub_goals)``.\n        Pass an explicit positive value to override.
+    sub_goal_bonus:
+        Bonus reward when each sequential stage is reached. Set to
+        0.0 (default) to auto-scale.
     sub_goal_threshold:
         Cosine similarity threshold (0–1) to award the bonus.
     sub_goal_repeatable:
-        False (default) – bonus awarded once per episode.
-        True – bonus awarded every step the threshold is met.
+        Kept for API compatibility. Ignored in sequential mode.
     max_steps:
         Episode step cap stored on the protocol.
     seed:
@@ -446,13 +546,13 @@ def rl_apply_derived_instruction(
     """
     from ..instruction_following import (
         _INSTRUCTION_CACHE,
-        _STATE_INSTRUCTIONS,
-        build_instruction_following_protocol,
-        list_instruction_cache,
+        build_sequential_instruction_following_protocol,
+        obs_cache_langs,
     )
     from ..environments.registry import registry as _env_registry
 
     env_entries = _INSTRUCTION_CACHE.get(env_id, {})
+    del sub_goal_repeatable
     if instruction not in env_entries:
         available = list(env_entries.keys())
         hint = (
@@ -475,15 +575,20 @@ def rl_apply_derived_instruction(
             "Call rl_list_environments() to see available environments."
         )
 
-    # build_instruction_following_protocol will skip re-exploration because
-    # _OBS_CACHE is already populated from the training run.
+    observed_langs = obs_cache_langs(env_id)
+    llm_steps = await _decompose_instruction_with_llm(
+        ctx, instruction, env_id, observed_langs
+    )
+    steps = _normalize_steps(instruction, llm_steps)
+
+    # build_sequential_instruction_following_protocol skips re-exploration
+    # when the observation cache is already populated.
     try:
-        protocol = build_instruction_following_protocol(
-            instruction,
+        protocol = build_sequential_instruction_following_protocol(
+            steps,
             env,
             sub_goal_bonus=None if sub_goal_bonus == 0.0 else sub_goal_bonus,
             sub_goal_threshold=sub_goal_threshold,
-            sub_goal_repeatable=sub_goal_repeatable,
             max_steps=max_steps,
             seed=seed,
         )
@@ -496,31 +601,27 @@ def rl_apply_derived_instruction(
         "protocol": protocol,
         "env_id":   env_id,
         "env":      env,
+        "is_sequential": True,
+        "instructions": steps,
+        "decomposition": steps,
     }
 
     entry = env_entries[instruction]
     sr = f"{entry.success_rate:.1%}" if entry.episodes_run > 0 else "n/a"
-    effective_bonus = protocol.sub_goal_bonus  # already resolved by build_instruction...
-
-    # Also list any other instructions that overlap with this state.
-    state_map = _STATE_INSTRUCTIONS.get(env_id, {})
-    matched_lang = protocol.sub_goal_language
-    co_instrs = [i for i in state_map.get(matched_lang, []) if i != instruction]
-    co_str = (
-        "\n  Co-mapped instructions: " + ", ".join(repr(i) for i in co_instrs[:3])
-        + ("..." if len(co_instrs) > 3 else "")
-    ) if co_instrs else ""
+    effective_bonus = protocol.sub_goal_bonus
 
     return (
         f"Instruction applied for '{env_id}':\n\n"
         f"  Instruction:    {instruction!r}\n"
-        f"  Matched state:  {matched_lang!r}\n"
         f"  Similarity:     {entry.match.similarity_score:.4f}\n"
+        f"  Sequential steps: {len(steps)}\n"
+        + "\n".join(f"    {i+1}. {s}" for i, s in enumerate(steps))
+        + "\n"
         f"  Sub-goal bonus: {effective_bonus:.6g} (auto-scaled)\n"
         f"  Training stats: {entry.episodes_run} episode(s)  "
-        f"success_rate={sr}{co_str}\n"
+        f"success_rate={sr}\n"
         f"  Match ID:       {match_id}\n\n"
         f"Use rl_instruction_run_episode(match_id='{match_id}') to run a "
-        f"sub-goal-shaped episode.\n"
-        f"Or pass match_id='{match_id}' to rl_train_agent() for shaped training."
+        f"sequentially shaped episode.\n"
+        f"Or pass match_id='{match_id}' to rl_train_agent() for sequential shaped training."
     )

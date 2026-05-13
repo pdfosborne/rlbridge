@@ -15,11 +15,10 @@ from typing import Any, Optional
 from mcp.server.fastmcp import Context
 
 from ._dashboard import dashboard as _dash, is_running as _dash_running
-from ._env_wrappers import _LangStateEnv, _ShapedEnv
+from ._env_wrappers import _LangStateEnv, _SequentialShapedEnv, _ShapedEnv
 from ._state import (
     _RENDERS_DIR,
     _custom_translators,
-    _in_process,
     _instruction_protocols,
     _trained_agents,
     log,
@@ -145,12 +144,17 @@ def _render_policy_for_dashboard(
         return
     try:
         from ..environments.registry import registry as _env_registry  # noqa: PLC0415
+        from ..language_translation import get_translator  # noqa: PLC0415
         from ..policy_rendering import PolicyRenderer, save_gif  # noqa: PLC0415
         from ..policy_rendering import _hashable_obs  # noqa: PLC0415
 
         if not best_episode_history:
             _dash.finish(agent_id)
             return
+
+        stored = _trained_agents.get(agent_id, {})
+        use_lang_state = bool(stored.get("use_language_state", False))
+        translator = _custom_translators.get(env_id) or get_translator(env_id)
 
         policy = {_hashable_obs(obs): act for obs, act in best_episode_history}
         factory = _env_registry.get(env_id)
@@ -159,7 +163,14 @@ def _render_policy_for_dashboard(
         try:
             import io, base64 as _b64  # noqa: PLC0415
             render_env = factory.create(render_mode="rgb_array")
-            renderer = PolicyRenderer(env=render_env, policy=policy, fallback="random")
+            if use_lang_state and translator is not None:
+                render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
+            renderer = PolicyRenderer(
+                env=render_env,
+                policy=policy,
+                fallback="random",
+                translate=True,
+            )
             frames = renderer.run(max_steps=max_steps, seed=0)
             render_env.close()
 
@@ -179,7 +190,14 @@ def _render_policy_for_dashboard(
         # ── Attempt 2: ANSI text frames ───────────────────────────────────────
         try:
             render_env = factory.create(render_mode="ansi")
-            renderer = PolicyRenderer(env=render_env, policy=policy, fallback="random")
+            if use_lang_state and translator is not None:
+                render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
+            renderer = PolicyRenderer(
+                env=render_env,
+                policy=policy,
+                fallback="random",
+                translate=True,
+            )
             frames = renderer.run(max_steps=max_steps, seed=0)
             render_env.close()
 
@@ -384,32 +402,66 @@ async def rl_train_agent(
                 "Call rl_match_instruction() first to generate a valid match_id."
             )
         protocol = entry["protocol"]
-        n_sub_goals = len(protocol._all_sub_goal_languages)
+        is_sequential = bool(entry.get("is_sequential"))
+        n_sub_goals = 0
         # None tells _ShapedEnv to auto-scale; explicit >0 overrides.
         effective_bonus: Optional[float] = None if sub_goal_bonus == 0.0 else sub_goal_bonus
-        # Wrap the environment so that step() injects the similarity bonus.
-        shaped_env = _ShapedEnv(
-            env,
-            sub_goal_language=protocol.sub_goal_language,
-            sub_goal_languages=[
-                lg for lg in protocol._all_sub_goal_languages
-                if lg != protocol.sub_goal_language
-            ],
-            bonus=effective_bonus,
-            threshold=sub_goal_threshold,
-            translator=protocol.translate,
-            env_id=env_id,
-        )
-        # Trigger encoder/bonus resolution now so we can report the value.
-        shaped_env._ensure_encoder()
-        resolved_bonus = shaped_env._bonus
-        env = shaped_env
-        shaping_summary = (
-            f"\n  Sub-goal shaping: ON  (match_id={match_id})\n"
-            f"  Sub-goals:        {n_sub_goals} state(s)\n"
-            f"  Primary:          {protocol.sub_goal_language!r}\n"
-            f"  Bonus (auto-scaled): {resolved_bonus:.6g} / threshold={sub_goal_threshold}"
-        )
+        if is_sequential:
+            stage_languages: list[list[str]] = []
+            for m in getattr(protocol, "matches", []):
+                langs = [lg for lg, _obs, _sc in getattr(m, "matched_states", [])]
+                if not langs and getattr(m, "matched_language", None):
+                    langs = [m.matched_language]
+                if langs:
+                    stage_languages.append(langs)
+            if not stage_languages:
+                return (
+                    f"match_id '{match_id}' does not have valid sequential stages. "
+                    "Re-run rl_match_instruction() or rl_match_sequential_instructions()."
+                )
+            n_sub_goals = sum(len(s) for s in stage_languages)
+            shaped_env = _SequentialShapedEnv(
+                env,
+                stage_languages=stage_languages,
+                bonus=effective_bonus,
+                threshold=sub_goal_threshold,
+                translator=getattr(protocol, "translate", True),
+                env_id=env_id,
+            )
+            shaped_env._ensure_encoders()
+            resolved_bonus = shaped_env._bonus
+            env = shaped_env
+            shaping_summary = (
+                f"\n  Sub-goal shaping: ON (sequential)  (match_id={match_id})\n"
+                f"  Stages:           {len(stage_languages)}\n"
+                f"  Sub-goals total:  {n_sub_goals} state(s)\n"
+                f"  Bonus (auto-scaled): {resolved_bonus:.6g} / threshold={sub_goal_threshold}"
+            )
+        else:
+            n_sub_goals = len(protocol._all_sub_goal_languages)
+            # Wrap the environment so that step() injects the similarity bonus.
+            shaped_env = _ShapedEnv(
+                env,
+                sub_goal_language=protocol.sub_goal_language,
+                sub_goal_languages=[
+                    lg for lg in protocol._all_sub_goal_languages
+                    if lg != protocol.sub_goal_language
+                ],
+                bonus=effective_bonus,
+                threshold=sub_goal_threshold,
+                translator=protocol.translate,
+                env_id=env_id,
+            )
+            # Trigger encoder/bonus resolution now so we can report the value.
+            shaped_env._ensure_encoder()
+            resolved_bonus = shaped_env._bonus
+            env = shaped_env
+            shaping_summary = (
+                f"\n  Sub-goal shaping: ON  (match_id={match_id})\n"
+                f"  Sub-goals:        {n_sub_goals} state(s)\n"
+                f"  Primary:          {protocol.sub_goal_language!r}\n"
+                f"  Bonus (auto-scaled): {resolved_bonus:.6g} / threshold={sub_goal_threshold}"
+            )
 
     # ── Optional language-state wrapping ─────────────────────────────────────
     lang_state_summary = ""
@@ -468,11 +520,24 @@ async def rl_train_agent(
 
     # Register with the live dashboard if it is running
     if _dash_running():
+        dash_instructions: list[str] = []
+        if match_id and match_id in _instruction_protocols:
+            _p = _instruction_protocols[match_id]["protocol"]
+            seq_instrs = getattr(_p, "instructions", None)
+            if isinstance(seq_instrs, list) and seq_instrs:
+                dash_instructions.extend(str(s) for s in seq_instrs[:5])
+            else:
+                instr = getattr(_p, "instruction", "")
+                if instr:
+                    dash_instructions.append(str(instr))
         _dash.register(
             agent_id,
             agent_type=agent_type,
             env_id=env_id,
             n_episodes=n_episodes,
+            use_language_state=use_language_state,
+            uses_instructions=bool(match_id),
+            instructions=dash_instructions,
         )
 
     progress_env = _ProgressEnv(
@@ -517,21 +582,63 @@ async def rl_train_agent(
         "best_episode_history": result.best_episode_history,
         "use_language_state":   use_language_state,
         "train_result":         result,
+        "training_config": {
+            "n_episodes": n_episodes,
+            "max_steps": max_steps,
+            "seed": seed,
+            "match_id": match_id or None,
+            "sub_goal_bonus": resolved_bonus,
+            "sub_goal_threshold": sub_goal_threshold if match_id else None,
+            "use_language_state": use_language_state,
+            "alpha": alpha if agent_type == "tabular_q" else None,
+            "gamma": gamma,
+            "epsilon": epsilon if agent_type in {"tabular_q", "dqn"} else None,
+            "epsilon_min": epsilon_min if agent_type in {"tabular_q", "dqn"} else None,
+            "epsilon_decay": epsilon_decay if agent_type in {"tabular_q", "dqn"} else None,
+            "hidden_size": hidden_size if agent_type in {"dqn", "ppo"} else None,
+            "lr": lr if agent_type in {"dqn", "ppo"} else None,
+            "buffer_size": buffer_size if agent_type == "dqn" else None,
+            "batch_size": batch_size if agent_type == "dqn" else None,
+            "target_update_freq": target_update_freq if agent_type == "dqn" else None,
+            "lr_critic": lr_critic if agent_type == "ppo" else None,
+            "lam": lam if agent_type == "ppo" else None,
+            "clip_eps": clip_eps if agent_type == "ppo" else None,
+            "n_steps": n_steps if agent_type == "ppo" else None,
+            "ppo_epochs": ppo_epochs if agent_type == "ppo" else None,
+            "mini_batch_size": mini_batch_size if agent_type == "ppo" else None,
+        },
         # Sub-goal metadata (populated when match_id was provided)
         "match_id":             match_id or None,
         "sub_goal_language":    (
-            _instruction_protocols[match_id]["protocol"].sub_goal_language
+            getattr(_instruction_protocols[match_id]["protocol"], "sub_goal_language", None)
             if match_id and match_id in _instruction_protocols else None
         ),
         "sub_goal_bonus":       resolved_bonus,
         "sub_goal_threshold":   sub_goal_threshold if match_id else None,
         "instruction":          (
-            _instruction_protocols[match_id]["protocol"].instruction
+            (
+                " -> ".join(getattr(_instruction_protocols[match_id]["protocol"], "instructions", [])[:5])
+                if getattr(_instruction_protocols[match_id]["protocol"], "instructions", None)
+                else getattr(_instruction_protocols[match_id]["protocol"], "instruction", None)
+            )
             if match_id and match_id in _instruction_protocols else None
         ),
         "n_subgoals":           (
-            len(_instruction_protocols[match_id]["protocol"]._all_sub_goal_languages)
+            (
+                sum(len(getattr(m, "matched_states", []) or [getattr(m, "matched_language", "")])
+                    for m in getattr(_instruction_protocols[match_id]["protocol"], "matches", []))
+                if getattr(_instruction_protocols[match_id]["protocol"], "matches", None)
+                else len(getattr(_instruction_protocols[match_id]["protocol"], "_all_sub_goal_languages", []))
+            )
             if match_id and match_id in _instruction_protocols else None
+        ),
+        "best_match_observation": (
+            (_instruction_protocols.get(match_id, {}).get("match_summary") or {}).get("best_match_observation")
+            if match_id else None
+        ),
+        "best_match_similarity": (
+            (_instruction_protocols.get(match_id, {}).get("match_summary") or {}).get("best_match_similarity")
+            if match_id else None
         ),
     }
 
@@ -677,196 +784,170 @@ def rl_run_agent_episode(
 @mcp.tool()
 def rl_create_training_report(
     agent_id: str,
+    compare_agent_ids: Optional[list[str]] = None,
     output_path: str = "",
     rolling_window: int = 0,
+    breakpoint_count: int = 6,
     n_sample_frames: int = 6,
     render_for_frames: bool = True,
     n_render_episodes: int = 20,
     fps: float = 6.0,
 ) -> str:
     """
-    Generate a multi-panel training report for a previously trained agent and
-    save it as a PNG image.
+     Generate a redesigned training report for one or more trained agents and
+     save it as a PNG image.
 
-    The report contains four sections:
-
-    1. **Reward curve** — per-episode reward and rolling average over the full
-       training run, with the best episode marked.
-    2. **Sample frames** — evenly-spaced RGB frames from the best episode
-       replayed through the learnt policy (only if the environment supports
-       rgb_array rendering; requires render_for_frames=True).
-    3. **Metadata table** — agent type, hyper-parameters, training statistics,
-       and sub-goal shaping settings.
-    4. **Sub-goal similarity panel** — if the agent was trained with a
-       match_id (via rl_match_instruction), shows per-step cosine similarity
-       to the sub-goal during the best training episode, with markers at each
-       step the reward bonus was triggered.  When no sub-goal was used, a
-       placeholder is shown.
+     The report includes:
+     1. Reward-convergence evaluation from training reward trajectories.
+     2. Reward obtained by the optimal policy at training breakpoints
+         (best-so-far proxy: max reward observed up to each breakpoint).
+     3. Instructions used, best-matched observation, and similarity %.
+     4. Metadata and hyper-parameters used for each compared agent.
 
     Parameters
     ----------
     agent_id:
-        The agent_id returned by rl_train_agent().
+        Primary agent_id returned by rl_train_agent().
+    compare_agent_ids:
+        Optional additional agent IDs to compare in the same report.
+        Agents should be trained on the same environment for fair comparison.
     output_path:
         Path to write the PNG report.  Defaults to
         ``~/.rlip/renders/<env>_<agent_id>_report.png``.
     rolling_window:
         Number of episodes for the rolling reward average (0 = auto: 5 %
         of total episodes, minimum 10).
+    breakpoint_count:
+        Number of training breakpoints used in the optimal-policy evaluation.
     n_sample_frames:
-        Number of evenly-spaced frames to show in the frames strip (max 8).
+        Deprecated. Kept for backward compatibility.
     render_for_frames:
-        Set False to skip the rgb_array rendering step (faster, but no
-        frame strip in the report).
+        Deprecated. Kept for backward compatibility.
     n_render_episodes:
-        Number of episodes to run before selecting the best one to render.
+        Deprecated. Kept for backward compatibility.
     fps:
-        Frame rate used when the GIF companion file is also desired.
+        Deprecated. Kept for backward compatibility.
 
     Returns
     -------
     The local path of the saved PNG report and its base64-encoded content
     so Claude can display it inline.
     """
+    del n_sample_frames
+    del render_for_frames
+    del n_render_episodes
+    del fps
+
     from ..analysis import create_training_report  # noqa: PLC0415
-    from ..environments.registry import registry as _env_registry  # noqa: PLC0415
-    from ..instruction_matching import TextEncoder  # noqa: PLC0415
-    from ..language_translation import get_translator  # noqa: PLC0415
 
-    entry = _trained_agents.get(agent_id)
-    if entry is None:
+    def _breakpoint_proxy(
+        rewards: list[float],
+        count: int,
+    ) -> list[tuple[int, float]]:
+        if not rewards:
+            return []
+        n = len(rewards)
+        del count
+
+        # Phase 1: every 10 episodes for the first 100 episodes
+        episodes: list[int] = list(range(10, min(101, n + 1), 10))
+        
+        # Phase 2: larger intervals for episodes > 100 (every 50 episodes)
+        if n > 100:
+            episodes.extend(ep for ep in range(150, n + 1, 50))
+            if n not in episodes:
+                episodes.append(n)
+        
+        episodes = sorted(set(episodes))  # Remove duplicates and sort
+
+        out: list[tuple[int, float]] = []
+        running_best = float("-inf")
+        next_idx = 0
+        for ep_idx, reward in enumerate(rewards, start=1):
+            running_best = max(running_best, reward)
+            while next_idx < len(episodes) and ep_idx >= episodes[next_idx]:
+                out.append((episodes[next_idx], running_best))
+                next_idx += 1
+        return out
+
+    compare_agent_ids = compare_agent_ids or []
+    requested_ids: list[str] = []
+    for cand in [agent_id, *compare_agent_ids]:
+        if cand and cand not in requested_ids:
+            requested_ids.append(cand)
+
+    missing = [aid for aid in requested_ids if aid not in _trained_agents]
+    if missing:
         return (
-            f"Agent ID '{agent_id}' not found.  "
-            "Run rl_train_agent() first to train an agent."
+            "Some agent IDs were not found: "
+            + ", ".join(missing)
+            + ". Run rl_train_agent() first."
         )
 
-    env_id     = entry["env_id"]
-    agent_type = entry["agent_type"]
-    train_result = entry.get("train_result")
-
-    if train_result is None:
+    entries = [(aid, _trained_agents[aid]) for aid in requested_ids]
+    env_ids = {entry["env_id"] for _, entry in entries}
+    if len(env_ids) != 1:
         return (
-            "No training result stored for this agent.  "
-            "This agent was trained with an older version of RLIP; re-train to "
-            "enable reporting."
+            "All compared agents must come from the same environment. "
+            f"Found environments: {', '.join(sorted(env_ids))}"
         )
 
-    # ── Determine output path ─────────────────────────────────────────────────
+    env_id = entries[0][1]["env_id"]
+    primary_agent_type = entries[0][1]["agent_type"]
+
+    for aid, entry in entries:
+        if entry.get("train_result") is None:
+            return (
+                f"Agent '{aid}' has no stored training result. "
+                "Re-train that agent to enable reporting."
+            )
+
     _RENDERS_DIR.mkdir(parents=True, exist_ok=True)
-    safe_id   = env_id.replace("/", "_").replace("-", "_").replace(" ", "_")
-    out_path  = output_path or str(
-        _RENDERS_DIR / f"{safe_id}_{agent_type}_{agent_id}_report.png"
-    )
+    safe_id = env_id.replace("/", "_").replace("-", "_").replace(" ", "_")
+    if len(entries) > 1:
+        out_path = output_path or str(_RENDERS_DIR / f"{safe_id}_comparison_report.png")
+    else:
+        out_path = output_path or str(
+            _RENDERS_DIR / f"{safe_id}_{primary_agent_type}_{agent_id}_report.png"
+        )
 
-    # ── Render best episode to get sample frames ──────────────────────────────
-    render_result = None
-    if render_for_frames and _in_process:
-        try:
-            from ..interaction_protocols import (  # noqa: PLC0415
-                GreedyEpisodeProtocol,
-                MultiEpisodeProtocol,
-                RandomEpisodeProtocol,
-            )
-            from ..policy_rendering import render_optimal_policy  # noqa: PLC0415
+    comparison_runs: list[dict[str, Any]] = []
+    for aid, entry in entries:
+        tr = entry["train_result"]
+        agent_type = entry["agent_type"]
 
-            factory   = _env_registry.get(env_id)
-            train_env = factory.create(render_mode=None)
-            try:
-                stored_agent = entry["agent"]
-                best_history = entry.get("best_episode_history", [])
-                if best_history:
-                    def _greedy_fn(obs: Any) -> Any:  # noqa: E731
-                        act_fn = getattr(stored_agent, "act_greedy", None) or stored_agent.act
-                        return act_fn(obs)
-                    base = GreedyEpisodeProtocol(
-                        policy_fn=_greedy_fn, max_steps=200, record_history=True
-                    )
-                else:
-                    base = RandomEpisodeProtocol(max_steps=200, record_history=True)
-                protocol = MultiEpisodeProtocol(base, n_episodes=n_render_episodes)
-                collection_result = protocol(train_env)
-            finally:
-                train_env.close()
+        hp_raw = dict(entry.get("training_config") or {})
+        hp = {k: v for k, v in hp_raw.items() if v is not None}
 
-            render_result = render_optimal_policy(
-                collection_result,
-                env_factory=factory,
-                render_mode="rgb_array",
-                max_steps=200,
-            )
-        except Exception as _render_exc:
-            log.warning("Frame rendering failed (non-fatal): %s", _render_exc)
-
-    # ── Compute per-step sub-goal similarity from best training episode ────────
-    subgoal_steps: list[tuple[int, float, bool]] = []
-    subgoal_info:  dict[str, Any] | None = None
-
-    match_id_stored = entry.get("match_id")
-    sub_goal_lang   = entry.get("sub_goal_language")
-    if match_id_stored and sub_goal_lang:
-        instruction = entry.get("instruction", "")
-        threshold   = float(entry.get("sub_goal_threshold") or 0.5)
-        bonus       = entry.get("sub_goal_bonus")
-        n_subgoals  = entry.get("n_subgoals")
-
-        subgoal_info = {
-            "instruction":       instruction,
-            "sub_goal_language": sub_goal_lang,
-            "threshold":         threshold,
-            "bonus":             bonus,
-            "match_id":          match_id_stored,
-            "n_subgoals":        n_subgoals,
+        uses_instructions = bool(entry.get("instruction") or entry.get("match_id"))
+        md: dict[str, Any] = {
+            "env_id": entry.get("env_id"),
+            "agent_id": aid,
+            "agent_type": agent_type,
+            "use_language_state": bool(entry.get("use_language_state", False)),
+            "uses_instructions": uses_instructions,
+            "match_id": entry.get("match_id") or "-",
         }
 
-        # Re-compute similarity for each step of the best training episode.
-        use_lang_state = entry.get("use_language_state", False)
-        translator = _custom_translators.get(env_id) or get_translator(env_id)
-        best_history = entry.get("best_episode_history", [])
+        comparison_runs.append(
+            {
+                "label": f"{agent_type}:{aid[:6]}",
+                "train_result": tr,
+                "metadata": md,
+                "hyperparameters": hp,
+                "instruction": entry.get("instruction"),
+                "best_match_observation": entry.get("best_match_observation") or entry.get("sub_goal_language"),
+                "best_match_similarity": entry.get("best_match_similarity"),
+                "breakpoints": _breakpoint_proxy(tr.episode_rewards, breakpoint_count),
+            }
+        )
 
-        if best_history and (translator or use_lang_state):
-            try:
-                enc = TextEncoder()
-                enc.fit([sub_goal_lang])
-                sg_vec = enc.encode(sub_goal_lang)
-
-                for step_n, (obs, _action) in enumerate(best_history, 1):
-                    # If language-state was used, obs is already a string
-                    if use_lang_state and isinstance(obs, str):
-                        lang = obs
-                    elif translator:
-                        lang = translator.translate(obs) or ""
-                    else:
-                        lang = ""
-
-                    if not lang:
-                        continue
-
-                    obs_vec = enc.encode(lang)
-                    sim = float(enc.cosine_similarity(obs_vec, sg_vec))
-                    reached = sim >= threshold
-                    subgoal_steps.append((step_n, sim, reached))
-            except Exception as _sg_exc:
-                log.warning("Sub-goal similarity computation failed: %s", _sg_exc)
-
-    # ── Extra metadata shown in the table ─────────────────────────────────────
-    extra_meta: dict[str, Any] = {"Agent ID": agent_id}
-    if entry.get("use_language_state"):
-        extra_meta["Language state"] = "Yes"
-    if match_id_stored:
-        extra_meta["Match ID"] = match_id_stored
-        extra_meta["Sub-goal shaping"] = "Yes"
-
-    # ── Generate report ───────────────────────────────────────────────────────
     try:
         fig = create_training_report(
-            train_result=train_result,
-            render_result=render_result,
-            metadata=extra_meta,
-            subgoal_steps=subgoal_steps or None,
-            subgoal_info=subgoal_info,
+            comparison_runs=comparison_runs,
             output_path=out_path,
             rolling_window=rolling_window or None,
-            n_sample_frames=min(n_sample_frames, 8),
+            n_breakpoints=breakpoint_count,
         )
     except Exception as exc:
         return f"Report generation failed: {exc}"
@@ -879,7 +960,8 @@ def rl_create_training_report(
         buf.seek(0)
         b64 = base64.b64encode(buf.read()).decode("ascii")
         return (
-            f"Training report generated for agent '{agent_id}' ({agent_type} on {env_id}).\n"
+            f"Training report generated for {len(entries)} agent(s) on {env_id}.\n"
+            f"Agent IDs: {', '.join(requested_ids)}\n"
             f"Saved to: {out_path}\n\n"
             f"data:image/png;base64,{b64}"
         )

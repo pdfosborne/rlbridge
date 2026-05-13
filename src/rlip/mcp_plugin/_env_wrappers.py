@@ -119,6 +119,112 @@ class _ShapedEnv:
         return getattr(self._env, name)
 
 
+class _SequentialShapedEnv:
+    """
+    Reward-shaping wrapper for ordered multi-step instructions.
+
+    Similarity is computed only against the currently active stage's language
+    set. When the active stage is reached, bonus is applied once and the
+    wrapper advances to the next stage.
+    """
+
+    def __init__(
+        self,
+        env: Any,
+        stage_languages: list[list[str]],
+        bonus: Optional[float],
+        threshold: float,
+        translator: Any,
+        env_id: str,
+    ) -> None:
+        self._env = env
+        self._bonus = bonus
+        self._threshold = threshold
+        self._env_id = env_id
+        self._stage_languages: list[list[str]] = []
+        for stage in stage_languages:
+            seen: set[str] = set()
+            ordered: list[str] = []
+            for lg in stage:
+                k = str(lg).strip().lower()
+                if k and k not in seen:
+                    seen.add(k)
+                    ordered.append(str(lg))
+            if ordered:
+                self._stage_languages.append(ordered)
+
+        from ..language_translation import get_translator  # noqa: PLC0415
+        from ..language_translation.base import LanguageTranslator  # noqa: PLC0415
+        if isinstance(translator, LanguageTranslator):
+            self._translator = translator
+        else:
+            self._translator = get_translator(env_id)
+
+        self._encoders: list[Any] = []
+        self._stage_vecs: list[list[Any]] = []
+        self._current_stage: int = 0
+
+    def _ensure_encoders(self) -> None:
+        if self._encoders:
+            return
+        from ..instruction_following import TextEncoder, scale_sub_goal_bonus  # noqa: PLC0415
+
+        for stage in self._stage_languages:
+            enc = TextEncoder()
+            enc.fit(stage)
+            self._encoders.append(enc)
+            self._stage_vecs.append([enc.encode(lg) for lg in stage])
+
+        if self._bonus is None:
+            self._bonus = scale_sub_goal_bonus(
+                self._env, n_instructions=max(1, len(self._stage_languages))
+            )
+
+    def reset(self, seed: Any = None, options: Any = None) -> Any:
+        self._current_stage = 0
+        return self._env.reset(seed=seed, options=options)
+
+    def step(self, action: Any) -> Any:
+        result = self._env.step(action)
+        try:
+            if self._current_stage >= len(self._stage_languages):
+                return result
+            self._ensure_encoders()
+            obs = result.observation if hasattr(result, "observation") else result.get("observation")
+            if self._translator and obs is not None:
+                lang = self._translator.translate(obs)
+                enc = self._encoders[self._current_stage]
+                obs_vec = enc.encode(lang)
+                sim = max(
+                    float(enc.cosine_similarity(obs_vec, sg_vec))
+                    for sg_vec in self._stage_vecs[self._current_stage]
+                )
+                if sim >= self._threshold:
+                    if hasattr(result, "reward"):
+                        object.__setattr__(result, "reward", result.reward + self._bonus)
+                    elif isinstance(result, dict):
+                        result = dict(result)
+                        result["reward"] = result.get("reward", 0.0) + self._bonus
+                    self._current_stage += 1
+        except Exception:
+            pass
+        return result
+
+    def close(self) -> None:
+        self._env.close()
+
+    @property
+    def action_space(self) -> Any:
+        return self._env.action_space
+
+    @property
+    def env_id(self) -> str:
+        return self._env_id
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._env, name)
+
+
 class _LangStateEnv:
     """
     Environment wrapper that replaces raw observations with their
