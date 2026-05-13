@@ -1955,5 +1955,127 @@ def register_mcp_tools(*, mcp: Any, registry: Any, log: Any) -> int:
         }
         return json.dumps(result, indent=2)
 
+    @mcp.tool()
+    def fab_resolve_deck_from_url(
+        fabrary_url: str,
+        side: str = "agent",
+        format_name: str = "silver_age",
+    ) -> str:
+        """Resolve a Flesh and Blood deck from a fabrary.net public link.
+
+        Parses the fabrary.net deck URL to extract the deck ID, looks up the deck
+        in the static database, and resolves it to a card ID list legal for the
+        specified format. The resolved deck can be used directly with environment
+        setup or the fab_evaluate_deck_matchup tool.
+
+        Args:
+            fabrary_url: Full fabrary.net deck URL, e.g.
+                "https://fabrary.net/decks/01KR40W4Z2ZS9EQPT6VT6CDSPE".
+            side: Descriptive context – "agent" or "opponent". Does not affect
+                resolution but is included in response for clarity.
+            format_name: FaB format (silver_age, classic_constructed, cc, sa, blitz).
+                Defaults to silver_age. The deck is verified against this format's
+                legality.
+
+        Returns:
+            JSON string with deck_id, deck_name, hero_id, format, style,
+            _card_ids (pre-resolved legal card list), source_url, and error
+            info if resolution failed.
+        """
+        import re
+
+        # Normalize format name
+        try:
+            # Create temp env to access format normalization
+            temp_env = registry.create("FleshAndBlood-Talishar-v0", render_mode=None, format=format_name)
+            normalized_format = temp_env._format
+            temp_env.close()
+        except Exception as exc:
+            return json.dumps({
+                "error": f"Invalid format {format_name!r}: {exc}",
+                "side": side,
+                "url": fabrary_url,
+            }, indent=2)
+
+        # Extract deck ID from URL: https://fabrary.net/decks/01KR40W4Z2ZS9EQPT6VT6CDSPE
+        match = re.search(r"/decks/([a-zA-Z0-9]+)\b", fabrary_url)
+        if not match:
+            return json.dumps({
+                "error": f"Could not parse deck ID from URL: {fabrary_url!r}",
+                "expected_format": "https://fabrary.net/decks/{{DECK_ID}}",
+                "side": side,
+                "format": normalized_format,
+            }, indent=2)
+
+        deck_id = match.group(1)
+        deck_key = f"fab_{deck_id.lower()}"
+
+        # Load fabrary database and find the deck
+        try:
+            if not _FABRARY_DECKS_PATH.exists():
+                return json.dumps({
+                    "error": f"Fabrary deck database not found at {_FABRARY_DECKS_PATH}",
+                    "side": side,
+                }, indent=2)
+
+            data = json.loads(_FABRARY_DECKS_PATH.read_text(encoding="utf-8"))
+            raw_decks = list(data.get("decks", []))
+            deck_entry = next((d for d in raw_decks if str(d.get("id", "")).lower() == deck_key), None)
+
+            if not deck_entry:
+                known_ids = [d.get("id", "") for d in raw_decks]
+                return json.dumps({
+                    "error": f"Deck {deck_key!r} not found in fabrary database",
+                    "deck_id_from_url": deck_id,
+                    "available_decks": known_ids[:10],
+                    "side": side,
+                }, indent=2)
+
+            # Check format match
+            deck_format = str(deck_entry.get("format", ""))
+            if deck_format != normalized_format:
+                return json.dumps({
+                    "error": f"Deck is {deck_format!r} but requested format is {normalized_format!r}",
+                    "deck_id": deck_key,
+                    "deck_name": deck_entry.get("name", deck_key),
+                    "side": side,
+                }, indent=2)
+
+            # Resolve the deck to card IDs using the environment's logic
+            temp_env = registry.create("FleshAndBlood-Talishar-v0", render_mode=None, format=normalized_format)
+            card_ids = temp_env._resolve_fabrary_deck(deck_entry)
+            temp_env.close()
+
+            if not card_ids:
+                return json.dumps({
+                    "error": f"Deck {deck_key!r} resolved to 0 legal cards for format {normalized_format!r}",
+                    "deck_id": deck_key,
+                    "deck_name": deck_entry.get("name", deck_key),
+                    "side": side,
+                }, indent=2)
+
+            # Return as a deck option dict
+            return json.dumps({
+                "deck_id": deck_key,
+                "deck_name": deck_entry.get("name", deck_key),
+                "hero_id": str(deck_entry.get("hero_id", "")),
+                "format": deck_format,
+                "style": str(deck_entry.get("style", "balanced")),
+                "deck_size": len(card_ids),
+                "_card_ids": card_ids,
+                "source": "fabrary",
+                "source_url": fabrary_url,
+                "description": deck_entry.get("description", ""),
+                "side": side,
+            }, indent=2)
+
+        except Exception as exc:
+            log.exception("fab_resolve_deck_from_url error")
+            return json.dumps({
+                "error": f"Failed to resolve deck: {exc}",
+                "side": side,
+                "deck_id_from_url": deck_id if match else None,
+            }, indent=2)
+
     _FAB_CUSTOM_TOOLS_REGISTERED = True
-    return 4
+    return 5
