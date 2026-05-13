@@ -14,8 +14,13 @@ How it works
 3. The plugin can run environments *in-process* (default) or *proxy* to a
    running RLIP HTTP server (set RLIP_SERVER_URL env var).
 
-Claude Code configuration  (~/.claude.json)
--------------------------------------------
+Configuration
+-------------
+Run the matching install command once, then restart the client:
+
+Claude Code  (~/.claude.json):
+    rlip install-claude
+    # or manually:
     {
       "mcpServers": {
         "rlip": {
@@ -26,15 +31,27 @@ Claude Code configuration  (~/.claude.json)
       }
     }
 
-Or if you installed via pip as a script:
+Codex CLI  (~/.codex/config.toml):
+    rlip install-codex
+    # or manually:
+    [mcp_servers.rlip]
+    command = "python"
+    args = ["-m", "rlip.mcp_plugin"]
+
+OpenCode  (~/.config/opencode/config.json):
+    rlip install-opencode
+    # or manually:
     {
-      "mcpServers": {
+      "mcp": {
         "rlip": {
-          "command": "rlip-mcp",
-          "type": "stdio"
+          "type": "local",
+          "command": ["python", "-m", "rlip.mcp_plugin"]
         }
       }
     }
+
+If installed via pip as a console script, replace ``["python", "-m",
+"rlip.mcp_plugin"]`` with ``"rlip-mcp"`` (use ``--use-script`` flag).
 
 Module layout
 -------------

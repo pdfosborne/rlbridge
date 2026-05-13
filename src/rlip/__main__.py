@@ -1,21 +1,24 @@
 """
 RLIP CLI  (``rlip`` command)
 ==============================
-Provides three commands:
+Provides these commands:
 
-    rlip server            – start the HTTP JSON-RPC server
-    rlip mcp               – start the MCP stdio plugin (for Claude Code)
-    rlip install-claude    – configure RLIP in ~/.claude.json
-    rlip agent             – run an Ollama / OpenAI-compatible agent loop
-    rlip catalog           – list the public environment catalog
-    rlip install           – download a public environment from GitHub
-    rlip uninstall         – remove a cached public environment
+    rlip server              – start the HTTP JSON-RPC server
+    rlip mcp                 – start the MCP stdio plugin
+    rlip install-claude      – configure RLIP in ~/.claude.json  (Claude Code)
+    rlip install-codex       – configure RLIP in ~/.codex/config.toml  (Codex CLI)
+    rlip install-opencode    – configure RLIP in ~/.config/opencode/config.json  (OpenCode)
+    rlip agent               – run an Ollama / OpenAI-compatible agent loop
+    rlip catalog             – list the public environment catalog
+    rlip install             – download a public environment from GitHub
+    rlip uninstall           – remove a cached public environment
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -134,6 +137,124 @@ def install_claude(
         "  1. Restart Claude Code\n"
         "  2. Open a new conversation\n"
         "  3. Ask Claude to 'run a CartPole episode' to verify the plugin works"
+    )
+
+
+# ── rlip install-codex ───────────────────────────────────────────────────────
+
+@app.command("install-codex")
+def install_codex(
+    command: str = typer.Option(
+        sys.executable,
+        help="Python executable to use (defaults to current interpreter)",
+    ),
+    use_script: bool = typer.Option(
+        False,
+        "--use-script/--use-module",
+        help="Use the 'rlip-mcp' script instead of 'python -m'",
+    ),
+    config_path: Optional[Path] = typer.Option(
+        None,
+        help="Path to Codex config.toml (defaults to ~/.codex/config.toml)",
+    ),
+) -> None:
+    """
+    Add RLIP to your Codex CLI MCP configuration (~/.codex/config.toml).
+
+    After running this command, restart Codex and RLIP tools will be
+    available in your Codex sessions.
+    """
+    target = config_path or Path.home() / ".codex" / "config.toml"
+
+    if use_script:
+        toml_block = "[mcp_servers.rlip]\ncommand = \"rlip-mcp\"\n"
+    else:
+        args_toml = json.dumps(["-m", "rlip.mcp_plugin"])
+        toml_block = (
+            "[mcp_servers.rlip]\n"
+            f'command = "{command}"\n'
+            f"args = {args_toml}\n"
+        )
+
+    existing = target.read_text() if target.exists() else ""
+
+    section_pattern = re.compile(
+        r"\[mcp_servers\.rlip\][^\[]*", re.DOTALL
+    )
+    if section_pattern.search(existing):
+        updated = section_pattern.sub(toml_block, existing)
+    else:
+        separator = "\n" if existing and not existing.endswith("\n") else ""
+        updated = existing + separator + "\n" + toml_block
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(updated)
+    console.print(f"[green]✓ RLIP MCP server added to {target}[/green]")
+    console.print("\nConfiguration written:")
+    console.print(toml_block)
+    console.print(
+        "\n[bold]Next steps:[/bold]\n"
+        "  1. Restart Codex\n"
+        "  2. Open a new conversation\n"
+        "  3. Ask Codex to 'run a CartPole episode' to verify the plugin works"
+    )
+
+
+# ── rlip install-opencode ─────────────────────────────────────────────────────
+
+@app.command("install-opencode")
+def install_opencode(
+    command: str = typer.Option(
+        sys.executable,
+        help="Python executable to use (defaults to current interpreter)",
+    ),
+    use_script: bool = typer.Option(
+        False,
+        "--use-script/--use-module",
+        help="Use the 'rlip-mcp' script instead of 'python -m'",
+    ),
+    config_path: Optional[Path] = typer.Option(
+        None,
+        help="Path to OpenCode config (defaults to ~/.config/opencode/config.json)",
+    ),
+) -> None:
+    """
+    Add RLIP to your OpenCode MCP configuration (~/.config/opencode/config.json).
+
+    After running this command, restart OpenCode and RLIP tools will be
+    available in your OpenCode sessions.
+    """
+    target = config_path or Path.home() / ".config" / "opencode" / "config.json"
+
+    if use_script:
+        cmd_array = ["rlip-mcp"]
+    else:
+        cmd_array = [command, "-m", "rlip.mcp_plugin"]
+
+    entry: dict = {"type": "local", "command": cmd_array}
+
+    config: dict = {}
+    if target.exists():
+        try:
+            config = json.loads(target.read_text())
+        except json.JSONDecodeError:
+            console.print(
+                f"[yellow]Warning: {target} contains invalid JSON – creating fresh config.[/yellow]"
+            )
+
+    config.setdefault("mcp", {})
+    config["mcp"]["rlip"] = entry
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(config, indent=2))
+    console.print(f"[green]✓ RLIP MCP server added to {target}[/green]")
+    console.print("\nConfiguration written:")
+    console.print(json.dumps({"mcp": {"rlip": entry}}, indent=2))
+    console.print(
+        "\n[bold]Next steps:[/bold]\n"
+        "  1. Restart OpenCode\n"
+        "  2. Open a new conversation\n"
+        "  3. Ask OpenCode to 'run a CartPole episode' to verify the plugin works"
     )
 
 

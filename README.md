@@ -1,8 +1,7 @@
 # RLIP — Reinforcement Learning Interaction Protocol
 
-**RLIP** is a JSON-RPC 2.0 protocol—modelled after MCP—for connecting AI agents
-to reinforcement learning environments.  It ships as a **Claude Code MCP plugin**,
-letting Claude interact with Gymnasium environments directly via natural language.
+**RLIP** is a custom protocol for connecting AI agents to reinforcement learning environments.
+It ships as an **MCP plugin** compatible with Claude Code, Codex CLI, and OpenCode, letting any of these agents interact with Reinforcement Learning environments directly via natural language.
 
 ---
 
@@ -51,13 +50,24 @@ cd rlip
 pip install -e ".[examples]"
 ```
 
-### 2. Add to Claude Code
+### 2. Add to your AI coding agent
+
+Run the command for whichever tool(s) you use, then restart the client:
 
 ```bash
+# Claude Code  → ~/.claude.json
 rlip install-claude
+
+# Codex CLI    → ~/.codex/config.toml
+rlip install-codex
+
+# OpenCode     → ~/.config/opencode/config.json
+rlip install-opencode
 ```
 
-This writes your `~/.claude.json` MCP configuration.  Restart Claude Code.
+All three commands accept `--use-script` (uses the `rlip-mcp` console script
+instead of `python -m`) and `--config-path` to override the default config
+location.
 
 ### 3. Use it
 
@@ -392,7 +402,7 @@ lifecycle diagram.
 ```
 src/rlip/
 ├── __init__.py
-├── __main__.py              # CLI (rlip server / rlip install-claude / rlip list)
+├── __main__.py              # CLI (rlip server / rlip install-claude / rlip install-codex / rlip install-opencode / …)
 ├── protocol/
 │   ├── constants.py         # Method names, error codes
 │   └── messages.py          # Pydantic message models
