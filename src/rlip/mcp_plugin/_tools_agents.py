@@ -135,87 +135,157 @@ def _render_policy_for_dashboard(
     max_steps: int = 200,
 ) -> None:
     """
-    Render the best training episode and push the result to the dashboard.
+    Render the final trained agent policy and push the result to the dashboard.
 
-    Tries rgb_array (GIF) first; falls back to ANSI text frames.
-    Silently swallows all exceptions — this must never break training.
+    This evaluates the *final* agent greedily after training (not an early
+    checkpoint history), then renders the optimal episode from that evaluation.
+    No random fallback is allowed during replay: unseen states use the trained
+    agent's greedy action.
     """
-    if not _dash_running():
-        return
     try:
-        from ..environments.registry import registry as _env_registry  # noqa: PLC0415
-        from ..language_translation import get_translator  # noqa: PLC0415
-        from ..policy_rendering import PolicyRenderer, save_gif  # noqa: PLC0415
-        from ..policy_rendering import _hashable_obs  # noqa: PLC0415
+        import base64 as _b64  # noqa: PLC0415
 
-        if not best_episode_history:
-            _dash.finish(agent_id)
-            return
+        from ..environments.registry import registry as _env_registry  # noqa: PLC0415
+        from ..interaction_protocols import (  # noqa: PLC0415
+            GreedyEpisodeProtocol,
+            MultiEpisodeProtocol,
+        )
+        from ..language_translation import get_translator  # noqa: PLC0415
+        from ..policy_rendering import render_optimal_policy  # noqa: PLC0415
+
+        del best_episode_history  # final render must come from end-of-training policy
 
         stored = _trained_agents.get(agent_id, {})
+        agent = stored.get("agent")
+        if agent is None:
+            _dash.finish(agent_id, policy_text="Dashboard render error: trained agent not found in cache.")
+            return
+
         use_lang_state = bool(stored.get("use_language_state", False))
         translator = _custom_translators.get(env_id) or get_translator(env_id)
-
-        policy = {_hashable_obs(obs): act for obs, act in best_episode_history}
         factory = _env_registry.get(env_id)
 
-        # ── Attempt 1: animated GIF via rgb_array ─────────────────────────────
-        try:
-            import io, base64 as _b64  # noqa: PLC0415
-            render_env = factory.create(render_mode="rgb_array")
-            if use_lang_state and translator is not None:
-                render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
-            renderer = PolicyRenderer(
-                env=render_env,
-                policy=policy,
-                fallback="random",
-                translate=True,
+        if use_lang_state and translator is None:
+            _dash.finish(
+                agent_id,
+                policy_text=(
+                    f"Dashboard render error: agent '{agent_id}' requires language-state observations, "
+                    f"but no translator is registered for '{env_id}'."
+                ),
             )
-            frames = renderer.run(max_steps=max_steps, seed=0)
-            render_env.close()
+            return
 
-            if frames and any(f.png_data for f in frames):
-                buf = io.BytesIO()
-                gif_path = _RENDERS_DIR / f"{agent_id}_dashboard_policy.gif"
-                _RENDERS_DIR.mkdir(parents=True, exist_ok=True)
-                n = save_gif(frames, gif_path, fps=5.0, annotate=True)
-                if n > 0:
-                    gif_bytes = gif_path.read_bytes()
-                    b64 = _b64.b64encode(gif_bytes).decode("ascii")
-                    _dash.finish(agent_id, policy_gif_b64=b64)
-                    return
-        except Exception:
-            pass
+        # Evaluate the final trained policy greedily and keep full trajectories.
+        eval_env = factory.create(render_mode=None)
+        try:
+            if use_lang_state:
+                eval_env = _LangStateEnv(eval_env, translator=translator, env_id=env_id)
 
-        # ── Attempt 2: ANSI text frames ───────────────────────────────────────
+            def _greedy_fn(obs: Any) -> Any:
+                if hasattr(agent, "act_greedy"):
+                    return agent.act_greedy(obs)
+                return agent.act(obs)
+
+            eval_protocol = MultiEpisodeProtocol(
+                GreedyEpisodeProtocol(
+                    policy_fn=_greedy_fn,
+                    max_steps=max_steps,
+                    seed=0,
+                    record_history=True,
+                ),
+                n_episodes=12,
+                base_seed=0,
+            )
+            eval_result = eval_protocol(eval_env)
+        finally:
+            eval_env.close()
+
+        if not getattr(eval_result, "episodes", None):
+            _dash.finish(agent_id, policy_text="Dashboard render error: evaluation produced no episodes.")
+            return
+
+        # Deterministic non-random fallback for replay when a state wasn't
+        # present in the extracted best-episode trajectory.
+        def _greedy_missing_state(obs: Any) -> Any:
+            if hasattr(agent, "act_greedy"):
+                return agent.act_greedy(obs)
+            return agent.act(obs)
+
+        # Attempt 1: rgb_array GIF render
+        rgb_error: Optional[str] = None
+        try:
+            gif_path = _RENDERS_DIR / f"{agent_id}_dashboard_policy.gif"
+            _RENDERS_DIR.mkdir(parents=True, exist_ok=True)
+            render_env = factory.create(render_mode="rgb_array")
+            try:
+                if use_lang_state:
+                    render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
+                render_result = render_optimal_policy(
+                    eval_result,
+                    env=render_env,
+                    max_steps=max_steps,
+                    seed=0,
+                    fallback=_greedy_missing_state,
+                    translate=(translator if use_lang_state else True),
+                    output_gif=gif_path,
+                    gif_fps=5.0,
+                    gif_annotate=True,
+                )
+            finally:
+                render_env.close()
+            if render_result.n_gif_frames > 0:
+                gif_bytes = gif_path.read_bytes()
+                b64 = _b64.b64encode(gif_bytes).decode("ascii")
+                _dash.finish(agent_id, policy_gif_b64=b64)
+                return
+        except Exception as exc:
+            rgb_error = str(exc)
+
+        # Attempt 2: ANSI text frames (still deterministic, no random fallback)
         try:
             render_env = factory.create(render_mode="ansi")
-            if use_lang_state and translator is not None:
-                render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
-            renderer = PolicyRenderer(
-                env=render_env,
-                policy=policy,
-                fallback="random",
-                translate=True,
-            )
-            frames = renderer.run(max_steps=max_steps, seed=0)
-            render_env.close()
-
-            text_frames = [
-                f.ansi_text for f in frames if f.ansi_text
-            ]
+            try:
+                if use_lang_state:
+                    render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
+                render_result = render_optimal_policy(
+                    eval_result,
+                    env=render_env,
+                    max_steps=max_steps,
+                    seed=0,
+                    fallback=_greedy_missing_state,
+                    translate=(translator if use_lang_state else True),
+                )
+            finally:
+                render_env.close()
+            text_frames = [f.ansi_text for f in render_result.frames if f.ansi_text]
             if text_frames:
                 _dash.finish(agent_id, policy_frames=text_frames)
                 return
-        except Exception:
-            pass
-
-        # ── Fallback: just mark done without a render ─────────────────────────
-        _dash.finish(agent_id)
+            if rgb_error:
+                _dash.finish(
+                    agent_id,
+                    policy_text=(
+                        f"Dashboard render error: rgb_array failed ({rgb_error}) and ansi produced no frames."
+                    ),
+                )
+            else:
+                _dash.finish(agent_id, policy_text="Dashboard render error: no rgb_array or ansi frames were produced.")
+            return
+        except Exception as exc:
+            if rgb_error:
+                _dash.finish(
+                    agent_id,
+                    policy_text=(
+                        f"Dashboard render error: rgb_array failed ({rgb_error}); ansi failed ({exc})."
+                    ),
+                )
+            else:
+                _dash.finish(agent_id, policy_text=f"Dashboard render error (ansi): {exc}")
+            return
 
     except Exception:
         try:
-            _dash.finish(agent_id)
+            _dash.finish(agent_id, policy_text="Dashboard render error: unexpected failure during final policy replay.")
         except Exception:
             pass
 
@@ -406,6 +476,11 @@ async def rl_train_agent(
         n_sub_goals = 0
         # None tells _ShapedEnv to auto-scale; explicit >0 overrides.
         effective_bonus: Optional[float] = None if sub_goal_bonus == 0.0 else sub_goal_bonus
+        # Resolve encoder factory from the match entry (defaults to tfidf).
+        _encoder_name = entry.get("encoder_name", "tfidf")
+        from ..instruction_matching import get_encoder as _get_encoder  # noqa: PLC0415
+        def _encoder_factory(_enc_name=_encoder_name):
+            return _get_encoder(_enc_name)
         if is_sequential:
             stage_languages: list[list[str]] = []
             for m in getattr(protocol, "matches", []):
@@ -427,6 +502,7 @@ async def rl_train_agent(
                 threshold=sub_goal_threshold,
                 translator=getattr(protocol, "translate", True),
                 env_id=env_id,
+                encoder_factory=_encoder_factory,
             )
             shaped_env._ensure_encoders()
             resolved_bonus = shaped_env._bonus
@@ -451,6 +527,7 @@ async def rl_train_agent(
                 threshold=sub_goal_threshold,
                 translator=protocol.translate,
                 env_id=env_id,
+                encoder_factory=_encoder_factory,
             )
             # Trigger encoder/bonus resolution now so we can report the value.
             shaped_env._ensure_encoder()
@@ -642,15 +719,10 @@ async def rl_train_agent(
         ),
     }
 
-    # Push policy render to dashboard in a background thread (best-effort)
+    # Push policy render to dashboard now so the final card always includes
+    # either the optimal replay or a concrete render error.
     if _dash_running():
-        import threading as _th  # noqa: PLC0415
-        _th.Thread(
-            target=_render_policy_for_dashboard,
-            args=(agent_id, env_id, result.best_episode_history, max_steps),
-            daemon=True,
-            name=f"rlip-dashrender-{agent_id}",
-        ).start()
+        _render_policy_for_dashboard(agent_id, env_id, result.best_episode_history, max_steps)
 
     return (
         f"Training complete — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}\n\n"

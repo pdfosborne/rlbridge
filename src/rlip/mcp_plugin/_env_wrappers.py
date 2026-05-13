@@ -35,6 +35,7 @@ class _ShapedEnv:
         translator: Any,
         env_id: str,
         sub_goal_languages: list[str] | None = None,
+        encoder_factory: Any = None,
     ) -> None:
         self._env = env
         self._bonus = bonus  # None → auto-scale on first step
@@ -59,12 +60,13 @@ class _ShapedEnv:
         self._encoder: Any = None
         self._sub_goal_vecs: list[Any] = []
         self._episode_sub_goal_reached: bool = False
+        self._encoder_factory = encoder_factory
 
     def _ensure_encoder(self) -> None:
         if self._encoder is not None:
             return
         from ..instruction_following import TextEncoder, scale_sub_goal_bonus  # noqa: PLC0415
-        enc = TextEncoder()
+        enc = self._encoder_factory() if self._encoder_factory is not None else TextEncoder()
         enc.fit(self._all_sub_goal_languages)
         self._encoder = enc
         self._sub_goal_vecs = [enc.encode(lg) for lg in self._all_sub_goal_languages]
@@ -136,6 +138,7 @@ class _SequentialShapedEnv:
         threshold: float,
         translator: Any,
         env_id: str,
+        encoder_factory: Any = None,
     ) -> None:
         self._env = env
         self._bonus = bonus
@@ -163,6 +166,7 @@ class _SequentialShapedEnv:
         self._encoders: list[Any] = []
         self._stage_vecs: list[list[Any]] = []
         self._current_stage: int = 0
+        self._encoder_factory = encoder_factory
 
     def _ensure_encoders(self) -> None:
         if self._encoders:
@@ -170,7 +174,7 @@ class _SequentialShapedEnv:
         from ..instruction_following import TextEncoder, scale_sub_goal_bonus  # noqa: PLC0415
 
         for stage in self._stage_languages:
-            enc = TextEncoder()
+            enc = self._encoder_factory() if self._encoder_factory is not None else TextEncoder()
             enc.fit(stage)
             self._encoders.append(enc)
             self._stage_vecs.append([enc.encode(lg) for lg in stage])

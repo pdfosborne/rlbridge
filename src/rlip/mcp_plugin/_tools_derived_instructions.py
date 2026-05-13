@@ -43,7 +43,7 @@ async def _decompose_instruction_with_llm(
     env_id: str,
     observed_langs: list[str],
 ) -> list[str]:
-    """Decompose one instruction into ordered, distinct sub-steps."""
+    """Decompose one instruction into ordered, distinct, observable sub-steps."""
     import mcp.types as _t
 
     sample = observed_langs[:60]
@@ -58,6 +58,13 @@ async def _decompose_instruction_with_llm(
         "Break the instruction into 2-5 ordered, distinct, concrete sub-steps. "
         "The FIRST step must focus on what to do at episode start. "
         "Use environment vocabulary. Avoid duplicate or overlapping steps. "
+        "Each sub-step must describe an observable environment state, position, orientation, transition, "
+        "or condition that could be matched directly to the environment's language translations. "
+        "Do not leave instructions as abstract action-only jargon. If the user gives an abstract maneuver, "
+        "rewrite it as successive observable intermediate states. For example, a sailing maneuver like tack "
+        "should become turning-state instructions that describe the boat's turn in observable stages. "
+        "ALL instructions should be written to match the problem context. "
+        "ALL instructions must use language that aligns with the environment's observed language translations. "
         "Output ONLY a numbered list, one step per line."
     )
 
@@ -110,9 +117,9 @@ def _fallback_decompose_instruction(instruction: str) -> list[str]:
         return uniq[:5]
     core = instruction.strip().rstrip(".")
     return [
-        f"start by orienting to the initial state for: {core}",
-        f"move toward the main objective: {core}",
-        f"complete the objective: {core}",
+        f"observe the starting state for: {core}",
+        f"move into an intermediate observable state for: {core}",
+        f"reach the final observable state for: {core}",
     ]
 
 

@@ -28,6 +28,31 @@ from ._state import _instruction_protocols, mcp
 # LLM sub-goal decomposition helper
 # ---------------------------------------------------------------------------
 
+def _extract_vocab_clauses(observed_langs: list[str]) -> list[str]:
+    """
+    Extract the recurring semantic phrases from a list of environment language
+    descriptions using only general clause boundaries.
+
+    Splits on commas, semicolons, and sentence terminals — no environment-
+    specific keywords — so this works for any RLIP environment.  Returns only
+    clauses that appear in at least two distinct descriptions (i.e. genuine
+    vocabulary atoms, not one-off noise), sorted and deduplicated.
+    """
+    from collections import Counter
+    clause_counts: Counter[str] = Counter()
+    for desc in observed_langs:
+        # Split on general separators: comma, semicolon, sentence boundary
+        parts = re.split(r",\s+|;\s+|\.\s+", desc)
+        seen_in_desc: set[str] = set()
+        for part in parts:
+            part = part.strip().rstrip(".")
+            if 4 <= len(part) <= 100 and part not in seen_in_desc:
+                clause_counts[part] += 1
+                seen_in_desc.add(part)
+    # Keep only clauses shared by two or more distinct descriptions
+    return sorted(clause for clause, count in clause_counts.items() if count >= 2)
+
+
 async def _decompose_instruction_with_llm(
     ctx: Context,
     instruction: str,
@@ -36,32 +61,48 @@ async def _decompose_instruction_with_llm(
 ) -> list[str]:
     """
     Ask the host LLM to break *instruction* into clear, ordered sub-steps
-    grounded in the language descriptions actually observed in the environment.
+    that use the environment's exact language vocabulary.
+
+    Builds an explicit vocabulary lexicon from the observed state descriptions
+    and requires the LLM to use those phrases verbatim rather than abstract
+    domain jargon.
 
     Returns a list of sub-step strings, or an empty list on any failure.
     """
     import mcp.types as _t
 
-    # Present a sample of observed states (cap at 60 to keep prompt concise).
-    sample = observed_langs[:60]
+    # All unique observed descriptions (capped at 80 for prompt length).
+    sample = observed_langs[:80]
     obs_block = "\n".join(f"  - {lg}" for lg in sample)
-    if len(observed_langs) > 60:
-        obs_block += f"\n  … ({len(observed_langs) - 60} more)"
+    if len(observed_langs) > 80:
+        obs_block += f"\n  … ({len(observed_langs) - 80} more)"
+
+    # Extracted vocabulary atoms: the reusable clauses the LLM should copy.
+    vocab_clauses = _extract_vocab_clauses(observed_langs)
+    vocab_block = "\n".join(f"  • {v}" for v in vocab_clauses[:60])
 
     prompt = (
-        f"You are helping set up reward shaping for a reinforcement learning agent "
+        f"You are setting up reward shaping for a reinforcement learning agent "
         f"in the environment \"{env_id}\".\n\n"
-        f"The user has given the following high-level instruction:\n"
-        f"  \"{instruction}\"\n\n"
-        f"Below is a sample of language descriptions of states actually observed "
-        f"in this environment:\n{obs_block}\n\n"
-        f"Break the instruction into 2-5 concrete, distinct, ordered sub-steps that the agent "
-        f"should achieve in sequence to complete the task.  The first sub-step must focus on "
-        f"what to do at the START of the episode (initial orientation / setup / first move). "
-        f"Each sub-step must be a short natural-language phrase grounded in the vocabulary above.  "
-        f"Avoid duplicates and near-duplicates. "
-        f"ALL instructions should be written to match the problem context and language."
-        f"Output ONLY a numbered list, one sub-step per line, with no extra text."
+        f"The user's instruction is:\n  \"{instruction}\"\n\n"
+        f"These are ALL unique state descriptions the environment's language "
+        f"translator can produce — they are the ONLY valid vocabulary:\n"
+        f"{obs_block}\n\n"
+        f"Recurring vocabulary clauses extracted from the descriptions above "
+        f"(state, position, orientation, and condition phrases you MUST reuse verbatim):\n"
+        f"{vocab_block}\n\n"
+        f"Break the instruction into 2-5 concrete, ordered sub-steps the agent "
+        f"must achieve in sequence. STRICT REQUIREMENTS:\n"
+        f"1. Every sub-step MUST use EXACT phrases copied from the vocabulary "
+        f"clauses above — do not paraphrase or invent new terms.\n"
+        f"2. Do NOT use abstract domain jargon. If the instruction uses shorthand "
+        f"(e.g. a named maneuver or game action), rewrite it as one or more "
+        f"observable states drawn directly from the vocabulary above.\n"
+        f"3. The first sub-step must describe the START of the episode.\n"
+        f"4. Each sub-step must describe an observable state or transition that "
+        f"can be matched directly to one of the state descriptions listed above.\n"
+        f"5. No duplicates. At most 5 sub-steps.\n\n"
+        f"Output ONLY a numbered list, one sub-step per line, no extra text."
     )
 
     try:
@@ -70,7 +111,7 @@ async def _decompose_instruction_with_llm(
                 role="user",
                 content=_t.TextContent(type="text", text=prompt),
             )],
-            max_tokens=256,
+            max_tokens=400,
         )
     except Exception:
         return []
@@ -117,9 +158,9 @@ def _fallback_decompose_instruction(instruction: str) -> list[str]:
         return unique_parts[:5]
     core = instruction.strip().rstrip(".")
     return [
-        f"start by orienting to the initial state for: {core}",
-        f"move toward the main objective: {core}",
-        f"complete the objective: {core}",
+        f"observe the starting state for: {core}",
+        f"move into an intermediate observable state for: {core}",
+        f"reach the final observable state for: {core}",
     ]
 
 
@@ -239,6 +280,7 @@ async def rl_match_instruction(
     exploration_steps: int = 100,
     seed: Optional[int] = None,
     top_k: int = 5,
+    encoder: str = "tfidf",
 ) -> str:
     """
     Explore an RL environment, translate observed states to language, and
@@ -268,6 +310,12 @@ async def rl_match_instruction(
         Optional integer seed for reproducible exploration.
     top_k:
         Number of top-ranked matches to include in the output (max 10).
+    encoder:
+        Text encoder for instruction-to-state similarity scoring.
+        One of "tfidf" (default), "bm25", or "sentence-transformers".
+        "sentence-transformers" uses a pre-trained neural model
+        (all-MiniLM-L6-v2) for semantic similarity; requires the
+        sentence-transformers package.
 
     Returns
     -------
@@ -280,6 +328,7 @@ async def rl_match_instruction(
         build_sequential_instruction_following_protocol,
         match_instruction,
     )
+    from ..instruction_matching import get_encoder as _get_encoder
     from ..environments.registry import registry as _env_registry
 
     try:
@@ -301,6 +350,7 @@ async def rl_match_instruction(
     poll_task = asyncio.create_task(_poll_exploration())
     try:
         try:
+            _encoder_instance = _get_encoder(encoder)
             match = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: match_instruction(
@@ -308,6 +358,7 @@ async def rl_match_instruction(
                     progress_env,
                     seed=seed,
                     max_steps=exploration_steps,
+                    encoder=_encoder_instance,
                 ),
             )
         except ValueError as exc:
@@ -352,6 +403,7 @@ async def rl_match_instruction(
         "is_sequential": True,
         "instructions": sub_steps,
         "decomposition": sub_steps,
+        "encoder_name": encoder,
     }
 
     top_k = max(1, min(top_k, 10))
@@ -367,6 +419,7 @@ async def rl_match_instruction(
     return (
         f"Instruction matched for '{env_id}':\n\n"
         f"  Instruction:   {instruction!r}\n"
+        f"  Encoder:       {encoder}\n"
         f"  Best match:    {match.matched_language}\n"
         f"  Similarity:    {match.similarity_score:.4f}\n"
         f"  Match ID:      {match_id}\n\n"
