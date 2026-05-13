@@ -5,9 +5,13 @@ Provides these commands:
 
     rlip server              – start the HTTP JSON-RPC server
     rlip mcp                 – start the MCP stdio plugin
-    rlip install-claude      – configure RLIP in ~/.claude.json  (Claude Code)
-    rlip install-codex       – configure RLIP in ~/.codex/config.toml  (Codex CLI)
-    rlip install-opencode    – configure RLIP in ~/.config/opencode/config.json  (OpenCode)
+    rlip install-claude          – configure RLIP in ~/.claude.json  (Claude Code)
+    rlip install-claude-desktop  – configure RLIP in Claude Desktop GUI
+    rlip install-codex           – configure RLIP in ~/.codex/config.toml  (Codex CLI)
+    rlip install-opencode        – configure RLIP in ~/.config/opencode/config.json  (OpenCode)
+    rlip install-lmstudio        – configure RLIP in LM Studio (~/.lmstudio/mcp.json)
+    rlip install-cursor          – configure RLIP in ~/.cursor/mcp.json  (Cursor)
+    rlip install-windsurf        – configure RLIP in Windsurf (~/.codeium/windsurf/mcp_config.json)
     rlip agent               – run an Ollama / OpenAI-compatible agent loop
     rlip catalog             – list the public environment catalog
     rlip install             – download a public environment from GitHub
@@ -255,6 +259,253 @@ def install_opencode(
         "  1. Restart OpenCode\n"
         "  2. Open a new conversation\n"
         "  3. Ask OpenCode to 'run a CartPole episode' to verify the plugin works"
+    )
+
+
+# ── rlip install-claude-desktop ───────────────────────────────────────────────
+
+@app.command("install-claude-desktop")
+def install_claude_desktop(
+    command: str = typer.Option(
+        sys.executable,
+        help="Python executable to use (defaults to current interpreter)",
+    ),
+    use_script: bool = typer.Option(
+        False,
+        "--use-script/--use-module",
+        help="Use the 'rlip-mcp' script instead of 'python -m'",
+    ),
+    config_path: Optional[Path] = typer.Option(
+        None,
+        help="Path to the Claude Desktop config file (auto-detected per OS by default)",
+    ),
+) -> None:
+    """
+    Add RLIP to your Claude Desktop MCP configuration (GUI app, not Claude Code).
+
+    The config path is chosen automatically:
+      macOS   – ~/Library/Application Support/Claude/claude_desktop_config.json
+      Windows – %APPDATA%\\Claude\\claude_desktop_config.json
+      Linux   – ~/.config/Claude/claude_desktop_config.json
+
+    After running this command, restart Claude Desktop and RLIP tools will be
+    available in your conversations.
+    """
+    import platform
+
+    if config_path is None:
+        system = platform.system()
+        if system == "Darwin":
+            config_path = Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+        elif system == "Windows":
+            appdata = os.environ.get("APPDATA", "")
+            config_path = Path(appdata) / "Claude" / "claude_desktop_config.json"
+        else:
+            config_path = Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+
+    if use_script:
+        entry: dict = {"command": "rlip-mcp"}
+    else:
+        entry = {"command": command, "args": ["-m", "rlip.mcp_plugin"]}
+
+    config: dict = {}
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+        except json.JSONDecodeError:
+            console.print(f"[yellow]Warning: {config_path} contains invalid JSON – creating fresh config.[/yellow]")
+
+    config.setdefault("mcpServers", {})
+    config["mcpServers"]["rlip"] = entry
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config, indent=2))
+    console.print(f"[green]✓ RLIP MCP server added to {config_path}[/green]")
+    console.print("\nConfiguration written:")
+    console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
+    console.print(
+        "\n[bold]Next steps:[/bold]\n"
+        "  1. Restart Claude Desktop\n"
+        "  2. Open a new conversation\n"
+        "  3. Ask Claude to 'run a CartPole episode' to verify the plugin works"
+    )
+
+
+# ── rlip install-lmstudio ─────────────────────────────────────────────────────
+
+@app.command("install-lmstudio")
+def install_lmstudio(
+    command: str = typer.Option(
+        sys.executable,
+        help="Python executable to use (defaults to current interpreter)",
+    ),
+    use_script: bool = typer.Option(
+        False,
+        "--use-script/--use-module",
+        help="Use the 'rlip-mcp' script instead of 'python -m'",
+    ),
+    config_path: Optional[Path] = typer.Option(
+        None,
+        help="Path to LM Studio's mcp.json (auto-detected per OS by default)",
+    ),
+) -> None:
+    """
+    Add RLIP to your LM Studio MCP configuration (mcp.json).
+
+    LM Studio follows Cursor's mcp.json notation.  The config path is chosen
+    automatically:
+      macOS   – ~/Library/Application Support/LM Studio/mcp.json
+      Windows – %APPDATA%\\LM Studio\\mcp.json
+      Linux   – ~/.lmstudio/mcp.json
+
+    After running this command, restart LM Studio and RLIP tools will be
+    available in your chat sessions.
+    """
+    import platform
+
+    if config_path is None:
+        system = platform.system()
+        if system == "Darwin":
+            config_path = Path.home() / "Library" / "Application Support" / "LM Studio" / "mcp.json"
+        elif system == "Windows":
+            appdata = os.environ.get("APPDATA", "")
+            config_path = Path(appdata) / "LM Studio" / "mcp.json"
+        else:
+            config_path = Path.home() / ".lmstudio" / "mcp.json"
+
+    if use_script:
+        entry: dict = {"command": "rlip-mcp", "type": "stdio"}
+    else:
+        entry = {"command": command, "args": ["-m", "rlip.mcp_plugin"], "type": "stdio"}
+
+    config: dict = {}
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+        except json.JSONDecodeError:
+            console.print(f"[yellow]Warning: {config_path} contains invalid JSON – creating fresh config.[/yellow]")
+
+    config.setdefault("mcpServers", {})
+    config["mcpServers"]["rlip"] = entry
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config, indent=2))
+    console.print(f"[green]✓ RLIP MCP server added to {config_path}[/green]")
+    console.print("\nConfiguration written:")
+    console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
+    console.print(
+        "\n[bold]Next steps:[/bold]\n"
+        "  1. Restart LM Studio\n"
+        "  2. Open the chat panel (Program tab → enable MCP)\n"
+        "  3. Ask your model to 'run a CartPole episode' to verify the plugin works"
+    )
+
+
+# ── rlip install-cursor ───────────────────────────────────────────────────────
+
+@app.command("install-cursor")
+def install_cursor(
+    command: str = typer.Option(
+        sys.executable,
+        help="Python executable to use (defaults to current interpreter)",
+    ),
+    use_script: bool = typer.Option(
+        False,
+        "--use-script/--use-module",
+        help="Use the 'rlip-mcp' script instead of 'python -m'",
+    ),
+    config_path: Optional[Path] = typer.Option(
+        None,
+        help="Path to Cursor's mcp.json (defaults to ~/.cursor/mcp.json)",
+    ),
+) -> None:
+    """
+    Add RLIP to your Cursor MCP configuration (~/.cursor/mcp.json).
+
+    After running this command, restart Cursor and RLIP tools will be
+    available in Agent mode.
+    """
+    target = config_path or Path.home() / ".cursor" / "mcp.json"
+
+    if use_script:
+        entry: dict = {"command": "rlip-mcp"}
+    else:
+        entry = {"command": command, "args": ["-m", "rlip.mcp_plugin"]}
+
+    config: dict = {}
+    if target.exists():
+        try:
+            config = json.loads(target.read_text())
+        except json.JSONDecodeError:
+            console.print(f"[yellow]Warning: {target} contains invalid JSON – creating fresh config.[/yellow]")
+
+    config.setdefault("mcpServers", {})
+    config["mcpServers"]["rlip"] = entry
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(config, indent=2))
+    console.print(f"[green]✓ RLIP MCP server added to {target}[/green]")
+    console.print("\nConfiguration written:")
+    console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
+    console.print(
+        "\n[bold]Next steps:[/bold]\n"
+        "  1. Restart Cursor\n"
+        "  2. Open a new Agent chat\n"
+        "  3. Ask the agent to 'run a CartPole episode' to verify the plugin works"
+    )
+
+
+# ── rlip install-windsurf ─────────────────────────────────────────────────────
+
+@app.command("install-windsurf")
+def install_windsurf(
+    command: str = typer.Option(
+        sys.executable,
+        help="Python executable to use (defaults to current interpreter)",
+    ),
+    use_script: bool = typer.Option(
+        False,
+        "--use-script/--use-module",
+        help="Use the 'rlip-mcp' script instead of 'python -m'",
+    ),
+    config_path: Optional[Path] = typer.Option(
+        None,
+        help="Path to Windsurf's MCP config (defaults to ~/.codeium/windsurf/mcp_config.json)",
+    ),
+) -> None:
+    """
+    Add RLIP to your Windsurf MCP configuration (~/.codeium/windsurf/mcp_config.json).
+
+    After running this command, restart Windsurf and RLIP tools will be
+    available in Cascade agent sessions.
+    """
+    target = config_path or Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
+
+    if use_script:
+        entry: dict = {"command": "rlip-mcp"}
+    else:
+        entry = {"command": command, "args": ["-m", "rlip.mcp_plugin"]}
+
+    config: dict = {}
+    if target.exists():
+        try:
+            config = json.loads(target.read_text())
+        except json.JSONDecodeError:
+            console.print(f"[yellow]Warning: {target} contains invalid JSON – creating fresh config.[/yellow]")
+
+    config.setdefault("mcpServers", {})
+    config["mcpServers"]["rlip"] = entry
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(config, indent=2))
+    console.print(f"[green]✓ RLIP MCP server added to {target}[/green]")
+    console.print("\nConfiguration written:")
+    console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
+    console.print(
+        "\n[bold]Next steps:[/bold]\n"
+        "  1. Restart Windsurf\n"
+        "  2. Open a new Cascade session\n"
+        "  3. Ask the agent to 'run a CartPole episode' to verify the plugin works"
     )
 
 

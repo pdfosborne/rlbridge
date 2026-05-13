@@ -31,6 +31,55 @@ Claude Code  (~/.claude.json):
       }
     }
 
+Claude Desktop (GUI – macOS/Windows/Linux):
+    rlip install-claude-desktop
+    # or manually add to claude_desktop_config.json:
+    {
+      "mcpServers": {
+        "rlip": {
+          "command": "python",
+          "args": ["-m", "rlip.mcp_plugin"]
+        }
+      }
+    }
+
+LM Studio  (~/.lmstudio/mcp.json or platform equivalent):
+    rlip install-lmstudio
+    # or manually add to mcp.json:
+    {
+      "mcpServers": {
+        "rlip": {
+          "command": "python",
+          "args": ["-m", "rlip.mcp_plugin"],
+          "type": "stdio"
+        }
+      }
+    }
+
+Cursor  (~/.cursor/mcp.json):
+    rlip install-cursor
+    # or manually:
+    {
+      "mcpServers": {
+        "rlip": {
+          "command": "python",
+          "args": ["-m", "rlip.mcp_plugin"]
+        }
+      }
+    }
+
+Windsurf  (~/.codeium/windsurf/mcp_config.json):
+    rlip install-windsurf
+    # or manually:
+    {
+      "mcpServers": {
+        "rlip": {
+          "command": "python",
+          "args": ["-m", "rlip.mcp_plugin"]
+        }
+      }
+    }
+
 Codex CLI  (~/.codex/config.toml):
     rlip install-codex
     # or manually:
