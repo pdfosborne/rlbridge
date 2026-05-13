@@ -1,7 +1,7 @@
 # RLIP — Reinforcement Learning Interaction Protocol
 
 **RLIP** is a custom protocol for connecting AI agents to reinforcement learning environments.
-It ships as an **MCP plugin** compatible with Claude Code, Codex CLI, and OpenCode, letting any of these agents interact with Reinforcement Learning environments directly via natural language.
+It ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM Studio, Cursor, Windsurf, Codex CLI, and OpenCode, letting any of these agents interact with Reinforcement Learning environments directly via natural language.
 
 ---
 
@@ -50,24 +50,40 @@ cd rlip
 pip install -e ".[examples]"
 ```
 
-### 2. Add to your AI coding agent
+### 2. Add to your AI tool
 
 Run the command for whichever tool(s) you use, then restart the client:
 
 ```bash
-# Claude Code  → ~/.claude.json
+# Claude Code (CLI)  → ~/.claude.json
 rlip install-claude
 
-# Codex CLI    → ~/.codex/config.toml
+# Claude Desktop (GUI app)
+#   macOS   → ~/Library/Application Support/Claude/claude_desktop_config.json
+#   Windows → %APPDATA%\Claude\claude_desktop_config.json
+#   Linux   → ~/.config/Claude/claude_desktop_config.json
+rlip install-claude-desktop
+
+# LM Studio  → ~/.lmstudio/mcp.json  (Linux)
+#              ~/Library/Application Support/LM Studio/mcp.json  (macOS)
+#              %APPDATA%\LM Studio\mcp.json  (Windows)
+rlip install-lmstudio
+
+# Cursor  → ~/.cursor/mcp.json
+rlip install-cursor
+
+# Windsurf  → ~/.codeium/windsurf/mcp_config.json
+rlip install-windsurf
+
+# Codex CLI  → ~/.codex/config.toml
 rlip install-codex
 
-# OpenCode     → ~/.config/opencode/config.json
+# OpenCode   → ~/.config/opencode/config.json
 rlip install-opencode
 ```
 
-All three commands accept `--use-script` (uses the `rlip-mcp` console script
-instead of `python -m`) and `--config-path` to override the default config
-location.
+All commands accept `--use-script` (uses the `rlip-mcp` console script instead
+of `python -m`) and `--config-path` to override the default config location.
 
 ### 3. Use it
 
@@ -402,7 +418,7 @@ lifecycle diagram.
 ```
 src/rlip/
 ├── __init__.py
-├── __main__.py              # CLI (rlip server / rlip install-claude / rlip install-codex / rlip install-opencode / …)
+├── __main__.py              # CLI (rlip server / rlip install-claude / rlip install-claude-desktop / rlip install-lmstudio / rlip install-cursor / rlip install-windsurf / rlip install-codex / rlip install-opencode / …)
 ├── protocol/
 │   ├── constants.py         # Method names, error codes
 │   └── messages.py          # Pydantic message models
