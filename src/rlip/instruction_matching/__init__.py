@@ -63,7 +63,12 @@ _REGISTRY: dict[str, type[BaseEncoder]] = {
 }
 
 
-def get_encoder(name: str = "tfidf") -> BaseEncoder:
+def get_encoder(
+    name: str = "tfidf",
+    *,
+    sentence_model: str | None = None,
+    sentence_device: str | None = None,
+) -> BaseEncoder:
     """
     Return a fresh, unfitted encoder instance by name.
 
@@ -75,6 +80,14 @@ def get_encoder(name: str = "tfidf") -> BaseEncoder:
         * ``"tfidf"`` (default) — :class:`TFIDFEncoder`
         * ``"bm25"`` — :class:`BM25Encoder`
         * ``"sentence-transformers"`` / ``"sentence"`` — :class:`SentenceEncoder`
+        * ``"sentence:<huggingface-model-id>"`` — :class:`SentenceEncoder`
+          with a custom model, e.g. ``"sentence:BAAI/bge-small-en-v1.5"``.
+    sentence_model:
+        Optional explicit Hugging Face model ID for SentenceEncoder.
+        Ignored for non-sentence encoders.
+    sentence_device:
+        Optional inference device (e.g. ``"cpu"``, ``"cuda"``) for
+        SentenceEncoder. Ignored for non-sentence encoders.
 
     Returns
     -------
@@ -95,13 +108,29 @@ def get_encoder(name: str = "tfidf") -> BaseEncoder:
         enc.fit([instruction] + observed_descriptions)
         vec = enc.encode(instruction)
     """
-    key = name.lower().replace(" ", "-")
+    raw_name = name.strip()
+    key = raw_name.lower().replace(" ", "-")
+
+    # Allow inline model spec, e.g. "sentence:BAAI/bge-small-en-v1.5".
+    inline_model: str | None = None
+    if ":" in raw_name:
+        prefix, suffix = raw_name.split(":", 1)
+        pkey = prefix.strip().lower().replace(" ", "-")
+        if pkey in {"sentence", "sentence-transformers", "sentence_transformers", "hf"}:
+            key = "sentence"
+            inline_model = suffix.strip() or None
+
     if key not in _REGISTRY:
         available = sorted({k for k in _REGISTRY if "_" not in k})
         raise ValueError(
             f"Unknown encoder {name!r}. Available names: {available}"
         )
-    return _REGISTRY[key]()
+
+    encoder_cls = _REGISTRY[key]
+    if encoder_cls is SentenceEncoder:
+        model_name = sentence_model or inline_model or "all-MiniLM-L6-v2"
+        return SentenceEncoder(model_name=model_name, device=sentence_device)
+    return encoder_cls()
 
 
 __all__ = [

@@ -149,6 +149,27 @@ The installed translator is automatically used by `rl_match_instruction` and
 | `rl_match_instruction` | Explore an environment, translate states to language, and find the state best matching a natural-language goal |
 | `rl_instruction_run_episode` | Run a shaped episode where the matched state provides a bonus reward signal |
 
+For semantic matching with Hugging Face sentence-transformers models:
+
+```bash
+pip install -e "."[sentence-transformers]
+```
+
+Then choose a model directly in the tool call:
+
+```python
+# Uses the default model for sentence-transformers
+rl_match_instruction("Sailing-v0", "sail toward the beach", encoder="sentence-transformers")
+
+# Uses a specific Hugging Face model id
+rl_match_instruction(
+    "Sailing-v0",
+    "sail toward the beach",
+    encoder="sentence",
+    encoder_model="BAAI/bge-small-en-v1.5",
+)
+```
+
 ### RL agent training
 
 | Tool | Description |

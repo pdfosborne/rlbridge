@@ -17,6 +17,7 @@ performs well on general-purpose semantic similarity tasks.  Other options:
 
 * ``all-mpnet-base-v2`` — higher accuracy, larger (420 MB)
 * ``paraphrase-MiniLM-L3-v2`` — fastest, slightly lower accuracy
+* any model from https://huggingface.co/models?library=sentence-transformers
 
 The model is downloaded automatically on first use and cached in the
 Hugging Face hub cache (``~/.cache/huggingface/``).
@@ -30,6 +31,10 @@ Usage
     q = enc.encode("sail to the beach")
     d = enc.encode("navigate towards shore")
     print(enc.cosine_similarity(q, d))  # high similarity (~0.7-0.9)
+
+    # Or use a full Hugging Face model id
+    enc = SentenceEncoder("BAAI/bge-small-en-v1.5")
+    enc.fit(corpus)
 """
 
 from __future__ import annotations

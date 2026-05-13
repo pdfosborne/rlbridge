@@ -60,6 +60,8 @@ envs-all     = ["gymnasium[all]>=0.29.0", "ale-py>=0.8.0"]
 openai-sdk = ["openai>=1.30.0"]
 # GPU-accelerated DQN / PPO training (also works CPU-only)
 torch = ["torch>=2.0.0"]
+# Semantic instruction encoder (Hugging Face sentence-transformers models)
+sentence-transformers = ["sentence-transformers>=2.6.0"]
 
 # Development tools
 dev = [

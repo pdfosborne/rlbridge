@@ -281,6 +281,8 @@ async def rl_match_instruction(
     seed: Optional[int] = None,
     top_k: int = 5,
     encoder: str = "tfidf",
+    encoder_model: str = "",
+    encoder_device: str = "",
 ) -> str:
     """
     Explore an RL environment, translate observed states to language, and
@@ -316,6 +318,13 @@ async def rl_match_instruction(
         "sentence-transformers" uses a pre-trained neural model
         (all-MiniLM-L6-v2) for semantic similarity; requires the
         sentence-transformers package.
+    encoder_model:
+        Optional Hugging Face model id for sentence-transformers, e.g.
+        "BAAI/bge-small-en-v1.5" or "sentence-transformers/all-mpnet-base-v2".
+        Used only when encoder is sentence-transformers/sentence.
+    encoder_device:
+        Optional sentence-transformers device override ("cpu", "cuda").
+        Used only when encoder is sentence-transformers/sentence.
 
     Returns
     -------
@@ -342,6 +351,16 @@ async def rl_match_instruction(
 
     progress_env = _ExplorationProgressEnv(env, total_steps=exploration_steps, env_id=env_id)
 
+    encoder_model = encoder_model.strip()
+    encoder_device = encoder_device.strip()
+
+    # Persist the exact encoder spec so downstream training reuses the same
+    # model when it rebuilds encoder instances.
+    encoder_spec = encoder
+    _ekey = encoder.lower().strip().replace("_", "-")
+    if _ekey in {"sentence", "sentence-transformers", "hf"} and encoder_model:
+        encoder_spec = f"sentence:{encoder_model}"
+
     async def _poll_exploration() -> None:
         while True:
             await asyncio.sleep(0.5)
@@ -350,7 +369,11 @@ async def rl_match_instruction(
     poll_task = asyncio.create_task(_poll_exploration())
     try:
         try:
-            _encoder_instance = _get_encoder(encoder)
+            _encoder_instance = _get_encoder(
+                encoder_spec,
+                sentence_model=(encoder_model or None),
+                sentence_device=(encoder_device or None),
+            )
             match = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: match_instruction(
@@ -403,7 +426,7 @@ async def rl_match_instruction(
         "is_sequential": True,
         "instructions": sub_steps,
         "decomposition": sub_steps,
-        "encoder_name": encoder,
+        "encoder_name": encoder_spec,
     }
 
     top_k = max(1, min(top_k, 10))
@@ -419,7 +442,7 @@ async def rl_match_instruction(
     return (
         f"Instruction matched for '{env_id}':\n\n"
         f"  Instruction:   {instruction!r}\n"
-        f"  Encoder:       {encoder}\n"
+        f"  Encoder:       {encoder_spec}\n"
         f"  Best match:    {match.matched_language}\n"
         f"  Similarity:    {match.similarity_score:.4f}\n"
         f"  Match ID:      {match_id}\n\n"
