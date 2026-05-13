@@ -1520,11 +1520,20 @@ ALL_FAB_FACTORIES: list[FleshAndBloodFactory] = [
 ]
 
 
-def register_mcp_tools(*, mcp: Any, registry: Any, log: Any) -> int:
+def register_mcp_tools(
+    *, mcp: Any, registry: Any, log: Any, trained_agents: Optional[dict] = None
+) -> int:
     """Register environment-specific MCP tools for Flesh and Blood.
 
     This function is discovered and called by the MCP plugin at startup.
     Returning an integer allows the plugin to report how many tools were added.
+
+    Parameters
+    ----------
+    trained_agents:
+        When provided (passed by the MCP plugin), any agent trained by
+        ``fab_evaluate_deck_matchup`` will be stored here so that
+        ``rl_render_policy`` can replay it later.
     """
     global _FAB_CUSTOM_TOOLS_REGISTERED
     if _FAB_CUSTOM_TOOLS_REGISTERED:
@@ -1746,6 +1755,8 @@ def register_mcp_tools(*, mcp: Any, registry: Any, log: Any) -> int:
             "win_rate": float(win_rate),
             "train_mean_reward": float(train_result.mean_reward),
             "train_best_reward": float(train_result.best_reward),
+            "_agent": agent,
+            "_train_result": train_result,
         }
 
     @mcp.tool()
@@ -1850,7 +1861,12 @@ def register_mcp_tools(*, mcp: Any, registry: Any, log: Any) -> int:
             log.exception("fab_evaluate_deck_matchup error")
             return f"Error evaluating deck matchup: {exc}"
 
-        result = {
+        # Extract non-serialisable internal keys before building the result dict.
+        _trained_agent = stats.pop("_agent", None)
+        _train_result = stats.pop("_train_result", None)
+        stats.pop("_env_kwargs", None)
+
+        result: dict[str, Any] = {
             "deck_key": deck_key,
             "deck_label": deck_option.get("label", deck_key),
             "matchup_key": matchup_key,
@@ -1861,6 +1877,45 @@ def register_mcp_tools(*, mcp: Any, registry: Any, log: Any) -> int:
             "inner_eval_episodes": inner_eval_episodes,
             **stats,
         }
+
+        # If the plugin passed a trained_agents store, register the agent so
+        # rl_render_policy can replay the policy directly.
+        if trained_agents is not None and _trained_agent is not None:
+            import uuid as _uuid  # noqa: PLC0415
+
+            _agent_id = _uuid.uuid4().hex[:12]
+            _registered_env_id = f"FleshAndBlood-matchup-{_agent_id}"
+
+            # Register a factory baked with this matchup's hero / format so
+            # rl_render_policy can recreate the exact environment.
+            matchup_factory = FleshAndBloodFactory(
+                _registered_env_id,
+                agent_hero_id=str(deck_option.get("hero_id", "hero_dorinthea_ironsong")),
+                opponent_hero_id=str(matchup_option.get("hero_id", "hero_rhinar_reckless_rampage")),
+                deck_size=int(deck_option.get("deck_size", 40) or 40),
+                format=format_name,
+            )
+            registry.register(matchup_factory)
+
+            trained_agents[_agent_id] = {
+                "agent":                _trained_agent,
+                "env_id":               _registered_env_id,
+                "agent_type":           inner_agent_type,
+                "best_episode_history": getattr(_train_result, "best_episode_history", []),
+                "use_language_state":   False,
+                "train_result":         _train_result,
+                "training_config": {
+                    "n_episodes":  inner_train_episodes,
+                    "max_steps":   inner_max_steps,
+                    "seed":        seed,
+                    "deck_key":    deck_key,
+                    "matchup_key": matchup_key,
+                },
+            }
+
+            result["agent_id"] = _agent_id
+            result["registered_env_id"] = _registered_env_id
+
         return json.dumps(result, indent=2)
 
     @mcp.tool()
@@ -1916,6 +1971,9 @@ def register_mcp_tools(*, mcp: Any, registry: Any, log: Any) -> int:
                     inner_max_steps=inner_max_steps,
                     seed=ep_seed,
                 )
+                stats.pop("_agent", None)
+                stats.pop("_train_result", None)
+                stats.pop("_env_kwargs", None)
                 matchup_results.append(
                     {
                         "matchup_key": str(matchup.get("key", "")),
