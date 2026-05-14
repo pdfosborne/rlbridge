@@ -112,13 +112,18 @@ def install_claude(
     """
     target = config_path or Path.home() / ".claude.json"
 
+    # Use the home directory as cwd so relative paths (e.g. .rlip/) resolve
+    # to a user-writable location regardless of how the client launches the server.
+    cwd = str(Path.home())
+
     if use_script:
-        entry: dict = {"command": "rlip-mcp", "type": "stdio"}
+        entry: dict = {"command": "rlip-mcp", "type": "stdio", "cwd": cwd}
     else:
         entry = {
             "command": command,
             "args": ["-m", "rlip.mcp_plugin"],
             "type": "stdio",
+            "cwd": cwd,
         }
 
     # Load or create config
@@ -264,6 +269,43 @@ def install_opencode(
 
 # ── rlip install-claude-desktop ───────────────────────────────────────────────
 
+def _find_claude_desktop_config_windows() -> list[Path]:
+    """
+    Locate all claude_desktop_config.json paths on Windows.
+
+    Claude Desktop is distributed two ways on Windows:
+      1. Classic installer  → %APPDATA%\\Claude\\claude_desktop_config.json
+      2. Microsoft Store    → %LOCALAPPDATA%\\Packages\\Claude_<id>\\LocalCache\\Roaming\\Claude\\claude_desktop_config.json
+
+    Returns every path that either already exists or whose parent package
+    folder exists, so callers can write to all of them.
+    """
+    import glob
+
+    found: list[Path] = []
+
+    # Classic installer path
+    appdata = os.environ.get("APPDATA", "")
+    classic = Path(appdata) / "Claude" / "claude_desktop_config.json"
+    if classic.exists() or classic.parent.exists():
+        found.append(classic)
+
+    # Microsoft Store sandbox path
+    localappdata = os.environ.get("LOCALAPPDATA", "")
+    # Glob for any matching package folder (publisher hash varies)
+    pkg_pattern = str(Path(localappdata) / "Packages" / "Claude_*" / "LocalCache" / "Roaming" / "Claude")
+    for pkg_dir in glob.glob(pkg_pattern):
+        store_path = Path(pkg_dir) / "claude_desktop_config.json"
+        if store_path not in found:
+            found.append(store_path)
+
+    # If nothing found at all, fall back to classic (will be created)
+    if not found:
+        found.append(classic)
+
+    return found
+
+
 @app.command("install-claude-desktop")
 def install_claude_desktop(
     command: str = typer.Option(
@@ -271,9 +313,13 @@ def install_claude_desktop(
         help="Python executable to use (defaults to current interpreter)",
     ),
     use_script: bool = typer.Option(
-        False,
+        None,  # None means "auto"
         "--use-script/--use-module",
-        help="Use the 'rlip-mcp' script instead of 'python -m'",
+        help=(
+            "Use the 'rlip-mcp' script entry-point instead of 'python -m'. "
+            "Defaults to True on Windows (avoids PATH issues in Claude Desktop) "
+            "and False elsewhere."
+        ),
     ),
     config_path: Optional[Path] = typer.Option(
         None,
@@ -285,7 +331,7 @@ def install_claude_desktop(
 
     The config path is chosen automatically:
       macOS   – ~/Library/Application Support/Claude/claude_desktop_config.json
-      Windows – %APPDATA%\\Claude\\claude_desktop_config.json
+      Windows – %APPDATA%\\Claude\\  OR  Microsoft Store sandbox path (auto-detected)
       Linux   – ~/.config/Claude/claude_desktop_config.json
 
     After running this command, restart Claude Desktop and RLIP tools will be
@@ -293,41 +339,65 @@ def install_claude_desktop(
     """
     import platform
 
-    if config_path is None:
-        system = platform.system()
-        if system == "Darwin":
-            config_path = Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
-        elif system == "Windows":
-            appdata = os.environ.get("APPDATA", "")
-            config_path = Path(appdata) / "Claude" / "claude_desktop_config.json"
-        else:
-            config_path = Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+    system = platform.system()
+
+    # Default use_script to True on Windows: Claude Desktop (both classic and
+    # Store installs) does not inherit the user's PATH, so bare 'python' fails.
+    # Using the full path to the rlip-mcp.exe script is more reliable.
+    if use_script is None:
+        use_script = system == "Windows"
+
+    # On Windows, resolve the rlip-mcp script to its full absolute path so
+    # Claude Desktop can find it without needing PATH.
+    # Always set cwd to the user home dir so .rlip/ writes land somewhere
+    # writable — Claude Desktop otherwise defaults to C:\Windows\System32.
+    cwd = str(Path.home())
 
     if use_script:
-        entry: dict = {"command": "rlip-mcp"}
+        if system == "Windows":
+            import shutil
+            script_path = shutil.which("rlip-mcp") or "rlip-mcp"
+            entry: dict = {"command": script_path, "cwd": cwd}
+        else:
+            entry = {"command": "rlip-mcp", "cwd": cwd}
     else:
-        entry = {"command": command, "args": ["-m", "rlip.mcp_plugin"]}
+        entry = {"command": command, "args": ["-m", "rlip.mcp_plugin"], "cwd": cwd}
 
-    config: dict = {}
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text())
-        except json.JSONDecodeError:
-            console.print(f"[yellow]Warning: {config_path} contains invalid JSON – creating fresh config.[/yellow]")
+    # Build list of config paths to write
+    if config_path is not None:
+        config_paths: list[Path] = [config_path]
+    elif system == "Darwin":
+        config_paths = [Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"]
+    elif system == "Windows":
+        config_paths = _find_claude_desktop_config_windows()
+    else:
+        config_paths = [Path.home() / ".config" / "Claude" / "claude_desktop_config.json"]
 
-    config.setdefault("mcpServers", {})
-    config["mcpServers"]["rlip"] = entry
+    written: list[Path] = []
+    for cp in config_paths:
+        config: dict = {}
+        if cp.exists():
+            try:
+                config = json.loads(cp.read_text())
+            except json.JSONDecodeError:
+                console.print(f"[yellow]Warning: {cp} contains invalid JSON – creating fresh config.[/yellow]")
+        config.setdefault("mcpServers", {})
+        config["mcpServers"]["rlip"] = entry
+        cp.parent.mkdir(parents=True, exist_ok=True)
+        cp.write_text(json.dumps(config, indent=2))
+        written.append(cp)
+        console.print(f"[green]✓ RLIP MCP server added to {cp}[/green]")
 
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(json.dumps(config, indent=2))
-    console.print(f"[green]✓ RLIP MCP server added to {config_path}[/green]")
     console.print("\nConfiguration written:")
     console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
+    if len(written) > 1:
+        console.print(f"\n[dim](Written to {len(written)} config files – classic install and Microsoft Store install)[/dim]")
     console.print(
         "\n[bold]Next steps:[/bold]\n"
-        "  1. Restart Claude Desktop\n"
-        "  2. Open a new conversation\n"
-        "  3. Ask Claude to 'run a CartPole episode' to verify the plugin works"
+        "  1. Fully quit Claude Desktop (right-click system tray icon → Quit)\n"
+        "  2. Reopen Claude Desktop\n"
+        "  3. Go to Settings → Developer to confirm 'rlip' is listed\n"
+        "  4. Ask Claude to 'run a CartPole episode' to verify the plugin works"
     )
 
 

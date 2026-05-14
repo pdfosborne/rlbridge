@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._state import (
-    _CATALOG_PATH,
-    _CUSTOM_ENV_CACHE_ROOT,
+    _catalog_path,
+    _custom_env_cache_root,
     _custom_translators,
     _env_agents_dir,
     _env_cache_dir,
@@ -93,8 +93,8 @@ def rl_build_environment(
             )
 
     try:
-        built = builder.build(cache_dir=_CUSTOM_ENV_CACHE_ROOT, update_catalog=False)
-        built.update_catalog(catalog_path=_CATALOG_PATH)
+        built = builder.build(cache_dir=_custom_env_cache_root(), update_catalog=False)
+        built.update_catalog(catalog_path=_catalog_path())
 
         # Ensure per-environment output layout exists and mirror env cache code.
         _env_renders_dir(env_id).mkdir(parents=True, exist_ok=True)
@@ -147,13 +147,13 @@ def rl_load_cached_environments() -> str:
     from ..environments.builder import load_cached_environments  # noqa: PLC0415
 
     try:
-        loaded = load_cached_environments(cache_dir=_CUSTOM_ENV_CACHE_ROOT)
+        loaded = load_cached_environments(cache_dir=_custom_env_cache_root())
     except Exception as exc:
         return f"Failed to load cached environments: {exc}"
 
     if not loaded:
         return (
-            f"No cached environments found in {_CUSTOM_ENV_CACHE_ROOT}.\n"
+            f"No cached environments found in {_custom_env_cache_root()}.\n"
             "Use rl_build_environment() to create and cache a new environment."
         )
 
@@ -181,7 +181,7 @@ def rl_list_cached_environments() -> str:
 
     Returns summary metadata for each cached environment.
     """
-    root = _CUSTOM_ENV_CACHE_ROOT
+    root = _custom_env_cache_root()
     if not root.exists():
         return (
             f"No cached environments found ({root} does not exist).\n"
@@ -380,7 +380,7 @@ def rl_set_translator_code(
 
     cache_msg = ""
     if save:
-        cache_dir = _CUSTOM_ENV_CACHE_ROOT / env_id
+        cache_dir = _custom_env_cache_root() / env_id
         cache_dir.mkdir(parents=True, exist_ok=True)
         class_name = _to_class_name(env_id)
         module_path = cache_dir / "translator.py"

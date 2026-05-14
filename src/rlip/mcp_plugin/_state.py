@@ -137,21 +137,43 @@ def _safe_env_name(env_id: str) -> str:
     return cleaned or "environment"
 
 
-# All plugin artifacts live under the working directory Claude was launched in.
-# Users can override this with RLIP_OUTPUT_ROOT if desired.
-_OUTPUT_ROOT = Path(os.environ.get("RLIP_OUTPUT_ROOT") or Path.cwd())
-_RLIP_ROOT = _OUTPUT_ROOT / ".rlip"
+# ---------------------------------------------------------------------------
+# Output root resolution
+# ---------------------------------------------------------------------------
+# We deliberately resolve the output root *lazily* (at call time) rather than
+# at module-import time.  On Windows, Claude Desktop sets the process working
+# directory to C:\Windows\System32 before spawning the MCP subprocess, so any
+# Path.cwd() call that happens at import would resolve to a non-writable
+# system directory.  By deferring to a function we always pick up the correct
+# value after the OS has applied the "cwd" key from claude_desktop_config.json.
+#
+# Override with the RLIP_OUTPUT_ROOT env var to store artifacts somewhere
+# other than ~/.rlip (e.g. a project workspace).
+# ---------------------------------------------------------------------------
 
-# Shared roots
-_RENDERS_DIR = _RLIP_ROOT / "renders"
-_CUSTOM_ENV_CACHE_ROOT = _RLIP_ROOT / "envs"
-_CATALOG_PATH = _RLIP_ROOT / "catalog.json"
-_ENV_ARTIFACTS_ROOT = _RLIP_ROOT / "environments"
+def _rlip_root() -> Path:
+    """Return (and guarantee existence of) the RLIP artifact root directory.
+
+    Resolution order:
+      1. ``RLIP_OUTPUT_ROOT`` environment variable (if set)
+      2. User home directory  (~/.rlip)
+
+    The home directory is used as the fallback — rather than cwd — so that
+    artifacts always land in a user-writable location even when the server is
+    launched from a system directory such as C:\\Windows\\System32.
+    """
+    env_override = os.environ.get("RLIP_OUTPUT_ROOT")
+    if env_override:
+        root = Path(env_override) / ".rlip"
+    else:
+        root = Path.home() / ".rlip"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def _env_root_dir(env_id: str) -> Path:
     """Per-environment root for renders, cache, and agent artifacts."""
-    return _ENV_ARTIFACTS_ROOT / _safe_env_name(env_id)
+    return _rlip_root() / "environments" / _safe_env_name(env_id)
 
 
 def _env_renders_dir(env_id: str) -> Path:
@@ -164,3 +186,16 @@ def _env_cache_dir(env_id: str) -> Path:
 
 def _env_agents_dir(env_id: str) -> Path:
     return _env_root_dir(env_id) / "agents"
+
+
+# Convenience accessors for shared roots (also lazy)
+def _renders_dir() -> Path:
+    return _rlip_root() / "renders"
+
+
+def _custom_env_cache_root() -> Path:
+    return _rlip_root() / "envs"
+
+
+def _catalog_path() -> Path:
+    return _rlip_root() / "catalog.json"

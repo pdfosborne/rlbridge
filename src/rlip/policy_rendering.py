@@ -205,6 +205,7 @@ class PolicyRenderResult:
     frames: list[RenderedFrame] = field(default_factory=list, repr=False)
     output_dir: Optional[str] = None
     output_gif: Optional[str] = None
+    output_path_image: Optional[str] = None
     n_frames_saved: int = 0
     n_gif_frames: int = 0
     policy_size: int = 0
@@ -226,6 +227,8 @@ class PolicyRenderResult:
             lines.append(
                 f"  GIF saved:         {self.n_gif_frames} frames  → {self.output_gif}"
             )
+        if self.output_path_image:
+            lines.append(f"  Path image saved:  {self.output_path_image}")
         return "\n".join(lines)
 
 
@@ -436,6 +439,104 @@ def save_frames_to_dir(
             fname.write_bytes(frame.png_data)
             saved += 1
     return saved
+
+
+def save_path_image(
+    frames: list[RenderedFrame],
+    output_path: str | os.PathLike,
+    max_cols: int = 8,
+    thumb_width: int = 120,
+    annotate: bool = True,
+) -> bool:
+    """
+    Compose all ``rgb_array`` frames into a single static PNG showing the
+    full render path of the policy in one compact image.
+
+    Frames are laid out in a grid (left-to-right, top-to-bottom) so the
+    entire episode can be seen at a glance without any animation.
+
+    Parameters
+    ----------
+    frames:
+        Frames from :meth:`PolicyRenderer.run`.
+    output_path:
+        Destination ``.png`` file path.  Parent directory is created if
+        needed.
+    max_cols:
+        Maximum number of thumbnails per row.
+    thumb_width:
+        Width (px) to scale each thumbnail to (aspect ratio preserved).
+    annotate:
+        If *True*, draw a small step / reward label at the top-left of
+        each thumbnail.
+
+    Returns
+    -------
+    bool
+        ``True`` if the image was saved, ``False`` if there were no RGB
+        frames to composite.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont  # noqa: PLC0415
+    except ImportError as exc:
+        raise ImportError(
+            "Pillow is required for path image output.  Install it with: "
+            "pip install pillow"
+        ) from exc
+
+    from io import BytesIO  # noqa: PLC0415
+
+    rgb_frames = [f for f in frames if f.png_data]
+    if not rgb_frames:
+        return False
+
+    # Build thumbnails
+    thumbs: list[Image.Image] = []
+    thumb_height = thumb_width  # will be updated from the first frame
+    for i, frame in enumerate(rgb_frames):
+        img = Image.open(BytesIO(frame.png_data)).convert("RGB")
+        scale = thumb_width / img.width
+        h = max(1, int(img.height * scale))
+        img = img.resize((thumb_width, h), Image.LANCZOS)
+        if i == 0:
+            thumb_height = h
+
+        if annotate:
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("DejaVuSansMono.ttf", 10)
+            except (IOError, OSError):
+                font = ImageFont.load_default()
+            label = f"{frame.step} r={frame.reward:+.2f}"
+            bbox = draw.textbbox((0, 0), label, font=font)
+            lw, lh = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.rectangle([1, 1, lw + 4, lh + 4], fill=(0, 0, 0, 180))
+            draw.text((2, 2), label, fill=(255, 255, 255), font=font)
+
+            # Mark terminal frames distinctly
+            if frame.terminated:
+                draw.rectangle([0, 0, thumb_width - 1, h - 1], outline=(255, 80, 80), width=2)
+            elif frame.sub_goal_reached:
+                draw.rectangle([0, 0, thumb_width - 1, h - 1], outline=(80, 255, 80), width=2)
+
+        thumbs.append(img)
+
+    n = len(thumbs)
+    cols = min(n, max_cols)
+    rows = (n + cols - 1) // cols
+    canvas_w = cols * thumb_width
+    canvas_h = rows * thumb_height
+
+    canvas = Image.new("RGB", (canvas_w, canvas_h), color=(30, 30, 30))
+    for idx, thumb in enumerate(thumbs):
+        row, col = divmod(idx, cols)
+        x = col * thumb_width
+        y = row * thumb_height
+        canvas.paste(thumb, (x, y))
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(output_path, format="PNG", optimize=True)
+    return True
 
 
 def save_gif(
@@ -649,8 +750,11 @@ def render_optimal_policy(
     translate: Any = True,
     output_dir: Optional[str | os.PathLike] = None,
     output_gif: Optional[str | os.PathLike] = None,
+    output_path_image: Optional[str | os.PathLike] = None,
     gif_fps: float = 4.0,
     gif_annotate: bool = True,
+    path_image_max_cols: int = 8,
+    path_image_thumb_width: int = 120,
 ) -> PolicyRenderResult:
     """
     Full pipeline: extract optimal policy → replay on a rendered env →
@@ -689,10 +793,18 @@ def render_optimal_policy(
         If given, individual PNG frames are saved here (one per step).
     output_gif:
         If given, an animated GIF is written to this path.
+    output_path_image:
+        If given, a single static PNG showing all frames tiled in a grid
+        is written to this path.  Much smaller than a GIF and suitable
+        for sharing or embedding.
     gif_fps:
         Animation speed (frames per second).
     gif_annotate:
         Overlay step / reward / sub-goal annotations on each GIF frame.
+    path_image_max_cols:
+        Maximum thumbnail columns in the path image grid (default 8).
+    path_image_thumb_width:
+        Width of each thumbnail in the path image (default 120 px).
 
     Returns
     -------
@@ -733,6 +845,14 @@ def render_optimal_policy(
             annotate=gif_annotate,
         )
 
+    if output_path_image is not None:
+        save_path_image(
+            frames,
+            output_path_image,
+            max_cols=path_image_max_cols,
+            thumb_width=path_image_thumb_width,
+        )
+
     env_id = getattr(render_env, "env_id", type(render_env).__name__)
 
     return PolicyRenderResult(
@@ -744,6 +864,7 @@ def render_optimal_policy(
         frames=frames,
         output_dir=str(output_dir) if output_dir else None,
         output_gif=str(output_gif) if output_gif else None,
+        output_path_image=str(output_path_image) if output_path_image else None,
         n_frames_saved=n_png_saved,
         n_gif_frames=n_gif_frames,
         policy_size=len(policy),
@@ -757,5 +878,6 @@ __all__ = [
     "PolicyRenderer",
     "save_frames_to_dir",
     "save_gif",
+    "save_path_image",
     "render_optimal_policy",
 ]

@@ -25,7 +25,7 @@ from typing import Any, Optional
 from mcp.server.fastmcp import Context
 
 from ._state import (
-    _RENDERS_DIR,
+    _renders_dir,
     _custom_translators,
     _in_process,
     _instruction_protocols,

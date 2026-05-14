@@ -22,7 +22,7 @@ from mcp.server.fastmcp import Context
 from ._dashboard import dashboard as _dash, is_running as _dash_running
 from ._env_wrappers import _LangStateEnv, _SequentialShapedEnv, _ShapedEnv
 from ._state import (
-    _CUSTOM_ENV_CACHE_ROOT,
+    _custom_env_cache_root,
     _env_agents_dir,
     _env_cache_dir,
     _env_renders_dir,
@@ -208,7 +208,7 @@ def _package_trained_agent(agent_id: str, entry: dict[str, Any]) -> tuple[Path |
             _copy_if_exists(Path(factory_file), env_src_dir / filename)
             _copy_if_exists(Path(factory_file), cached_env_src_dir / filename)
 
-        custom_env_dir = _CUSTOM_ENV_CACHE_ROOT / env_id
+        custom_env_dir = _custom_env_cache_root() / env_id
         if custom_env_dir.exists() and custom_env_dir.is_dir():
             cached_dest = env_src_dir / "custom_env_cache"
             shutil.copytree(custom_env_dir, cached_dest, dirs_exist_ok=True)
@@ -227,7 +227,7 @@ def _package_trained_agent(agent_id: str, entry: dict[str, Any]) -> tuple[Path |
                 _copy_if_exists(Path(translator_file), translator_src_dir / filename)
                 _copy_if_exists(Path(translator_file), cached_translator_src_dir / filename)
 
-        custom_translator = _CUSTOM_ENV_CACHE_ROOT / env_id / "translator.py"
+        custom_translator = _custom_env_cache_root() / env_id / "translator.py"
         if custom_translator.exists():
             _copy_if_exists(custom_translator, translator_src_dir / "translator.py")
             _copy_if_exists(custom_translator, cached_translator_src_dir / "translator.py")
