@@ -206,6 +206,7 @@ class PolicyRenderResult:
     output_dir: Optional[str] = None
     output_gif: Optional[str] = None
     output_path_image: Optional[str] = None
+    output_overlay_image: Optional[str] = None
     n_frames_saved: int = 0
     n_gif_frames: int = 0
     policy_size: int = 0
@@ -229,6 +230,8 @@ class PolicyRenderResult:
             )
         if self.output_path_image:
             lines.append(f"  Path image saved:  {self.output_path_image}")
+        if self.output_overlay_image:
+            lines.append(f"  Overlay image saved: {self.output_overlay_image}")
         return "\n".join(lines)
 
 
@@ -539,6 +542,94 @@ def save_path_image(
     return True
 
 
+def save_overlay_image(
+    frames: list[RenderedFrame],
+    output_path: str | os.PathLike,
+    max_width: int = 480,
+) -> bool:
+    """
+    Composite all ``rgb_array`` frames into a single PNG by overlaying every
+    frame at equal opacity, producing a "heat-map" view of all visited states
+    simultaneously.
+
+    Each frame contributes an equal share (1/n) to the final pixel value,
+    equivalent to an arithmetic mean across all frames.  Early frames are
+    tinted with a cool blue hue and late frames with a warm red hue so that
+    the trajectory direction remains visible in the blended result.
+
+    Parameters
+    ----------
+    frames:
+        Frames from :meth:`PolicyRenderer.run`.
+    output_path:
+        Destination ``.png`` file path.  Parent directory is created if
+        needed.
+    max_width:
+        Resize frames to at most this width before compositing.  0 = no
+        resize.
+
+    Returns
+    -------
+    bool
+        ``True`` if the image was saved, ``False`` if there were no RGB
+        frames to composite.
+    """
+    try:
+        from PIL import Image  # noqa: PLC0415
+    except ImportError as exc:
+        raise ImportError(
+            "Pillow is required for overlay image output.  "
+            "Install it with: pip install pillow"
+        ) from exc
+
+    from io import BytesIO  # noqa: PLC0415
+
+    rgb_frames = [f for f in frames if f.png_data]
+    if not rgb_frames:
+        return False
+
+    n = len(rgb_frames)
+
+    # Load and optionally resize all frames to a common size.
+    def _load(frame: RenderedFrame) -> Image.Image:
+        img = Image.open(BytesIO(frame.png_data)).convert("RGB")  # type: ignore[arg-type]
+        if max_width > 0 and img.width > max_width:
+            scale = max_width / img.width
+            img = img.resize((max_width, max(1, int(img.height * scale))), Image.LANCZOS)
+        return img
+
+    first = _load(rgb_frames[0])
+    target_size = first.size
+
+    # Accumulate pixel sums as floats using a running blend.
+    # Each frame is tinted slightly along a blue→red gradient so that
+    # trajectory direction is encoded in the colour shift.
+    # We blend each frame in at weight 1/(i+1) to maintain a running mean.
+    composite = first.convert("RGBA")
+
+    for i, frame in enumerate(rgb_frames[1:], start=1):
+        img = _load(frame)
+        if img.size != target_size:
+            img = img.resize(target_size, Image.LANCZOS)
+
+        # Per-channel tint: early frames cool (blue +), late frames warm (red +)
+        t = i / max(n - 1, 1)  # 0.0 (first) → 1.0 (last)
+        tint_r = int(30 * t)        # red grows toward the end
+        tint_b = int(30 * (1 - t))  # blue fades toward the end
+        r, g, b = img.split()
+        r = r.point(lambda x: min(255, x + tint_r))
+        b = b.point(lambda x: min(255, x + tint_b))
+        img = Image.merge("RGB", (r, g, b))
+
+        # Incremental equal-weight blend: result = result*(i/(i+1)) + frame*(1/(i+1))
+        alpha = 1.0 / (i + 1)
+        composite = Image.blend(composite.convert("RGB"), img, alpha=alpha).convert("RGBA")
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    composite.convert("RGB").save(output_path, format="PNG", optimize=True)
+    return True
+
+
 def save_gif(
     frames: list[RenderedFrame],
     output_path: str | os.PathLike,
@@ -751,6 +842,7 @@ def render_optimal_policy(
     output_dir: Optional[str | os.PathLike] = None,
     output_gif: Optional[str | os.PathLike] = None,
     output_path_image: Optional[str | os.PathLike] = None,
+    output_overlay_image: Optional[str | os.PathLike] = None,
     gif_fps: float = 4.0,
     gif_annotate: bool = True,
     path_image_max_cols: int = 8,
@@ -797,6 +889,11 @@ def render_optimal_policy(
         If given, a single static PNG showing all frames tiled in a grid
         is written to this path.  Much smaller than a GIF and suitable
         for sharing or embedding.
+    output_overlay_image:
+        If given, all frames are composited into a single PNG by overlaying
+        each frame at equal opacity (arithmetic mean), with a subtle
+        blue→red tint gradient encoding trajectory direction.  Useful for
+        seeing every visited state at once without animation.
     gif_fps:
         Animation speed (frames per second).
     gif_annotate:
@@ -853,6 +950,9 @@ def render_optimal_policy(
             thumb_width=path_image_thumb_width,
         )
 
+    if output_overlay_image is not None:
+        save_overlay_image(frames, output_overlay_image)
+
     env_id = getattr(render_env, "env_id", type(render_env).__name__)
 
     return PolicyRenderResult(
@@ -865,6 +965,7 @@ def render_optimal_policy(
         output_dir=str(output_dir) if output_dir else None,
         output_gif=str(output_gif) if output_gif else None,
         output_path_image=str(output_path_image) if output_path_image else None,
+        output_overlay_image=str(output_overlay_image) if output_overlay_image else None,
         n_frames_saved=n_png_saved,
         n_gif_frames=n_gif_frames,
         policy_size=len(policy),
@@ -878,6 +979,7 @@ __all__ = [
     "PolicyRenderer",
     "save_frames_to_dir",
     "save_gif",
+    "save_overlay_image",
     "save_path_image",
     "render_optimal_policy",
 ]

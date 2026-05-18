@@ -263,6 +263,24 @@ def _package_trained_agent(agent_id: str, entry: dict[str, Any]) -> tuple[Path |
         json.dumps({"instructions": instructions_used}, indent=2),
         encoding="utf-8",
     )
+
+    # ── Persist training history and evaluation results ────────────────────
+    train_result = entry.get("train_result")
+    training_results: dict = {
+        "agent_name": getattr(train_result, "agent_name", agent_type) if train_result else agent_type,
+        "n_episodes": getattr(train_result, "n_episodes", 0) if train_result else 0,
+        "episode_rewards": list(getattr(train_result, "episode_rewards", []) if train_result else []),
+        "final_epsilon": float(getattr(train_result, "final_epsilon", 0.0) if train_result else 0.0),
+        "eval_mean": entry.get("eval_mean"),
+        "eval_std": entry.get("eval_std"),
+        "eval_rewards": list(entry.get("eval_rewards") or []),
+    }
+    try:
+        (package_dir / "training_results.json").write_text(
+            json.dumps(training_results, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass
     (cached_env_root / "latest_instructions.json").write_text(
         json.dumps({"instructions": instructions_used}, indent=2),
         encoding="utf-8",
@@ -1038,15 +1056,6 @@ def rl_train_agent(
         if _dash_running():
             _render_policy_for_dashboard(agent_id, env_id, result.best_episode_history, max_steps)
 
-        artifact_path: str | None = None
-        artifact_warning = ""
-        archive_path, archive_error = _package_trained_agent(agent_id, _trained_agents[agent_id])
-        if archive_path is not None:
-            artifact_path = str(archive_path)
-            _trained_agents[agent_id]["artifact_archive"] = artifact_path
-        elif archive_error:
-            artifact_warning = f"\n  Artifact package: FAILED ({archive_error})"
-
         # ── Clean 100-episode evaluation (fixed weights, no instruction rewards) ──
         _eval_mean: float | None = None
         _eval_std: float | None = None
@@ -1076,6 +1085,15 @@ def rl_train_agent(
             _trained_agents[agent_id]["eval_rewards"] = _eval_rewards
         except Exception:
             pass
+
+        artifact_path: str | None = None
+        artifact_warning = ""
+        archive_path, archive_error = _package_trained_agent(agent_id, _trained_agents[agent_id])
+        if archive_path is not None:
+            artifact_path = str(archive_path)
+            _trained_agents[agent_id]["artifact_archive"] = artifact_path
+        elif archive_error:
+            artifact_warning = f"\n  Artifact package: FAILED ({archive_error})"
 
         # Update plan database if this agent was trained with an instruction
         if match_id and match_id in _instruction_protocols and _eval_mean is not None:
@@ -1355,13 +1373,39 @@ def rl_load_agent(artifact_path: str = "", agent_id: str = "") -> str:
     except Exception as exc:
         return f"Failed to load agent weights: {exc}"
 
+    # ── Restore training history and evaluation results ─────────────────────
+    from .._agent_base import TrainResult  # noqa: PLC0415
+
+    restored_train_result = None
+    restored_eval_mean: float | None = None
+    restored_eval_std: float | None = None
+    restored_eval_rewards: list[float] = []
+
+    tr_path = pkg_dir / "training_results.json"
+    if tr_path.exists():
+        try:
+            tr_data = json.loads(tr_path.read_text(encoding="utf-8"))
+            restored_train_result = TrainResult(
+                agent_name=str(tr_data.get("agent_name") or agent_type),
+                n_episodes=int(tr_data.get("n_episodes") or 0),
+                episode_rewards=[float(r) for r in tr_data.get("episode_rewards") or []],
+                final_epsilon=float(tr_data.get("final_epsilon") or 0.0),
+            )
+            if tr_data.get("eval_mean") is not None:
+                restored_eval_mean = float(tr_data["eval_mean"])
+            if tr_data.get("eval_std") is not None:
+                restored_eval_std = float(tr_data["eval_std"])
+            restored_eval_rewards = [float(r) for r in tr_data.get("eval_rewards") or []]
+        except Exception:
+            pass
+
     # ── Register in session cache ─────────────────────────────────────────────
     _trained_agents[loaded_agent_id] = {
         "agent":                agent,
         "env_id":               env_id,
         "agent_type":           agent_type,
         "use_language_state":   use_lang_state,
-        "train_result":         None,
+        "train_result":         restored_train_result,
         "best_episode_history": [],
         "training_config":      training_config,
         "match_id":             metadata.get("match_id"),
@@ -1370,12 +1414,28 @@ def rl_load_agent(artifact_path: str = "", agent_id: str = "") -> str:
         "sub_goal_language":    metadata.get("sub_goal_language"),
         "sub_goal_bonus":       metadata.get("sub_goal_bonus"),
         "sub_goal_threshold":   metadata.get("sub_goal_threshold"),
+        "eval_mean":            restored_eval_mean,
+        "eval_std":             restored_eval_std,
+        "eval_rewards":         restored_eval_rewards,
         "artifact_archive":     str(resolved_path) if resolved_path.suffix.lower() == ".zip" else None,
         "loaded_from":          str(resolved_path),
     }
 
     instr_line = f"\n  Instruction:  {instruction!r}" if instruction else ""
     lang_line  = "\n  Language obs: ON" if use_lang_state else ""
+
+    history_lines: list[str] = []
+    if restored_train_result is not None and restored_train_result.episode_rewards:
+        history_lines.append(
+            f"\n  Training history restored: {len(restored_train_result.episode_rewards)} episodes"
+        )
+    if restored_eval_mean is not None:
+        eval_summary = f"\n  Eval results restored:    mean={restored_eval_mean:.4f}"
+        if restored_eval_std is not None:
+            eval_summary += f" ±{restored_eval_std:.4f}"
+        if restored_eval_rewards:
+            eval_summary += f" (n={len(restored_eval_rewards)} episodes)"
+        history_lines.append(eval_summary)
 
     return (
         f"Agent loaded successfully.\n\n"
@@ -1384,9 +1444,11 @@ def rl_load_agent(artifact_path: str = "", agent_id: str = "") -> str:
         f"  Environment: {env_id}"
         + instr_line
         + lang_line
+        + "".join(history_lines)
         + f"\n\nThe agent is ready to use:\n"
         f"  rl_run_agent_episode(agent_id='{loaded_agent_id}')\n"
         f"  rl_render_policy(env_id='{env_id}', agent_id='{loaded_agent_id}')\n"
+        f"  rl_evaluate_agent(agent_id='{loaded_agent_id}')\n"
         f"  rl_create_training_report(agent_id='{loaded_agent_id}')"
     )
 
@@ -1636,11 +1698,14 @@ def rl_create_training_report(
     env_reports_dir.mkdir(parents=True, exist_ok=True)
     safe_id = env_id.replace("/", "_").replace("-", "_").replace(" ", "_")
     if len(entries) > 1:
-        out_path = output_path or str(env_reports_dir / f"{safe_id}_comparison_report.png")
+        out_stem = output_path or str(env_reports_dir / f"{safe_id}_comparison_report")
     else:
-        out_path = output_path or str(
-            env_reports_dir / f"{safe_id}_{primary_agent_type}_{agent_id}_report.png"
+        out_stem = output_path or str(
+            env_reports_dir / f"{safe_id}_{primary_agent_type}_{agent_id}_report"
         )
+    # Strip .png suffix if caller passed a full path — we derive per-file suffixes
+    if out_stem.endswith(".png"):
+        out_stem = out_stem[:-4]
 
     comparison_runs: list[dict[str, Any]] = []
     for aid, entry in entries:
@@ -1672,34 +1737,45 @@ def rl_create_training_report(
                 "breakpoints": _breakpoint_proxy(tr.episode_rewards, breakpoint_count),
                 "eval_mean": entry.get("eval_mean"),
                 "eval_std": entry.get("eval_std"),
+                "eval_rewards": list(entry.get("eval_rewards") or []),
             }
         )
 
     try:
-        fig = create_training_report(
+        figs = create_training_report(
             comparison_runs=comparison_runs,
-            output_path=out_path,
+            output_path=out_stem,   # analysis.py now appends _rewards/_instructions/_config
             rolling_window=rolling_window or None,
             n_breakpoints=breakpoint_count,
         )
     except Exception as exc:
         return f"Report generation failed: {exc}"
 
-    # Return base64-encoded PNG so Claude can display inline
-    try:
-        import io as _io  # noqa: PLC0415
-        buf = _io.BytesIO()
-        fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
-        buf.seek(0)
-        b64 = base64.b64encode(buf.read()).decode("ascii")
-        return (
-            f"Training report generated for {len(entries)} agent(s) on {env_id}.\n"
-            f"Agent IDs: {', '.join(requested_ids)}\n"
-            f"Saved to: {out_path}\n\n"
-            f"data:image/png;base64,{b64}"
-        )
-    except Exception as exc:
-        return f"Report saved to {out_path} but base64 encoding failed: {exc}"
+    # Encode all three figures as base64 so the client can display them inline
+    import io as _io  # noqa: PLC0415
+
+    encoded: list[str] = []
+    saved_paths: list[str] = []
+    for key, suffix in [("rewards", "_rewards.png"), ("instructions", "_instructions.png"), ("config", "_config.png")]:
+        fig = figs.get(key)
+        if fig is None:
+            continue
+        saved_paths.append(out_stem + suffix)
+        try:
+            buf = _io.BytesIO()
+            fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
+            buf.seek(0)
+            b64 = base64.b64encode(buf.read()).decode("ascii")
+            encoded.append(f"### {key.capitalize()} chart\ndata:image/png;base64,{b64}")
+        except Exception as exc:
+            encoded.append(f"### {key.capitalize()} chart\n[encoding failed: {exc}]")
+
+    header = (
+        f"Training report generated for {len(entries)} agent(s) on {env_id}.\n"
+        f"Agent IDs: {', '.join(requested_ids)}\n"
+        f"Saved to:\n" + "\n".join(f"  {p}" for p in saved_paths) + "\n\n"
+    )
+    return header + "\n\n".join(encoded)
 
 
 @mcp.tool()
