@@ -31,6 +31,8 @@ class AgentReportRun:
     best_match_observation: Optional[Any] = None
     best_match_similarity: Optional[float] = None
     breakpoints: list[tuple[int, float]] = field(default_factory=list)
+    eval_mean: Optional[float] = None
+    eval_std: Optional[float] = None
 
 
 def _rolling_mean(values: list[float], window: int) -> list[float]:
@@ -175,6 +177,8 @@ def _normalize_runs(
                 best_match_observation=raw.get("best_match_observation"),
                 best_match_similarity=raw.get("best_match_similarity"),
                 breakpoints=list(raw.get("breakpoints") or []),
+                eval_mean=raw.get("eval_mean"),
+                eval_std=raw.get("eval_std"),
             )
             if not run.breakpoints:
                 run.breakpoints = _compute_breakpoints_best_so_far(
@@ -276,8 +280,8 @@ def create_training_report(
     ax_conv = fig.add_subplot(gs[0, :])
     _draw_convergence_panel(ax_conv, runs, window)
 
-    ax_bp = fig.add_subplot(gs[1, :])
-    _draw_breakpoint_panel(ax_bp, runs)
+    ax_eval = fig.add_subplot(gs[1, :])
+    _draw_evaluation_panel(ax_eval, runs)
 
     ax_inst = fig.add_subplot(gs[2, 0])
     _draw_instruction_panel(ax_inst, runs)
@@ -298,7 +302,7 @@ def create_training_report(
     fig.text(
         0.01,
         0.01,
-        "Breakpoint optimal-policy evaluation uses best-so-far reward at episodes 10..100 (step 10).",
+        "Evaluation: 100 episodes with fixed weights on plain environment (no instruction rewards). Error bars = ±1 std.",
         fontsize=7.5,
         color="#555555",
     )
@@ -352,7 +356,15 @@ def _draw_convergence_panel(ax: Any, runs: list[AgentReportRun], window: int) ->
     ax.spines[["top", "right"]].set_visible(False)
 
 
-def _draw_breakpoint_panel(ax: Any, runs: list[AgentReportRun]) -> None:
+def _draw_evaluation_panel(ax: Any, runs: list[AgentReportRun]) -> None:
+    """
+    Bar chart comparing clean evaluation results across agents.
+
+    Each bar shows the mean reward from 100 post-training episodes run with
+    fixed weights on the plain environment (no instruction rewards).  Error
+    bars show ±1 standard deviation.  Falls back to the best training reward
+    when clean evaluation data is unavailable.
+    """
     ax.set_facecolor("#ffffff")
     palette = [
         "#0072B2",
@@ -363,20 +375,70 @@ def _draw_breakpoint_panel(ax: Any, runs: list[AgentReportRun]) -> None:
         "#56B4E9",
     ]
 
-    for i, run in enumerate(runs):
-        points = run.breakpoints or _compute_breakpoints_best_so_far(run.train_result.episode_rewards, 6)
-        if not points:
-            continue
-        xs = [p[0] for p in points]
-        ys = [p[1] for p in points]
-        color = palette[i % len(palette)]
-        ax.plot(xs, ys, marker="o", linewidth=1.8, markersize=4, color=color, label=_legend_label(run))
+    labels: list[str] = []
+    means: list[float] = []
+    stds: list[float] = []
+    colors: list[str] = []
+    is_fallback: list[bool] = []
 
-    ax.set_title("Optimal-Policy Reward at Training Breakpoints", fontsize=11, fontweight="bold")
-    ax.set_xlabel("Breakpoint episode", fontsize=9)
-    ax.set_ylabel("Best-so-far reward", fontsize=9)
-    ax.grid(True, linestyle=":", alpha=0.4)
-    ax.legend(fontsize=7, loc="lower right")
+    for i, run in enumerate(runs):
+        labels.append(_legend_label(run))
+        colors.append(palette[i % len(palette)])
+        if run.eval_mean is not None:
+            means.append(run.eval_mean)
+            stds.append(run.eval_std if run.eval_std is not None else 0.0)
+            is_fallback.append(False)
+        else:
+            # Fallback: use best training reward with no error bar
+            means.append(run.train_result.best_reward)
+            stds.append(0.0)
+            is_fallback.append(True)
+
+    xs = list(range(len(labels)))
+    bars = ax.bar(xs, means, color=colors, alpha=0.75, width=0.55, zorder=3)
+    ax.errorbar(
+        xs,
+        means,
+        yerr=stds,
+        fmt="none",
+        ecolor="#333333",
+        elinewidth=1.4,
+        capsize=5,
+        zorder=4,
+    )
+
+    for bar, mean, std, fallback in zip(bars, means, stds, is_fallback):
+        label_text = f"{mean:.4f}" if fallback else f"{mean:.4f}\n±{std:.4f}"
+        ax.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            bar.get_height() + max(stds) * 0.05 + abs(mean) * 0.01,
+            label_text,
+            ha="center",
+            va="bottom",
+            fontsize=7.5,
+            color="#1f2933",
+        )
+        if fallback:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2.0,
+                bar.get_height() / 2.0,
+                "(train\nbest)",
+                ha="center",
+                va="center",
+                fontsize=6.5,
+                color="#ffffff",
+                alpha=0.8,
+            )
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels, fontsize=8, rotation=15 if len(labels) > 3 else 0, ha="right")
+    ax.set_title(
+        "Clean Evaluation — Mean Reward ± Std  (100 episodes, fixed weights, no instruction rewards)",
+        fontsize=10,
+        fontweight="bold",
+    )
+    ax.set_ylabel("Mean reward", fontsize=9)
+    ax.grid(True, axis="y", linestyle=":", alpha=0.4)
     ax.spines[["top", "right"]].set_visible(False)
 
 
@@ -454,10 +516,17 @@ def _draw_config_panel(ax: Any, runs: list[AgentReportRun]) -> None:
 
         rewards = run.train_result.episode_rewards
         if rewards:
-            summary = (
+            summary_parts = [
                 f"episodes={len(rewards)}, mean={run.train_result.mean_reward:.4f}, "
                 f"best={run.train_result.best_reward:.4f}, last10%={run.train_result.last_n_mean:.4f}"
-            )
+            ]
+            if run.eval_mean is not None:
+                eval_str = f"eval_mean={run.eval_mean:.4f}"
+                if run.eval_std is not None:
+                    eval_str += f" ±{run.eval_std:.4f}"
+                eval_str += " (100ep, fixed weights)"
+                summary_parts.append(eval_str)
+            summary = ", ".join(summary_parts)
             lines.append("  summary:")
             for sline in textwrap.wrap(summary, width=panel_width - 4):
                 lines.append(f"    {sline}")

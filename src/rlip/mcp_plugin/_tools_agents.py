@@ -273,6 +273,66 @@ def _package_trained_agent(agent_id: str, entry: dict[str, Any]) -> tuple[Path |
     return Path(archive_path), None
 
 
+# ── Clean post-training evaluation ───────────────────────────────────────────
+
+def _run_clean_evaluation(
+    agent: Any,
+    env_factory: Any,
+    n_episodes: int = 100,
+    max_steps: int = 200,
+    use_language_state: bool = False,
+    translator: Any = None,
+    env_id: str = "",
+    seed: int = 0,
+) -> tuple[float, float, list[float]]:
+    """
+    Evaluate *agent* with fixed weights on the plain environment for *n_episodes*.
+
+    The environment is created fresh with no instruction/shaping wrappers so
+    the reported reward reflects only the true environment signal.  If the
+    agent was trained with language-state observations the same
+    ``_LangStateEnv`` wrapper is applied so the observation format matches,
+    but no bonus rewards are added.
+
+    Returns
+    -------
+    (mean_reward, std_reward, episode_rewards)
+    """
+    from ..interaction_protocols import GreedyEpisodeProtocol, MultiEpisodeProtocol  # noqa: PLC0415
+
+    eval_env = env_factory.create(render_mode=None)
+    try:
+        if use_language_state and translator is not None:
+            eval_env = _LangStateEnv(eval_env, translator=translator, env_id=env_id)
+
+        def _greedy_fn(obs: Any) -> Any:
+            if hasattr(agent, "act_greedy"):
+                return agent.act_greedy(obs)
+            return agent.act(obs)
+
+        protocol = MultiEpisodeProtocol(
+            GreedyEpisodeProtocol(
+                policy_fn=_greedy_fn,
+                max_steps=max_steps,
+                seed=seed,
+                record_history=False,
+            ),
+            n_episodes=n_episodes,
+            base_seed=seed,
+        )
+        result = protocol(eval_env)
+    finally:
+        eval_env.close()
+
+    rewards = [ep.total_reward for ep in result.episodes]
+    if not rewards:
+        return 0.0, 0.0, []
+    mean = sum(rewards) / len(rewards)
+    variance = sum((r - mean) ** 2 for r in rewards) / len(rewards)
+    std = variance ** 0.5
+    return mean, std, rewards
+
+
 # ── Dashboard policy render helper ───────────────────────────────────────────
 
 def _render_policy_for_dashboard(
@@ -537,7 +597,14 @@ def rl_list_trained_agents(env_id: str = "") -> str:
 
     lines = [f"Saved trained agents — {len(all_agents)} total\n"]
     for e in all_agents:
-        eval_str  = f"{e['eval_reward']:+.4f}" if e.get("eval_reward") is not None else "—"
+        if e.get("eval_reward") is not None:
+            eval_str = f"{e['eval_reward']:+.4f}"
+            if e.get("eval_std") is not None:
+                eval_str += f" ±{e['eval_std']:.4f}"
+            n_eval = e.get("eval_n_episodes") or 100
+            eval_str += f"  (mean±std, {n_eval} eps)"
+        else:
+            eval_str = "—"
         best_str  = f"{e['training_best_reward']:+.4f}" if e.get("training_best_reward") is not None else "—"
         sim_str   = f"{e['match_similarity'] * 100:.1f}%" if e.get("match_similarity") else "—"
         instr     = e.get("instruction") or "— (no instruction)"
@@ -980,12 +1047,41 @@ def rl_train_agent(
         elif archive_error:
             artifact_warning = f"\n  Artifact package: FAILED ({archive_error})"
 
-        _agent_eval_reward: float | None = None
-        if match_id and match_id in _instruction_protocols:
+        # ── Clean 100-episode evaluation (fixed weights, no instruction rewards) ──
+        _eval_mean: float | None = None
+        _eval_std: float | None = None
+        _eval_rewards: list[float] = []
+        try:
+            from ..environments.registry import registry as _eval_env_registry  # noqa: PLC0415
+            from ..language_translation import get_translator as _get_translator  # noqa: PLC0415
+
+            _eval_factory = _eval_env_registry.get(env_id)
+            _eval_agent = _trained_agents[agent_id]["agent"]
+            _eval_translator = (
+                _custom_translators.get(env_id) or _get_translator(env_id)
+                if use_language_state else None
+            )
+            _eval_mean, _eval_std, _eval_rewards = _run_clean_evaluation(
+                agent=_eval_agent,
+                env_factory=_eval_factory,
+                n_episodes=100,
+                max_steps=max_steps,
+                use_language_state=use_language_state,
+                translator=_eval_translator,
+                env_id=env_id,
+                seed=seed if seed is not None else 0,
+            )
+            _trained_agents[agent_id]["eval_mean"] = _eval_mean
+            _trained_agents[agent_id]["eval_std"] = _eval_std
+            _trained_agents[agent_id]["eval_rewards"] = _eval_rewards
+        except Exception:
+            pass
+
+        # Update plan database if this agent was trained with an instruction
+        if match_id and match_id in _instruction_protocols and _eval_mean is not None:
             try:
-                from ..instruction_following import get_plan_database
-                from ._state import _env_plan_db_path
-                from ..environments.registry import registry as _eval_env_registry
+                from ..instruction_following import get_plan_database  # noqa: PLC0415
+                from ._state import _env_plan_db_path  # noqa: PLC0415
 
                 _proto_entry = _instruction_protocols[match_id]
                 _original_instruction = (
@@ -994,44 +1090,16 @@ def rl_train_agent(
                     or ""
                 )
                 if _original_instruction:
-                    _eval_factory = _eval_env_registry.get(env_id)
-                    _eval_env = _eval_factory.create()
-                    try:
-                        _eval_agent = _trained_agents[agent_id]["agent"]
-                        _eval_obs_out = _eval_env.reset(seed=seed)
-                        _eval_obs = (
-                            _eval_obs_out.get("observation", _eval_obs_out)
-                            if isinstance(_eval_obs_out, dict)
-                            else _eval_obs_out
-                        )
-                        _eval_total = 0.0
-                        for _eval_step in range(max_steps):
-                            _eval_action = _eval_agent.act(_eval_obs, greedy=True)
-                            _eval_out = _eval_env.step(_eval_action)
-                            if isinstance(_eval_out, dict):
-                                _eval_obs = _eval_out.get("observation", _eval_obs)
-                                _eval_total += float(_eval_out.get("reward", 0.0))
-                                if _eval_out.get("terminated") or _eval_out.get("truncated"):
-                                    break
-                            else:
-                                _eval_obs = getattr(_eval_out, "observation", _eval_obs)
-                                _eval_total += float(getattr(_eval_out, "reward", 0.0))
-                                if getattr(_eval_out, "terminated", False) or getattr(_eval_out, "truncated", False):
-                                    break
-                    finally:
-                        _eval_env.close()
-
                     _plan_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
                     _plan_db.update_eval_reward(
                         instruction=_original_instruction,
                         match_id=match_id,
-                        eval_reward=_eval_total,
+                        eval_reward=_eval_mean,
                         training_reward=result.best_reward,
                         agent_id=agent_id,
                         agent_type=agent_type,
                         n_episodes=n_episodes,
                     )
-                    _agent_eval_reward = _eval_total
             except Exception:
                 pass
 
@@ -1046,7 +1114,9 @@ def rl_train_agent(
                                         or _trained_agents[agent_id].get("instruction"),
                 "sub_steps":            (_instruction_protocols.get(match_id, {}).get("instructions") or [])
                                         if match_id else [],
-                "eval_reward":          _agent_eval_reward,
+                "eval_reward":          _eval_mean,
+                "eval_std":             _eval_std,
+                "eval_n_episodes":      len(_eval_rewards) if _eval_rewards else None,
                 "training_best_reward": result.best_reward,
                 "match_similarity":     _trained_agents[agent_id].get("best_match_similarity"),
                 "matched_language":     _match_summary.get("best_match_language"),
@@ -1064,10 +1134,18 @@ def rl_train_agent(
         except Exception:
             pass
 
+        eval_summary = ""
+        if _eval_mean is not None and _eval_std is not None:
+            eval_summary = (
+                f"\n  Clean evaluation (100 eps, fixed weights, no instruction rewards):\n"
+                f"    mean reward = {_eval_mean:.4f}  ±  {_eval_std:.4f}  (std)\n"
+            )
+
         summary = (
             f"Training complete — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}\n\n"
             f"  {result}\n\n"
             f"  Mean reward (last 10 %): {result.last_n_mean:.4f}\n"
+            f"{eval_summary}"
             f"  Agent ID: {agent_id}\n\n"
         )
         if artifact_path:
@@ -1592,6 +1670,8 @@ def rl_create_training_report(
                 "best_match_observation": entry.get("best_match_observation") or entry.get("sub_goal_language"),
                 "best_match_similarity": entry.get("best_match_similarity"),
                 "breakpoints": _breakpoint_proxy(tr.episode_rewards, breakpoint_count),
+                "eval_mean": entry.get("eval_mean"),
+                "eval_std": entry.get("eval_std"),
             }
         )
 
@@ -1620,3 +1700,173 @@ def rl_create_training_report(
         )
     except Exception as exc:
         return f"Report saved to {out_path} but base64 encoding failed: {exc}"
+
+
+@mcp.tool()
+def rl_evaluate_agent(
+    agent_id: str,
+    n_episodes: int = 100,
+    max_steps: int = 200,
+    seed: int = 0,
+    force_rerun: bool = False,
+) -> str:
+    """
+    Run a clean evaluation of a trained agent and return standard metrics.
+
+    Evaluation procedure:
+    - Load the trained agent's weights (fixed — no further learning).
+    - Create a fresh environment instance with **no** instruction rewards or
+      shaping wrappers; only the plain environment reward signal is used.
+    - If the agent was trained with language-state observations the same
+      language-state wrapper is applied so observation formats match, but
+      no bonus rewards are injected.
+    - Run for *n_episodes* episodes and collect per-episode rewards.
+
+    Metrics returned
+    ----------------
+    - mean reward ± std (primary comparison metric)
+    - min / max episode reward
+    - median reward
+    - 25th / 75th percentile
+    - number of episodes
+    - fraction of episodes where reward > 0  (success proxy)
+    - training statistics for reference (best, last-10% mean)
+
+    If a clean evaluation was already run after training (stored on the agent)
+    those cached results are returned immediately unless *force_rerun* is True.
+
+    Parameters
+    ----------
+    agent_id:
+        Agent ID returned by rl_train_agent() or rl_load_agent().
+    n_episodes:
+        Number of evaluation episodes (default 100).
+    max_steps:
+        Maximum steps per episode (should match training setting).
+    seed:
+        Base seed for reproducibility across episodes.
+    force_rerun:
+        When True, ignore any cached evaluation and re-run from scratch.
+
+    Returns
+    -------
+    A structured text report of all evaluation metrics.
+    """
+    import math  # noqa: PLC0415
+
+    entry = _trained_agents.get(agent_id)
+    if entry is None:
+        return (
+            f"Agent '{agent_id}' not found in this session.\n"
+            "Use rl_list_trained_agents() to see saved agents or rl_load_agent() "
+            "to load one from disk."
+        )
+
+    env_id = str(entry.get("env_id", ""))
+    agent_type = str(entry.get("agent_type", "?"))
+    use_language_state = bool(entry.get("use_language_state", False))
+    agent = entry.get("agent")
+    if agent is None:
+        return f"Agent '{agent_id}' has no loaded weights in this session."
+
+    # ── Use cached results unless force_rerun ────────────────────────────────
+    cached_mean = entry.get("eval_mean")
+    cached_std = entry.get("eval_std")
+    cached_rewards: list[float] = list(entry.get("eval_rewards") or [])
+
+    if (
+        not force_rerun
+        and cached_mean is not None
+        and cached_std is not None
+        and len(cached_rewards) > 0
+    ):
+        rewards = cached_rewards
+        source = "cached (from post-training evaluation)"
+    else:
+        # ── Run fresh clean evaluation ───────────────────────────────────────
+        try:
+            from ..environments.registry import registry as _eval_env_registry  # noqa: PLC0415
+            from ..language_translation import get_translator as _get_translator  # noqa: PLC0415
+
+            factory = _eval_env_registry.get(env_id)
+            translator = (
+                _custom_translators.get(env_id) or _get_translator(env_id)
+                if use_language_state else None
+            )
+            _, _, rewards = _run_clean_evaluation(
+                agent=agent,
+                env_factory=factory,
+                n_episodes=n_episodes,
+                max_steps=max_steps,
+                use_language_state=use_language_state,
+                translator=translator,
+                env_id=env_id,
+                seed=seed,
+            )
+        except Exception as exc:
+            return f"Evaluation failed: {exc}"
+
+        # Store for future calls
+        if rewards:
+            mean = sum(rewards) / len(rewards)
+            variance = sum((r - mean) ** 2 for r in rewards) / len(rewards)
+            std = variance ** 0.5
+            entry["eval_mean"] = mean
+            entry["eval_std"] = std
+            entry["eval_rewards"] = rewards
+
+        source = f"fresh run ({n_episodes} episodes requested, {len(rewards)} completed)"
+
+    if not rewards:
+        return "Evaluation produced no completed episodes — check environment and agent compatibility."
+
+    n = len(rewards)
+    mean = sum(rewards) / n
+    variance = sum((r - mean) ** 2 for r in rewards) / n
+    std = variance ** 0.5
+    sorted_r = sorted(rewards)
+    minimum = sorted_r[0]
+    maximum = sorted_r[-1]
+    median = sorted_r[n // 2] if n % 2 == 1 else (sorted_r[n // 2 - 1] + sorted_r[n // 2]) / 2.0
+    q1 = sorted_r[n // 4]
+    q3 = sorted_r[(3 * n) // 4]
+    positive_frac = sum(1 for r in rewards if r > 0) / n
+    negative_frac = sum(1 for r in rewards if r < 0) / n
+    zero_frac = 1.0 - positive_frac - negative_frac
+
+    # Training reference stats
+    tr = entry.get("train_result")
+    training_lines = ""
+    if tr is not None:
+        training_lines = (
+            f"\n  Training reference:\n"
+            f"    episodes trained : {tr.n_episodes}\n"
+            f"    training best    : {tr.best_reward:.4f}\n"
+            f"    training last10% : {tr.last_n_mean:.4f}\n"
+        )
+
+    instruction = entry.get("instruction") or entry.get("original_instruction") or ""
+    instruction_line = f"    instruction      : {instruction[:80]}\n" if instruction else ""
+
+    return (
+        f"Clean evaluation — {agent_type} on {env_id}\n"
+        f"  agent_id : {agent_id}\n"
+        f"  source   : {source}\n"
+        f"{instruction_line}"
+        f"\n"
+        f"  Episodes          : {n}\n"
+        f"  Mean reward       : {mean:.4f}\n"
+        f"  Std               : {std:.4f}\n"
+        f"  Min               : {minimum:.4f}\n"
+        f"  Max               : {maximum:.4f}\n"
+        f"  Median            : {median:.4f}\n"
+        f"  25th percentile   : {q1:.4f}\n"
+        f"  75th percentile   : {q3:.4f}\n"
+        f"  Episodes > 0      : {positive_frac * 100:.1f}%\n"
+        f"  Episodes = 0      : {zero_frac * 100:.1f}%\n"
+        f"  Episodes < 0      : {negative_frac * 100:.1f}%\n"
+        f"{training_lines}"
+        f"\n"
+        f"  Evaluation: fixed weights, no instruction rewards, plain environment.\n"
+        f"  Use rl_create_training_report() to compare multiple agents visually."
+    )
