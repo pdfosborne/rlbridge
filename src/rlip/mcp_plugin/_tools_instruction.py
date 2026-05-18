@@ -21,6 +21,7 @@ from typing import Any, Optional
 
 from mcp.server.fastmcp import Context
 
+from ._prompts import decompose_instruction_vocab_prompt
 from ._state import _instruction_protocols, mcp
 
 
@@ -81,29 +82,7 @@ async def _decompose_instruction_with_llm(
     vocab_clauses = _extract_vocab_clauses(observed_langs)
     vocab_block = "\n".join(f"  • {v}" for v in vocab_clauses[:60])
 
-    prompt = (
-        f"You are setting up reward shaping for a reinforcement learning agent "
-        f"in the environment \"{env_id}\".\n\n"
-        f"The user's instruction is:\n  \"{instruction}\"\n\n"
-        f"These are ALL unique state descriptions the environment's language "
-        f"translator can produce — they are the ONLY valid vocabulary:\n"
-        f"{obs_block}\n\n"
-        f"Recurring vocabulary clauses extracted from the descriptions above "
-        f"(state, position, orientation, and condition phrases you MUST reuse verbatim):\n"
-        f"{vocab_block}\n\n"
-        f"Break the instruction into 2-5 concrete, ordered sub-steps the agent "
-        f"must achieve in sequence. STRICT REQUIREMENTS:\n"
-        f"1. Every sub-step MUST use EXACT phrases copied from the vocabulary "
-        f"clauses above — do not paraphrase or invent new terms.\n"
-        f"2. Do NOT use abstract domain jargon. If the instruction uses shorthand "
-        f"(e.g. a named maneuver or game action), rewrite it as one or more "
-        f"observable states drawn directly from the vocabulary above.\n"
-        f"3. The first sub-step must describe the START of the episode.\n"
-        f"4. Each sub-step must describe an observable state or transition that "
-        f"can be matched directly to one of the state descriptions listed above.\n"
-        f"5. No duplicates. At most 5 sub-steps.\n\n"
-        f"Output ONLY a numbered list, one sub-step per line, no extra text."
-    )
+    prompt = decompose_instruction_vocab_prompt(env_id, instruction, obs_block, vocab_block)
 
     try:
         result = await ctx.session.create_message(
@@ -457,24 +436,8 @@ async def rl_match_instruction(
         f"  {i+1}. {s}" for i, s in enumerate(sub_steps)
     ) + "\n\n"
 
-    # ── Instruction plan DB: prepend prior history so LLM can plan ────────────
-    plan_prefix = ""
-    try:
-        from ..instruction_following import get_plan_database
-        from ._state import _env_plan_db_path
-        _prior_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
-        if _prior_db._entries:
-            plan_prefix = (
-                f"--- Instruction Plan History for '{env_id}' ---\n"
-                + _prior_db.summary_text()
-                + "\n--- End of Plan History ---\n\n"
-            )
-    except Exception:
-        pass
-
     return (
-        plan_prefix
-        + f"Instruction matched for '{env_id}':\n\n"
+        f"Instruction matched for '{env_id}':\n\n"
         f"  Instruction:   {instruction!r}\n"
         f"  Encoder:       {encoder_spec}\n"
         f"  Best match:    {match.matched_language}\n"

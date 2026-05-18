@@ -24,11 +24,13 @@ from typing import Any, Optional
 
 from mcp.server.fastmcp import Context
 
+from ._prompts import decompose_instruction_simple_prompt
 from ._state import (
     _custom_translators,
     _in_process,
     _instruction_protocols,
     _trained_agents,
+    _training_jobs,
     log,
     mcp,
 )
@@ -50,22 +52,7 @@ async def _decompose_instruction_with_llm(
     if len(observed_langs) > 60:
         obs_block += f"\n  ... ({len(observed_langs) - 60} more)"
 
-    prompt = (
-        f"You are helping set up sequential reward shaping for RL in environment '{env_id}'.\n\n"
-        f"High-level instruction:\n  '{instruction}'\n\n"
-        f"Observed environment language states:\n{obs_block}\n\n"
-        "Break the instruction into 2-5 ordered, distinct, concrete sub-steps. "
-        "The FIRST step must focus on what to do at episode start. "
-        "Use environment vocabulary. Avoid duplicate or overlapping steps. "
-        "Each sub-step must describe an observable environment state, position, orientation, transition, "
-        "or condition that could be matched directly to the environment's language translations. "
-        "Do not leave instructions as abstract action-only jargon. If the user gives an abstract maneuver, "
-        "rewrite it as successive observable intermediate states. For example, a sailing maneuver like tack "
-        "should become turning-state instructions that describe the boat's turn in observable stages. "
-        "ALL instructions should be written to match the problem context. "
-        "ALL instructions must use language that aligns with the environment's observed language translations. "
-        "Output ONLY a numbered list, one step per line."
-    )
+    prompt = decompose_instruction_simple_prompt(env_id, instruction, obs_block)
 
     try:
         result = await ctx.session.create_message(
@@ -223,8 +210,7 @@ class _TrackingProgressEnv:
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
-async def rl_train_and_derive_instructions(
-    ctx: Context,
+def rl_train_and_derive_instructions(
     env_id: str,
     agent_type: str = "tabular_q",
     n_episodes: int = 300,
@@ -349,116 +335,121 @@ async def rl_train_and_derive_instructions(
             hidden_size=hidden_size, lr_actor=lr, gamma=gamma, seed=seed,
         )
 
-    async def _poll() -> None:
-        ep_approx = 0
-        while True:
-            await asyncio.sleep(0.5)
-            ep_approx = progress_env._reset_calls
-            await ctx.report_progress(ep_approx, n_episodes)
-
-    poll_task = asyncio.create_task(_poll())
-    try:
-        train_result = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: agent.train(progress_env, n_episodes=n_episodes, max_steps=max_steps),
-        )
-    except Exception as exc:
-        poll_task.cancel()
-        return f"Training failed: {exc}"
-    finally:
-        poll_task.cancel()
-        try:
-            await poll_task
-        except asyncio.CancelledError:
-            pass
-        progress_env._bar.close()
-
-    # Derive instructions from the language visit log.
-    derived = derive_instructions_from_training(
-        progress_env.language_wrapper,
-        top_k=top_k,
-        min_episode_visits=min_episode_visits,
-    )
-
-    # ── Instruction plan database: register derived entries ───────────────────
-    try:
-        import math as _math
-        from ..instruction_following import get_plan_database
-        from ._state import _env_plan_db_path
-        _wrapper = progress_env.language_wrapper
-        _plan_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
-        for _entry in derived:
-            _lang = _entry.instruction
-            _ep_set = _wrapper._lang_episodes.get(_lang, set())
-            _n_eps = len(_ep_set)
-            _n_success = len(_wrapper._lang_success_episodes.get(_lang, set()))
-            _csr = _n_success / _n_eps if _n_eps > 0 else 0.0
-            _score = _csr * _math.log2(1.0 + _n_eps)
-            _plan_db.add_derived(
-                instruction=_lang,
-                derived_score=_score,
-                derived_csr=_csr,
-                similarity=1.0,
-            )
-    except Exception:
-        pass
-
-    # Store the trained agent for later use (rl_run_agent_episode, etc.)
-    agent_id = uuid.uuid4().hex[:12]
-    _trained_agents[agent_id] = {
-        "agent":                agent,
-        "agent_type":           agent_type,
-        "env_id":               env_id,
-        "train_result":         train_result,
-        "use_language_state":   False,
-        "best_episode_history": getattr(train_result, "best_episode_history", []),
-        "derived_instructions": [e.instruction for e in derived],
+    job_id = uuid.uuid4().hex[:12]
+    _training_jobs[job_id] = {
+        "status": "running",
+        "agent_id": None,   # filled in by _job once training completes
+        "env_id": env_id,
+        "n_episodes": n_episodes,
+        "progress_env": progress_env,
     }
 
-    if not derived:
-        return (
-            f"Training complete ({n_episodes} episodes) but no instruction "
-            f"candidates could be derived (too few successful episodes or "
-            f"min_episode_visits={min_episode_visits} not satisfied).\n\n"
-            f"Agent saved as agent_id='{agent_id}'.\n"
-            f"Mean reward: {train_result.mean_reward:.4f}  "
-            f"Best reward: {train_result.best_reward:.4f}"
+    def _job() -> None:
+        try:
+            train_result = agent.train(progress_env, n_episodes=n_episodes, max_steps=max_steps)
+        except Exception as exc:
+            _training_jobs[job_id]["status"] = "failed"
+            _training_jobs[job_id]["result"] = f"Training failed: {exc}"
+            try:
+                progress_env._bar.close()
+            except Exception:
+                pass
+            return
+
+        try:
+            progress_env._bar.close()
+        except Exception:
+            pass
+
+        # Derive instructions from the language visit log.
+        derived = derive_instructions_from_training(
+            progress_env.language_wrapper,
+            top_k=top_k,
+            min_episode_visits=min_episode_visits,
         )
 
-    lines = [
-        f"Derived {len(derived)} instruction candidate(s) for '{env_id}' "
-        f"after {n_episodes} training episodes:\n"
-    ]
-    for i, entry in enumerate(derived, 1):
-        sr = entry.success_rate
-        lines.append(
-            f"  {i}. success_rate={sr:.1%}  episodes_seen={entry.episodes_run}\n"
-            f"     instruction: {entry.instruction!r}\n"
-        )
+        # ── Instruction plan database: register derived entries ───────────────
+        try:
+            import math as _math
+            from ..instruction_following import get_plan_database
+            from ._state import _env_plan_db_path
+            _wrapper = progress_env.language_wrapper
+            _plan_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
+            for _entry in derived:
+                _lang = _entry.instruction
+                _ep_set = _wrapper._lang_episodes.get(_lang, set())
+                _n_eps = len(_ep_set)
+                _n_success = len(_wrapper._lang_success_episodes.get(_lang, set()))
+                _csr = _n_success / _n_eps if _n_eps > 0 else 0.0
+                _score = _csr * _math.log2(1.0 + _n_eps)
+                _plan_db.add_derived(
+                    instruction=_lang,
+                    derived_score=_score,
+                    derived_csr=_csr,
+                    similarity=1.0,
+                )
+        except Exception:
+            pass
 
-    lines.append(
-        f"\nAgent saved as agent_id='{agent_id}'.\n"
-        f"Mean reward: {train_result.mean_reward:.4f}  "
-        f"Best reward: {train_result.best_reward:.4f}\n\n"
-        "Use rl_list_cached_instructions(env_id) to inspect the full cache.\n"
-        "Use rl_apply_derived_instruction(env_id, instruction) to convert a "
-        "derived instruction into a match_id for rl_instruction_run_episode()."
+        # Store the trained agent for later use (rl_run_agent_episode, etc.)
+        agent_id = uuid.uuid4().hex[:12]
+        _trained_agents[agent_id] = {
+            "agent":                agent,
+            "agent_type":           agent_type,
+            "env_id":               env_id,
+            "train_result":         train_result,
+            "use_language_state":   False,
+            "best_episode_history": getattr(train_result, "best_episode_history", []),
+            "derived_instructions": [e.instruction for e in derived],
+        }
+        _training_jobs[job_id]["agent_id"] = agent_id
+
+        if not derived:
+            result_text = (
+                f"Training complete ({n_episodes} episodes) but no instruction "
+                f"candidates could be derived (too few successful episodes or "
+                f"min_episode_visits={min_episode_visits} not satisfied).\n\n"
+                f"Agent saved as agent_id='{agent_id}'.\n"
+                f"Mean reward: {train_result.mean_reward:.4f}  "
+                f"Best reward: {train_result.best_reward:.4f}"
+            )
+        else:
+            lines = [
+                f"Derived {len(derived)} instruction candidate(s) for '{env_id}' "
+                f"after {n_episodes} training episodes:\n"
+            ]
+            for i, entry in enumerate(derived, 1):
+                sr = entry.success_rate
+                lines.append(
+                    f"  {i}. success_rate={sr:.1%}  episodes_seen={entry.episodes_run}\n"
+                    f"     instruction: {entry.instruction!r}\n"
+                )
+            lines.append(
+                f"\nAgent saved as agent_id='{agent_id}'.\n"
+                f"Mean reward: {train_result.mean_reward:.4f}  "
+                f"Best reward: {train_result.best_reward:.4f}\n\n"
+                "Use rl_list_cached_instructions(env_id) to inspect the full cache.\n"
+                "Use rl_apply_derived_instruction(env_id, instruction) to convert a "
+                "derived instruction into a match_id for rl_instruction_run_episode()."
+            )
+            result_text = "\n".join(lines)
+
+        _training_jobs[job_id]["result"] = result_text
+        _training_jobs[job_id]["status"] = "done"
+
+    import threading as _threading
+    _threading.Thread(target=_job, daemon=True).start()
+
+    return (
+        f"Training started — {agent_type} on {env_id}\n\n"
+        f"  Job ID:    {job_id}\n"
+        f"  Episodes:  {n_episodes}  max_steps={max_steps}\n\n"
+        f"Training runs in the background with no time limits.\n"
+        f"Call rl_get_training_result(job_id='{job_id}') to check progress and get the result.\n"
+        f"The agent_id and derived instructions will be available when training completes."
     )
 
-    # ── Instruction plan DB: append so LLM can advise on derived candidates ───
-    try:
-        from ..instruction_following import get_plan_database
-        from ._state import _env_plan_db_path
-        _post_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
-        if _post_db._entries:
-            lines.append(
-                f"\n--- Updated Instruction Plan for '{env_id}' ---\n"
-                + _post_db.summary_text()
-            )
-    except Exception:
-        pass
 
-    return "\n".join(lines)
 
 
 @mcp.tool()

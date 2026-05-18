@@ -77,17 +77,24 @@ mcp = FastMCP(
         "RL agent training workflow:\n"
         "1. rl_list_agents() – see available agent types (tabular_q, dqn, ppo) "
         "and guidance on when to use each.\n"
-        "2. rl_train_agent(agent_type, env_id, n_episodes) – train the chosen agent "
-        "and get back an agent_id.\n"
+        "2. rl_train_agent(agent_type, env_id, n_episodes) – start training in the "
+        "background and get back an agent_id and job_id immediately (no timeout).\n"
         "   • Add use_language_state=True to train on language descriptions of "
         "observations instead of raw numeric values.  Ideal for tabular_q with "
         "environments that have a registered translator (e.g. Sailing-v0).\n"
-        "3. rl_run_agent_episode(agent_id) – evaluate the trained agent for one episode "
+        "3. rl_get_training_result(job_id) – check progress or get the full result "
+        "once training completes.  Call repeatedly until status is 'done'.\n"
+        "4. rl_run_agent_episode(agent_id) – evaluate the trained agent for one episode "
         "(automatically uses the same obs mode as training).\n"
-        "4. rl_render_policy(env_id, agent_id=agent_id) – render the best training episode as a GIF.\n"
-        "5. rl_create_training_report(agent_id, compare_agent_ids=[...]) – generate "
+        "5. rl_render_policy(env_id, agent_id=agent_id) – render the best training episode as a GIF.\n"
+        "6. rl_create_training_report(agent_id, compare_agent_ids=[...]) – generate "
         "a comparative PNG report showing reward convergence, optimal-policy reward "
         "at breakpoints, instruction-match details, and training metadata/hyper-parameters.\n\n"
+        "IMPORTANT — training is asynchronous: rl_train_agent() and "
+        "rl_train_and_derive_instructions() both return immediately with a job_id. "
+        "You MUST call rl_get_training_result(job_id) to wait for completion and get "
+        "the result.  Never call rl_run_agent_episode or rl_render_policy until "
+        "rl_get_training_result confirms status is 'done'.\n\n"
         "IMPORTANT — comparing multiple agents: when training more than one agent "
         "(e.g. tabular_q vs dqn vs ppo, or with/without sub-goal shaping), always "
         "use identical values for n_episodes, max_steps, seed, gamma, and any other "
@@ -102,29 +109,29 @@ mcp = FastMCP(
         "If it has entries, use the eval rewards, derived scores, and matched states to "
         "choose the best next instruction rather than repeating something already tried.  "
         "Always explain your reasoning to the user based on the plan contents.\n\n"
+        "You MUST also call rl_list_trained_agents(env_id) early in any session to check "
+        "whether a suitable already-trained agent exists.  If a saved agent matches the "
+        "environment and instruction goal with a known eval reward, recommend reusing it "
+        "instead of training from scratch — and explain why based on the eval reward.\n\n"
         "Combined instruction-following + agent training workflow:\n"
-        "0. rl_get_instruction_plan(env_id) – ALWAYS call this first.  Use the results "
-        "to decide which instruction to try (or whether to derive first).\n"
+        "0. rl_list_trained_agents(env_id) – check for existing agents first.\n"
+        "0b. rl_get_instruction_plan(env_id) – ALWAYS call this first.\n"
         "1. rl_match_instruction(env_id, instruction) – explore and find the sub-goal state. "
         "Returns a match_id.\n"
         "2. rl_train_agent(agent_type, env_id, match_id=match_id, use_language_state=True) – "
-        "train with sub-goal reward shaping AND language observations (use_language_state is "
-        "optional but recommended when a translator is available).\n"
-        "3. rl_render_policy(env_id, agent_id=agent_id) – render the result.\n"
-        "4. rl_create_training_report(agent_id, compare_agent_ids=[...]) – comparative "
-        "training report including instruction match observation and similarity percentage.\n\n"
+        "starts background training, returns job_id + agent_id immediately.\n"
+        "3. rl_get_training_result(job_id) – poll until 'done'.\n"
+        "4. rl_render_policy(env_id, agent_id=agent_id) – render the result.\n"
+        "5. rl_create_training_report(agent_id, compare_agent_ids=[...]) – training report.\n\n"
         "Auto-derived instruction workflow (no instruction needed up front):\n"
-        "0. rl_get_instruction_plan(env_id) – ALWAYS call this first to check if "
-        "derived instructions already exist before running a fresh derivation.\n"
-        "1. rl_train_and_derive_instructions(env_id, agent_type, n_episodes) – train an "
-        "agent while tracking which language states appear in successful episodes.  "
-        "Automatically scores and caches the top-k instruction candidates.\n"
-        "2. rl_list_cached_instructions(env_id) – inspect cached instructions with "
-        "per-instruction success-rate statistics.\n"
-        "3. rl_apply_derived_instruction(env_id, instruction) – convert a cached "
-        "instruction into a match_id (no re-exploration needed).\n"
-        "4. rl_instruction_run_episode(match_id) or rl_train_agent(match_id=...) – "
-        "run sub-goal-shaped episodes using the derived instruction.\n\n"
+        "0. rl_get_instruction_plan(env_id) – ALWAYS call this first.\n"
+        "1. rl_train_and_derive_instructions(env_id, agent_type, n_episodes) – starts "
+        "background training, returns job_id immediately.\n"
+        "2. rl_get_training_result(job_id) – poll until 'done'.\n"
+        "3. rl_list_cached_instructions(env_id) – inspect derived instruction candidates.\n"
+        "4. rl_apply_derived_instruction(env_id, instruction) – convert to match_id.\n"
+        "5. rl_train_agent(match_id=...) then rl_get_training_result(job_id) – "
+        "train with sub-goal shaping.\n\n"
         "Instruction planning database:\n"
         "Every call to rl_match_instruction() and rl_train_and_derive_instructions() "
         "automatically records the instruction, its sub-steps, and outcome in a "
@@ -149,6 +156,11 @@ _instruction_protocols: dict[str, Any] = {}
 # Trained agent entries keyed by agent_id.
 # Shared between _tools_agents (writes) and _tools_render (reads).
 _trained_agents: dict[str, Any] = {}
+
+# Background training jobs keyed by job_id.
+# Written by rl_train_agent / rl_train_and_derive_instructions;
+# read by rl_get_training_result.
+_training_jobs: dict[str, Any] = {}
 
 # Active custom language translators registered in this session.
 # Shared between _tools_builder (writes) and _tools_agents/_tools_render (reads).
@@ -243,6 +255,15 @@ def _env_plan_db_path(env_id: str) -> Path:
     is metadata consumed by the LLM tool layer, not a user artefact.
     """
     return _cache_root() / "environments" / _safe_env_name(env_id) / "instruction_plan.json"
+
+
+def _env_agents_registry_path(env_id: str) -> Path:
+    """Path to the persistent trained-agent registry for *env_id*.
+
+    Keyed by agent_id; stores instruction, eval_reward, artifact path, etc.
+    Saved in the cache directory so it survives across working directories.
+    """
+    return _cache_root() / "environments" / _safe_env_name(env_id) / "agents_registry.json"
 
 
 def _custom_env_cache_root() -> Path:
