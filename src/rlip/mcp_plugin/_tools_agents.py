@@ -26,6 +26,7 @@ from ._state import (
     _env_agents_dir,
     _env_cache_dir,
     _env_renders_dir,
+    _env_reports_dir,
     _custom_translators,
     _instruction_protocols,
     _trained_agents,
@@ -876,6 +877,63 @@ async def rl_train_agent(
     elif archive_error:
         artifact_warning = f"\n  Artifact package: FAILED ({archive_error})"
 
+    # ── Instruction plan DB: clean evaluation ─────────────────────────────────
+    # Run a greedy episode on the raw environment (no instruction-shaping
+    # bonus) to get an unbiased performance measure, then record it in the
+    # instruction planning database so the LLM can advise on RL progress.
+    if match_id and match_id in _instruction_protocols:
+        try:
+            from ..instruction_following import get_plan_database
+            from ._state import _env_plan_db_path
+            from ..environments.registry import registry as _eval_env_registry
+
+            _proto_entry = _instruction_protocols[match_id]
+            _original_instruction = (
+                _proto_entry.get("original_instruction")
+                or _proto_entry.get("match_summary", {}).get("instruction")
+                or ""
+            )
+            if _original_instruction:
+                _eval_factory = _eval_env_registry.get(env_id)
+                _eval_env = _eval_factory.create()
+                try:
+                    _eval_agent = _trained_agents[agent_id]["agent"]
+                    _eval_obs_out = _eval_env.reset(seed=seed)
+                    _eval_obs = (
+                        _eval_obs_out.get("observation", _eval_obs_out)
+                        if isinstance(_eval_obs_out, dict)
+                        else _eval_obs_out
+                    )
+                    _eval_total = 0.0
+                    for _eval_step in range(max_steps):
+                        _eval_action = _eval_agent.act(_eval_obs, greedy=True)
+                        _eval_out = _eval_env.step(_eval_action)
+                        if isinstance(_eval_out, dict):
+                            _eval_obs = _eval_out.get("observation", _eval_obs)
+                            _eval_total += float(_eval_out.get("reward", 0.0))
+                            if _eval_out.get("terminated") or _eval_out.get("truncated"):
+                                break
+                        else:
+                            _eval_obs = getattr(_eval_out, "observation", _eval_obs)
+                            _eval_total += float(getattr(_eval_out, "reward", 0.0))
+                            if getattr(_eval_out, "terminated", False) or getattr(_eval_out, "truncated", False):
+                                break
+                finally:
+                    _eval_env.close()
+
+                _plan_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
+                _plan_db.update_eval_reward(
+                    instruction=_original_instruction,
+                    match_id=match_id,
+                    eval_reward=_eval_total,
+                    training_reward=result.best_reward,
+                    agent_id=agent_id,
+                    agent_type=agent_type,
+                    n_episodes=n_episodes,
+                )
+        except Exception:
+            pass  # plan DB update is best-effort; never break training output
+
     summary = (
         f"Training complete — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}\n\n"
         f"  {result}\n\n"
@@ -887,6 +945,21 @@ async def rl_train_agent(
     if artifact_warning:
         summary += f"{artifact_warning}\n"
     summary += f"Use rl_run_agent_episode(agent_id='{agent_id}') to evaluate the agent."
+
+    # ── Instruction plan DB: append updated history so LLM can advise user ────
+    if match_id and match_id in _instruction_protocols:
+        try:
+            from ..instruction_following import get_plan_database
+            from ._state import _env_plan_db_path
+            _post_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
+            if _post_db._entries:
+                summary += (
+                    f"\n\n--- Updated Instruction Plan for '{env_id}' ---\n"
+                    + _post_db.summary_text()
+                )
+        except Exception:
+            pass
+
     return summary
 
 
@@ -1042,7 +1115,7 @@ def rl_create_training_report(
         Agents should be trained on the same environment for fair comparison.
     output_path:
         Path to write the PNG report.  Defaults to
-        ``./.rlip/environments/<env>/renders/<env>_<agent_id>_report.png``.
+        ``<cwd>/rlip_results/<env>/reports/<env>_<agent_id>_report.png``.
     rolling_window:
         Number of episodes for the rolling reward average (0 = auto: 5 %
         of total episodes, minimum 10).
@@ -1131,14 +1204,14 @@ def rl_create_training_report(
                 "Re-train that agent to enable reporting."
             )
 
-    env_render_dir = _env_renders_dir(env_id)
-    env_render_dir.mkdir(parents=True, exist_ok=True)
+    env_reports_dir = _env_reports_dir(env_id)
+    env_reports_dir.mkdir(parents=True, exist_ok=True)
     safe_id = env_id.replace("/", "_").replace("-", "_").replace(" ", "_")
     if len(entries) > 1:
-        out_path = output_path or str(env_render_dir / f"{safe_id}_comparison_report.png")
+        out_path = output_path or str(env_reports_dir / f"{safe_id}_comparison_report.png")
     else:
         out_path = output_path or str(
-            env_render_dir / f"{safe_id}_{primary_agent_type}_{agent_id}_report.png"
+            env_reports_dir / f"{safe_id}_{primary_agent_type}_{agent_id}_report.png"
         )
 
     comparison_runs: list[dict[str, Any]] = []

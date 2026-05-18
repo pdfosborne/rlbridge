@@ -427,7 +427,25 @@ async def rl_match_instruction(
         "instructions": sub_steps,
         "decomposition": sub_steps,
         "encoder_name": encoder_spec,
+        # Original user-facing instruction (needed for plan DB lookups)
+        "original_instruction": instruction,
     }
+
+    # ── Instruction plan database ──────────────────────────────────────────────
+    try:
+        from ..instruction_following import get_plan_database
+        from ._state import _env_plan_db_path
+        _plan_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
+        _plan_db.record_instruction_use(
+            instruction=instruction,
+            match_id=match_id,
+            source="llm",
+            sub_steps=sub_steps,
+            similarity=match.similarity_score,
+            matched_language=match.matched_language,
+        )
+    except Exception:
+        pass
 
     top_k = max(1, min(top_k, 10))
     top_lines = [
@@ -439,8 +457,24 @@ async def rl_match_instruction(
         f"  {i+1}. {s}" for i, s in enumerate(sub_steps)
     ) + "\n\n"
 
+    # ── Instruction plan DB: prepend prior history so LLM can plan ────────────
+    plan_prefix = ""
+    try:
+        from ..instruction_following import get_plan_database
+        from ._state import _env_plan_db_path
+        _prior_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
+        if _prior_db._entries:
+            plan_prefix = (
+                f"--- Instruction Plan History for '{env_id}' ---\n"
+                + _prior_db.summary_text()
+                + "\n--- End of Plan History ---\n\n"
+            )
+    except Exception:
+        pass
+
     return (
-        f"Instruction matched for '{env_id}':\n\n"
+        plan_prefix
+        + f"Instruction matched for '{env_id}':\n\n"
         f"  Instruction:   {instruction!r}\n"
         f"  Encoder:       {encoder_spec}\n"
         f"  Best match:    {match.matched_language}\n"
@@ -855,4 +889,63 @@ def rl_sequential_instruction_run_episode(
         f"Instructions:\n" + "\n".join(completion_lines) +
         f"\n\nTrajectory excerpt:\n" + "\n".join(excerpt_lines)
     )
+
+
+@mcp.tool()
+def rl_get_instruction_plan(env_id: str) -> str:
+    """
+    Show the instruction planning database for an environment.
+
+    Returns a summary of all instructions that have been tried in this
+    environment, including:
+    - Source: whether each instruction was provided by the user/LLM ('llm'),
+      or automatically derived from a training run ('derived').
+    - Times used: how many training runs used this instruction.
+    - BestEval: the best clean evaluation reward seen after any training run
+      that used this instruction (measured WITHOUT any instruction-shaping
+      bonus, so it is an unbiased performance measure).
+    - DrvScore: for derived instructions, the CSR × log₂(1+visits) score
+      from rl_train_and_derive_instructions().
+    - Similarity: cosine similarity between the instruction text and its
+      best-matching observed environment state.
+
+    Use this tool to:
+    - Plan which instructions to try next based on past evaluation rewards.
+    - Understand which instructions have already been attempted.
+    - Compare the effectiveness of user-specified vs. derived instructions.
+    - Advise the user on whether RL training is making progress.
+
+    Parameters
+    ----------
+    env_id:
+        A registered RLIP environment ID, e.g. "Sailing-v0".
+
+    Returns
+    -------
+    A formatted table of all known instructions and their outcomes.
+    """
+    from ..instruction_following import get_plan_database, _PLAN_DATABASES
+    from ._state import _env_plan_db_path
+
+    plan_path = str(_env_plan_db_path(env_id))
+
+    # Force a fresh load if there is no in-memory instance yet (MCP server
+    # restart between sessions, or first call after a fresh training run).
+    if env_id not in _PLAN_DATABASES:
+        db = get_plan_database(env_id, plan_path=plan_path)
+    else:
+        db = _PLAN_DATABASES[env_id]
+        # Re-load from disk in case another tool (e.g. rl_train_agent) wrote
+        # new eval_reward data outside this process.
+        db._load()
+
+    if not db._entries:
+        return (
+            f"No instruction plan data found for '{env_id}'.\n\n"
+            "Run rl_match_instruction() or rl_train_and_derive_instructions() "
+            "first to build the database."
+        )
+
+    return db.summary_text()
+
 

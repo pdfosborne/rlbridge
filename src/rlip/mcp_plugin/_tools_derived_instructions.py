@@ -25,7 +25,6 @@ from typing import Any, Optional
 from mcp.server.fastmcp import Context
 
 from ._state import (
-    _renders_dir,
     _custom_translators,
     _in_process,
     _instruction_protocols,
@@ -381,6 +380,29 @@ async def rl_train_and_derive_instructions(
         min_episode_visits=min_episode_visits,
     )
 
+    # ── Instruction plan database: register derived entries ───────────────────
+    try:
+        import math as _math
+        from ..instruction_following import get_plan_database
+        from ._state import _env_plan_db_path
+        _wrapper = progress_env.language_wrapper
+        _plan_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
+        for _entry in derived:
+            _lang = _entry.instruction
+            _ep_set = _wrapper._lang_episodes.get(_lang, set())
+            _n_eps = len(_ep_set)
+            _n_success = len(_wrapper._lang_success_episodes.get(_lang, set()))
+            _csr = _n_success / _n_eps if _n_eps > 0 else 0.0
+            _score = _csr * _math.log2(1.0 + _n_eps)
+            _plan_db.add_derived(
+                instruction=_lang,
+                derived_score=_score,
+                derived_csr=_csr,
+                similarity=1.0,
+            )
+    except Exception:
+        pass
+
     # Store the trained agent for later use (rl_run_agent_episode, etc.)
     agent_id = uuid.uuid4().hex[:12]
     _trained_agents[agent_id] = {
@@ -422,6 +444,20 @@ async def rl_train_and_derive_instructions(
         "Use rl_apply_derived_instruction(env_id, instruction) to convert a "
         "derived instruction into a match_id for rl_instruction_run_episode()."
     )
+
+    # ── Instruction plan DB: append so LLM can advise on derived candidates ───
+    try:
+        from ..instruction_following import get_plan_database
+        from ._state import _env_plan_db_path
+        _post_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
+        if _post_db._entries:
+            lines.append(
+                f"\n--- Updated Instruction Plan for '{env_id}' ---\n"
+                + _post_db.summary_text()
+            )
+    except Exception:
+        pass
+
     return "\n".join(lines)
 
 

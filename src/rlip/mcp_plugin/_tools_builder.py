@@ -39,8 +39,8 @@ def rl_build_environment(
     Wrap a Gymnasium environment with custom metadata, cache it locally,
     and register it so it is immediately available in this session.
 
-    The environment is saved to ``./.rlip/envs/<env_id>/`` and written to
-    ``./.rlip/catalog.json`` so it is reloaded automatically on restart via
+    The environment is saved to ``~/.rlip/envs/<env_id>/`` and written to
+    ``~/.rlip/catalog.json`` so it is reloaded automatically on restart via
     rl_load_cached_environments().
 
     Parameters
@@ -175,7 +175,7 @@ def rl_load_cached_environments() -> str:
 @mcp.tool()
 def rl_list_cached_environments() -> str:
     """
-    List all custom environments stored in the local cache (``./.rlip/envs/``).
+    List all custom environments stored in the RLIP cache (``~/.rlip/envs/``).
 
     Does not register them — call rl_load_cached_environments() to register.
 
