@@ -72,11 +72,13 @@ async def _decompose_instruction_with_llm(
     """
     import mcp.types as _t
 
-    # All unique observed descriptions (capped at 80 for prompt length).
-    sample = observed_langs[:80]
+    # Sample ~20 evenly-spaced descriptions; keep full list for vocab extraction.
+    n_sample = min(20, len(observed_langs))
+    step = max(1, len(observed_langs) // n_sample)
+    sample = observed_langs[::step][:n_sample]
     obs_block = "\n".join(f"  - {lg}" for lg in sample)
-    if len(observed_langs) > 80:
-        obs_block += f"\n  … ({len(observed_langs) - 80} more)"
+    if len(observed_langs) > n_sample:
+        obs_block += f"\n  … ({len(observed_langs) - n_sample} more not shown)"
 
     # Extracted vocabulary atoms: the reusable clauses the LLM should copy.
     vocab_clauses = _extract_vocab_clauses(observed_langs)

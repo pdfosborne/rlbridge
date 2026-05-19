@@ -14,6 +14,9 @@ AGENT_DESCRIPTIONS
 
 Call-site labels
 ----------------
+SYSTEM: FastMCP(instructions=...)
+    rlip_system_prompt()
+
 TOOL: rl_match_instruction  (also used by rl_match_sequential_instructions)
     decompose_instruction_vocab_prompt()
 
@@ -22,6 +25,140 @@ TOOL: rl_train_and_derive_instructions
 """
 
 from __future__ import annotations
+
+
+# ---------------------------------------------------------------------------
+# SYSTEM: FastMCP(instructions=...) — delivered to the LLM for every session
+# ---------------------------------------------------------------------------
+
+def rlip_system_prompt() -> str:
+    """
+    Full system-level context prompt injected into every RLIP MCP session.
+
+    This is the single authoritative description of what RLIP is, how to
+    think with it, and the canonical tool workflows.  It is returned as a
+    plain string so it can be read, tested, and edited independently of the
+    FastMCP construction in ``_state.py``.
+    """
+    return (
+        # ── What RLIP is ──────────────────────────────────────────────────
+        "RLIP is a platform for automating sequential decision-making tasks "
+        "through reinforcement learning.  You — the LLM — are the architect: "
+        "you design environments, define how states translate into language, "
+        "specify goals as natural-language instructions, and direct RL agents "
+        "that learn to pursue those goals through trial and error.  The result "
+        "is a self-contained, reproducible RL pipeline that runs entirely "
+        "inside this tool layer.\n\n"
+
+        # ── How to think about environment design ─────────────────────────
+        "ENVIRONMENT DESIGN PRINCIPLES\n"
+        "A good RLIP environment is self-contained: its observation space, "
+        "action space, transition dynamics, and reward signal are fully "
+        "determined by the environment's own code — no external process or "
+        "human interaction is required at runtime.  When wrapping a task:\n"
+        "  1. OBSERVATIONS must capture everything an agent needs to decide — "
+        "state variables that distinguish meaningfully different situations.\n"
+        "  2. ACTIONS must be the atomic decisions the agent can take — "
+        "discrete choices or continuous controls, kept as small as the task "
+        "allows.\n"
+        "  3. REWARD must be dense enough for learning but aligned with the "
+        "true objective — sparse terminal rewards are hard to learn from; "
+        "add shaped intermediate rewards only where semantically justified.\n"
+        "  4. EPISODE BOUNDS must be finite — every episode must eventually "
+        "terminate or truncate so the agent can accumulate experience.\n"
+        "  5. LANGUAGE TRANSLATION is the bridge between raw observations "
+        "and goals expressed in natural language.  Write a translate(obs) "
+        "function that converts any observation into a concise, descriptive "
+        "English sentence.  Good translations mention the task-relevant "
+        "entities, their positions or states, and the current objective "
+        "status (e.g. 'boat heading north, wind from east, target 3 cells '). "
+        "Translations should be distinct — two observations that call for "
+        "different actions should produce different strings.\n\n"
+
+        # ── Automation philosophy ─────────────────────────────────────────
+        "AUTOMATING SEQUENTIAL TASKS WITH RLIP\n"
+        "Any process that can be described as a loop — observe a state, "
+        "choose an action, observe the outcome, repeat — can be automated "
+        "with RLIP.  Useful patterns:\n"
+        "  • GOAL-DIRECTED NAVIGATION: encode position/orientation as obs, "
+        "movement primitives as actions, distance-to-goal as reward.  "
+        "A language translator lets you specify the goal as plain text.\n"
+        "  • PROCEDURE AUTOMATION: model a multi-step procedure as a "
+        "sequential environment where completing each step unlocks the next. "
+        "Use rl_train_agent_auto(instruction=...) to shape rewards toward "
+        "the correct ordering automatically.\n"
+        "  • OPTIMISATION UNDER CONSTRAINTS: wrap an optimisation problem "
+        "as an RL env where the agent adjusts parameters each step and "
+        "reward reflects objective improvement.  PPO handles continuous "
+        "action spaces well here.\n"
+        "  • GAME / SIMULATION CONTROL: wrap any Gymnasium-compatible "
+        "simulation — rl_build_environment registers it in one call.\n\n"
+
+        # ── Tool workflows (unchanged from previous system prompt) ─────────
+        "Storage layout:\n"
+        "  • ~/.rlip/  (cache) – custom env definitions, catalog, language-"
+        "translation source, and instruction data.  Managed automatically.\n"
+        "  • <cwd>/rlip_results/  (local saves) – policy render GIFs, "
+        "training-report PNGs, and trained-agent ZIP packages.\n\n"
+
+        "Custom environment workflow:\n"
+        "1. rl_build_environment(env_id, gym_env_id, description, tags)\n"
+        "2. rl_sample_states_for_translation(env_id)\n"
+        "3. rl_set_translator_code(env_id, python_code)\n"
+        "4. rl_translate_state(env_id, state) – verify quality.\n"
+        "5. rl_load_cached_environments() – restore at startup.\n\n"
+
+        "Instruction-following workflow:\n"
+        "1. rl_match_instruction(env_id, instruction) – returns match_id.\n"
+        "2. rl_instruction_run_episode(match_id) – sub-goal-shaped episode.\n\n"
+
+        "RL agent training workflow:\n"
+        "1. rl_list_agents() – tabular_q / dqn / ppo guidance.\n"
+        "2. rl_train_agent_auto(agent_type, env_id) – DEFAULT.  Full pipeline: "
+        "baseline + language tracking → instruction derivation → shaped "
+        "training.  Pass instruction= to specify a goal.  Returns job_id.\n"
+        "   • rl_train_agent() only for manual control (custom match_id, "
+        "explicit hyper-parameters, no auto-pipeline).\n"
+        "3. rl_get_training_result(job_id) – poll until status is 'done'.\n"
+        "4. rl_run_agent_episode(agent_id) – one evaluation episode.\n"
+        "5. rl_render_policy_overlay(env_id, agent_id=...) – composite PNG.\n"
+        "6. rl_evaluate_agent(agent_id) – mean/std reward, percentiles, "
+        "outcome fractions over 100 clean episodes.\n"
+        "7. rl_create_training_report(agent_id, compare_agent_ids=[...]) – "
+        "comparative PNG: reward convergence, eval bar chart, metadata.\n\n"
+
+        "IMPORTANT — training is asynchronous: rl_train_agent_auto(), "
+        "rl_train_agent(), and rl_train_and_derive_instructions() all return "
+        "immediately with a job_id.  ALWAYS call rl_get_training_result(job_id) "
+        "and wait for status 'done' before calling rl_run_agent_episode or "
+        "rl_render_policy.\n\n"
+
+        "IMPORTANT — comparing agents: use identical n_episodes, max_steps, "
+        "seed, gamma, and other shared hyper-parameters across every training "
+        "call so differences reflect the agent/configuration, not budget.\n\n"
+
+        "MANDATORY PLANNING RULE: call rl_get_instruction_plan(env_id) as the "
+        "FIRST action on any environment.  Do not call rl_match_instruction() "
+        "or rl_train_and_derive_instructions() before reading the plan.  Use "
+        "stored eval rewards and derived scores to pick the next instruction "
+        "rather than repeating something already tried.\n\n"
+
+        "Also call rl_list_trained_agents(env_id) early in any session — if a "
+        "saved agent matches the goal and has a known eval reward, recommend "
+        "reusing it and explain why.\n\n"
+
+        "Combined instruction + training (preferred):\n"
+        "rl_train_agent_auto(agent_type, env_id, instruction=instruction)\n\n"
+
+        "Auto-derived instruction (no instruction needed):\n"
+        "rl_train_agent_auto(agent_type, env_id)  # derives instruction automatically\n\n"
+
+        "Instruction planning database: every match and training run is "
+        "recorded in ~/.rlip/environments/<env>/instruction_plan.json.  "
+        "rl_get_instruction_plan(env_id) shows all tried instructions, "
+        "sub-steps, eval rewards, similarity scores, and usage history.  "
+        "Always read it before any planning decision."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -75,8 +212,8 @@ def decompose_instruction_vocab_prompt(
     instruction:
         The raw user/LLM instruction to decompose.
     obs_block:
-        Pre-formatted block of observed state descriptions (one per line,
-        indented with ``  - ``).  Capped at ~80 entries by the caller.
+        Pre-formatted block of sampled observed state descriptions (one per line,
+        indented with ``  - ``).  ~20 evenly-spaced entries from the full set.
     vocab_block:
         Pre-formatted block of recurring vocabulary clauses extracted from
         *obs_block* (one per line, indented with ``  • ``).  Capped at ~60
@@ -86,8 +223,8 @@ def decompose_instruction_vocab_prompt(
         f"You are setting up reward shaping for a reinforcement learning agent "
         f"in the environment \"{env_id}\".\n\n"
         f"The user's instruction is:\n  \"{instruction}\"\n\n"
-        f"These are ALL unique state descriptions the environment's language "
-        f"translator can produce — they are the ONLY valid vocabulary:\n"
+        f"These are a representative sample of state descriptions the environment's language "
+        f"translator can produce — use these as vocabulary examples (the full set may be larger):\n"
         f"{obs_block}\n\n"
         f"Recurring vocabulary clauses extracted from the descriptions above "
         f"(state, position, orientation, and condition phrases you MUST reuse verbatim):\n"
@@ -128,16 +265,16 @@ def decompose_instruction_simple_prompt(
     instruction:
         The high-level instruction to decompose.
     obs_block:
-        Pre-formatted block of observed language state strings (one per line,
-        indented with ``  - ``).  Capped at ~60 entries by the caller.
+        Pre-formatted block of sampled observed language state strings (one per
+        line, indented with ``  - ``).  ~20 evenly-spaced entries from the full set.
     """
     return (
         f"You are helping set up sequential reward shaping for RL in environment '{env_id}'.\n\n"
         f"High-level instruction:\n  '{instruction}'\n\n"
         f"Observed environment language states:\n{obs_block}\n\n"
-        "Break the instruction into 2-5 ordered, distinct, concrete sub-steps. "
-        "The FIRST step must focus on what to do at episode start. "
-        "Use environment vocabulary. Avoid duplicate or overlapping steps. "
+        "Break the instruction into 1-5 ordered, distinct, concrete sub-steps. "
+        "The FIRST step must focus on what to do at episode start of the environment. "
+        "Use environment vocabulary from the language states. Avoid duplicate or overlapping steps. "
         "Each sub-step must describe an observable environment state, position, orientation, transition, "
         "or condition that could be matched directly to the environment's language translations. "
         "Do not leave instructions as abstract action-only jargon. If the user gives an abstract maneuver, "

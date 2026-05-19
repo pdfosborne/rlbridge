@@ -47,10 +47,12 @@ async def _decompose_instruction_with_llm(
     """Decompose one instruction into ordered, distinct, observable sub-steps."""
     import mcp.types as _t
 
-    sample = observed_langs[:60]
+    n_sample = min(20, len(observed_langs))
+    step = max(1, len(observed_langs) // n_sample)
+    sample = observed_langs[::step][:n_sample]
     obs_block = "\n".join(f"  - {lg}" for lg in sample)
-    if len(observed_langs) > 60:
-        obs_block += f"\n  ... ({len(observed_langs) - 60} more)"
+    if len(observed_langs) > n_sample:
+        obs_block += f"\n  ... ({len(observed_langs) - n_sample} more not shown)"
 
     prompt = decompose_instruction_simple_prompt(env_id, instruction, obs_block)
 
