@@ -135,16 +135,12 @@ def _fallback_decompose_instruction(instruction: str) -> list[str]:
         unique_parts.append(p)
     if len(unique_parts) >= 2:
         return unique_parts[:5]
-    core = instruction.strip().rstrip(".")
-    return [
-        f"observe the starting state for: {core}",
-        f"move into an intermediate observable state for: {core}",
-        f"reach the final observable state for: {core}",
-    ]
+    # Cannot split further — return the instruction as a single atomic step.
+    return [instruction.strip().rstrip(".")]
 
 
 def _normalize_sequential_steps(instruction: str, llm_steps: list[str]) -> list[str]:
-    """Return ordered, distinct sequential steps with at least 2 entries."""
+    """Return ordered, distinct sequential steps."""
     raw = llm_steps if llm_steps else _fallback_decompose_instruction(instruction)
     out: list[str] = []
     seen: set[str] = set()
@@ -157,7 +153,7 @@ def _normalize_sequential_steps(instruction: str, llm_steps: list[str]) -> list[
         out.append(cleaned)
         if len(out) >= 5:
             break
-    if len(out) < 2:
+    if not out:
         return _fallback_decompose_instruction(instruction)
     return out
 
@@ -382,7 +378,10 @@ async def rl_match_instruction(
     sub_steps_raw = await _decompose_instruction_with_llm(ctx, instruction, env_id, observed_langs)
     sub_steps = _normalize_sequential_steps(instruction, sub_steps_raw)
 
-    # Build and cache a sequential protocol by default.
+    # Each LLM-derived sub-step is an individual ordered instruction.  Build
+    # the sequential protocol from sub_steps so that every sub-step is
+    # independently matched to a language-translated observed state and used
+    # in the ordered reward-shaping signal.
     protocol = build_sequential_instruction_following_protocol(
         sub_steps,
         env,
@@ -412,7 +411,7 @@ async def rl_match_instruction(
 
     # ── Instruction plan database ──────────────────────────────────────────────
     try:
-        from ..instruction_following import get_plan_database
+        from ..instruction_plan_db import get_plan_database
         from ._state import _env_plan_db_path
         _plan_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))
         _plan_db.record_instruction_use(
@@ -669,25 +668,16 @@ async def rl_match_sequential_instructions(
             pass
         progress_env._bar.close()
 
-    # ── LLM sub-goal decomposition for each instruction ───────────────────────
-    # Decompose each instruction into sub-steps grounded in observed vocabulary
-    from ..instruction_following import obs_cache_langs
-    observed_langs = obs_cache_langs(env_id)
-    
-    all_decompositions: list[list[str]] = []
-    for instr in instructions:
-        sub_steps_raw = await _decompose_instruction_with_llm(ctx, instr, env_id, observed_langs)
-        all_decompositions.append(_normalize_sequential_steps(instr, sub_steps_raw))
-
-    # Flatten decompositions into a single ordered sequence.
+    # The caller-provided instructions are already the ordered sequential steps —
+    # no further LLM decomposition is needed.  Deduplicate while preserving order.
     sequential_instructions: list[str] = []
     seen_seq: set[str] = set()
-    for steps in all_decompositions:
-        for step in steps:
-            key = step.lower().strip()
-            if key and key not in seen_seq:
-                seen_seq.add(key)
-                sequential_instructions.append(step)
+    for instr in instructions:
+        key = instr.strip().lower()
+        if key and key not in seen_seq:
+            seen_seq.add(key)
+            sequential_instructions.append(instr.strip())
+
     protocol = build_sequential_instruction_following_protocol(
         sequential_instructions,
         env,
@@ -701,28 +691,23 @@ async def rl_match_sequential_instructions(
         "env_id": env_id,
         "env": env,
         "matches": matches,
-        "decompositions": all_decompositions,
         "is_sequential": True,
         "instructions": sequential_instructions,
         "original_instructions": instructions,
     }
 
-    # Build output showing each instruction, its decomposition, and best match
+    # Build output showing each instruction and its best match
     output_lines = [
         f"Sequential instructions matched for '{env_id}':\n"
     ]
 
-    for idx, (instr, match, sub_steps) in enumerate(zip(instructions, matches, all_decompositions)):
+    for idx, (instr, match) in enumerate(zip(sequential_instructions, matches)):
         output_lines.append(
             f"\n  {idx + 1}. Instruction: {instr!r}\n"
             f"     Best match:  {match.matched_language}\n"
             f"     Similarity:  {match.similarity_score:.4f}\n"
             f"     Sub-goals:   {len(match.matched_states)} state(s)"
         )
-        if sub_steps:
-            output_lines.append("     Decomposed sub-steps (LLM):")
-            for step_idx, step in enumerate(sub_steps):
-                output_lines.append(f"       {step_idx + 1}. {step}")
         output_lines.append("")
 
     output_lines.append(
@@ -887,7 +872,7 @@ def rl_get_instruction_plan(env_id: str) -> str:
     -------
     A formatted table of all known instructions and their outcomes.
     """
-    from ..instruction_following import get_plan_database, _PLAN_DATABASES
+    from ..instruction_plan_db import get_plan_database, _PLAN_DATABASES
     from ._state import _env_plan_db_path
 
     plan_path = str(_env_plan_db_path(env_id))

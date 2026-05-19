@@ -371,7 +371,7 @@ def rl_train_and_derive_instructions(
         # ── Instruction plan database: register derived entries ───────────────
         try:
             import math as _math
-            from ..instruction_following import get_plan_database
+            from ..instruction_plan_db import get_plan_database
             from ._state import _env_plan_db_path
             _wrapper = progress_env.language_wrapper
             _plan_db = get_plan_database(env_id, plan_path=str(_env_plan_db_path(env_id)))

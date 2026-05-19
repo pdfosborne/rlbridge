@@ -578,7 +578,7 @@ class InstructionFollowingProtocol(_BaseProtocol):
         sub-goals alongside *sub_goal_language*.  All are encoded and the
         maximum cosine similarity across the set is used at each step.
         Populated automatically from :attr:`InstructionMatch.matched_states`
-        when using :func:`~rlip.instruction_following.build_instruction_following_protocol`.
+        when using :func:`~rlip.instruction_following.build_sequential_instruction_following_protocol`.
     policy_fn:
         Policy ``Callable[[obs], action]``.  Defaults to random sampling.
     sub_goal_bonus:

@@ -42,10 +42,10 @@ Instruction-following
 Works with :class:`~rlip.interaction_protocols.InstructionFollowingProtocol`
 results too — sub-goal steps are annotated in the frame metadata::
 
-    from rlip.instruction_following import build_instruction_following_protocol
+    from rlip.instruction_following import build_sequential_instruction_following_protocol
 
-    protocol = build_instruction_following_protocol(
-        "sail towards the beach side", env, seed=0
+    protocol = build_sequential_instruction_following_protocol(
+        ["sail towards the beach side"], env, seed=0
     )
     result = protocol(env)
     render_optimal_policy(result, env_factory=SAILING_V0, output_gif="if_policy.gif")

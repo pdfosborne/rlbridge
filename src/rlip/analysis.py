@@ -35,6 +35,11 @@ class AgentReportRun:
     eval_mean: Optional[float] = None
     eval_std: Optional[float] = None
     eval_rewards: list[float] = field(default_factory=list)
+    sub_steps_matches: list[dict[str, Any]] = field(default_factory=list)
+    """Per-sub-step match info.  Each entry is a dict with keys:
+    ``instruction`` (str), ``matched_language`` (str), ``similarity`` (float),
+    ``render_text`` (Optional[str]), ``render_b64`` (Optional[str]).
+    """
 
 
 def _rolling_mean(values: list[float], window: int) -> list[float]:
@@ -182,6 +187,7 @@ def _normalize_runs(
                 eval_mean=raw.get("eval_mean"),
                 eval_std=raw.get("eval_std"),
                 eval_rewards=list(raw.get("eval_rewards") or []),
+                sub_steps_matches=list(raw.get("sub_steps_matches") or []),
             )
             if not run.breakpoints:
                 run.breakpoints = _compute_breakpoints_best_so_far(
@@ -522,53 +528,99 @@ def _build_instruction_figure(
     FONT_PT = 8.5
     LINE_H_IN = FONT_PT * _PT_TO_IN * 1.55   # vertical space per text line
     GAP_H_IN = 0.30                           # gap between agent blocks
+    STEP_INDENT_H_IN = 0.10                   # extra gap before each sub-step block
     TITLE_H_IN = 0.60                         # reserved at top
     FOOTER_H_IN = 0.20                        # reserved at bottom
     INST_W = 72                               # wrap width for instruction text
-    OBS_W = 72                                # wrap width for observation text
+    OBS_W  = 68                               # wrap width for matched-lang / render text
 
-    # Pre-compute text lines per agent block
-    palette_bg = ["#e8f4fd", "#fef9e7", "#e9f7ef", "#fdf2f8", "#fff3e0", "#f0f4ff"]
+    palette_bg   = ["#e8f4fd", "#fef9e7", "#e9f7ef", "#fdf2f8", "#fff3e0", "#f0f4ff"]
+    palette_step = ["#d0e8f8", "#fdf0c0", "#d0f0e0", "#f5d8f0", "#ffe8c0", "#dce4ff"]
+
+    # ── Pre-compute text lines per agent block ────────────────────────────────
+    # Each entry: (text, is_header, indent_level)
+    # indent_level  0 = block header
+    #               1 = top-level field row
+    #               2 = sub-step header
+    #               3 = sub-step body row
 
     blocks: list[dict[str, Any]] = []
     for idx, run in enumerate(runs, start=1):
-        lines: list[tuple[str, bool]] = []  # (text, is_header)
+        lines: list[tuple[str, int]] = []   # (text, indent_level)
 
         header = f"[{idx}]  {_legend_label(run)}"
-        lines.append((header, True))
+        lines.append((header, 0))
 
-        # Instruction
+        # Original / top-level instruction
         instr_text = run.instruction or "—"
         instr_wrapped = textwrap.wrap(instr_text, width=INST_W) or ["—"]
-        lines.append((f"  Instruction :  {instr_wrapped[0]}", False))
+        lines.append((f"  Instruction :  {instr_wrapped[0]}", 1))
         for extra in instr_wrapped[1:]:
-            lines.append((f"                 {extra}", False))
+            lines.append((f"                 {extra}", 1))
 
-        # Matched observation
-        obs_text = str(run.best_match_observation) if run.best_match_observation else "—"
-        obs_wrapped = textwrap.wrap(obs_text, width=OBS_W) or ["—"]
-        lines.append((f"  Matched obs :  {obs_wrapped[0]}", False))
-        for extra in obs_wrapped[1:]:
-            lines.append((f"                 {extra}", False))
+        if run.sub_steps_matches:
+            # Per-sub-step section — hides the legacy "Matched obs" row
+            lines.append((f"  Sub-steps   :  {len(run.sub_steps_matches)} matched", 1))
+            for si, sm in enumerate(run.sub_steps_matches, start=1):
+                step_instr   = str(sm.get("instruction", ""))
+                matched_lang = str(sm.get("matched_language", "") or "—")
+                similarity   = sm.get("similarity")
+                render_text  = sm.get("render_text") or matched_lang  # text render of matched obs
+                render_b64   = sm.get("render_b64")   # base64 PNG (unused here, for future)
 
-        # Similarity
-        if run.best_match_similarity is not None:
-            sim_pct = max(0.0, min(1.0, float(run.best_match_similarity))) * 100.0
-            lines.append((f"  Similarity  :  {sim_pct:.2f}%", False))
+                # Sub-step header line
+                step_prefix = f"  [{si}] "
+                step_wrapped = textwrap.wrap(step_instr, width=INST_W - len(step_prefix)) or [step_instr]
+                lines.append((f"{step_prefix}{step_wrapped[0]}", 2))
+                for extra in step_wrapped[1:]:
+                    lines.append((f"      {'':>{len(step_prefix)-6}}{extra}", 2))
+
+                # Matched observation (= language render of matched state)
+                obs_wrapped = textwrap.wrap(matched_lang, width=OBS_W) or ["—"]
+                lines.append((f"      Obs match   :  {obs_wrapped[0]}", 3))
+                for extra in obs_wrapped[1:]:
+                    lines.append((f"                    {extra}", 3))
+
+                # Render (same as matched_language for text envs; kept separate
+                # so future visual-env support can substitute render_b64)
+                if render_text and render_text != matched_lang:
+                    render_wrapped = textwrap.wrap(render_text, width=OBS_W) or [render_text]
+                    lines.append((f"      Render      :  {render_wrapped[0]}", 3))
+                    for extra in render_wrapped[1:]:
+                        lines.append((f"                    {extra}", 3))
+
+                # Similarity
+                if similarity is not None:
+                    sim_pct = max(0.0, min(1.0, float(similarity))) * 100.0
+                    lines.append((f"      Similarity  :  {sim_pct:.2f}%", 3))
+                else:
+                    lines.append(("      Similarity  :  —", 3))
         else:
-            lines.append(("  Similarity  :  —", False))
+            # Legacy single-instruction format
+            obs_text = str(run.best_match_observation) if run.best_match_observation else "—"
+            obs_wrapped = textwrap.wrap(obs_text, width=OBS_W) or ["—"]
+            lines.append((f"  Matched obs :  {obs_wrapped[0]}", 1))
+            for extra in obs_wrapped[1:]:
+                lines.append((f"                 {extra}", 1))
+
+            if run.best_match_similarity is not None:
+                sim_pct = max(0.0, min(1.0, float(run.best_match_similarity))) * 100.0
+                lines.append((f"  Similarity  :  {sim_pct:.2f}%", 1))
+            else:
+                lines.append(("  Similarity  :  —", 1))
 
         blocks.append({
             "run": run,
             "lines": lines,
             "bg": palette_bg[idx % len(palette_bg)],
+            "step_bg": palette_step[idx % len(palette_step)],
         })
 
     # Compute figure height
     total_content_h = sum(len(b["lines"]) * LINE_H_IN for b in blocks)
     total_gap_h = max(0, len(blocks) - 1) * GAP_H_IN
     fig_h = TITLE_H_IN + total_content_h + total_gap_h + FOOTER_H_IN
-    fig_h = max(4.0, min(fig_h + 0.6, 32.0))
+    fig_h = max(4.0, min(fig_h + 0.6, 60.0))   # raised cap for many sub-steps
 
     fig, ax = plt.subplots(1, 1, figsize=(fig_width, fig_h), dpi=dpi)
     fig.patch.set_facecolor("#f7f7f4")
@@ -598,8 +650,9 @@ def _build_instruction_figure(
         run_lines = block["lines"]
         n_lines = len(run_lines)
         block_h_ax = n_lines * line_h_ax
+        step_bg = block["step_bg"]
 
-        # Background rectangle
+        # Background rectangle for the whole agent block
         ax.add_patch(mpatches.FancyBboxPatch(
             (0.005, y - block_h_ax - 0.005),
             0.990, block_h_ax + 0.008,
@@ -612,20 +665,68 @@ def _build_instruction_figure(
             clip_on=False,
         ))
 
-        for j, (text, is_header) in enumerate(run_lines):
+        # Draw each line; sub-step body rows (indent 2/3) get a tinted background
+        prev_step_start: Optional[float] = None
+        prev_indent: int = 0
+        for j, (text, indent) in enumerate(run_lines):
+            line_y = y - j * line_h_ax
+
+            # Draw a background band for sub-step groups (indent 2 starts a group,
+            # indent 3 continues it).  Close the band when indent drops back.
+            if indent == 2:
+                # Start a new sub-step highlight band
+                prev_step_start = line_y
+                prev_indent = 2
+            elif indent == 3 and prev_step_start is not None:
+                prev_indent = 3
+            elif prev_step_start is not None and indent < 2:
+                # Close the band
+                band_top = prev_step_start
+                band_bot = line_y  # current line is outside the band
+                ax.add_patch(mpatches.FancyBboxPatch(
+                    (0.010, band_bot),
+                    0.980, band_top - band_bot,
+                    boxstyle="round,pad=0.002",
+                    facecolor=step_bg,
+                    edgecolor="#aaaaaa",
+                    linewidth=0.4,
+                    transform=ax.transAxes,
+                    zorder=1,
+                    clip_on=False,
+                ))
+                prev_step_start = None
+                prev_indent = indent
+
+            is_header = indent == 0
+            is_step_hdr = indent == 2
             ax.text(
                 0.015,
-                y - j * line_h_ax,
+                line_y,
                 text,
                 transform=ax.transAxes,
                 ha="left", va="top",
                 fontsize=FONT_PT + (0.5 if is_header else 0.0),
-                fontweight="bold" if is_header else "normal",
+                fontweight="bold" if (is_header or is_step_hdr) else "normal",
                 family="monospace",
                 color="#1b1f24",
                 zorder=2,
                 clip_on=False,
             )
+
+        # Close any open sub-step band at the bottom of the block
+        if prev_step_start is not None:
+            band_bot = y - n_lines * line_h_ax
+            ax.add_patch(mpatches.FancyBboxPatch(
+                (0.010, band_bot),
+                0.980, prev_step_start - band_bot,
+                boxstyle="round,pad=0.002",
+                facecolor=step_bg,
+                edgecolor="#aaaaaa",
+                linewidth=0.4,
+                transform=ax.transAxes,
+                zorder=1,
+                clip_on=False,
+            ))
 
         y -= block_h_ax + gap_h_ax
 

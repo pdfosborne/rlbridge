@@ -1,10 +1,16 @@
 """
-LLM prompt templates for RLIP MCP plugin tools.
+LLM prompt templates and agent descriptions for RLIP MCP plugin tools.
 
 Each function builds the full prompt string for a specific tool/call-site.
 Dynamic values (env_id, instruction text, pre-formatted observation blocks,
 etc.) are passed as arguments so the prompts themselves remain readable and
 easy to edit without hunting through tool implementation files.
+
+Constants
+---------
+AGENT_DESCRIPTIONS
+    Human-readable descriptions of each trainable agent type, used by
+    rl_list_agents() and validated in rl_train_agent / rl_train_agent_auto.
 
 Call-site labels
 ----------------
@@ -16,6 +22,30 @@ TOOL: rl_train_and_derive_instructions
 """
 
 from __future__ import annotations
+
+
+# ---------------------------------------------------------------------------
+# Agent type descriptions (shown to user / LLM by rl_list_agents)
+# ---------------------------------------------------------------------------
+
+AGENT_DESCRIPTIONS: dict[str, str] = {
+    "tabular_q": (
+        "Tabular Q-learning \u2013 lookup-table Q-learning with \u03b5-greedy exploration. "
+        "Best for small discrete observation spaces (e.g. Sailing-v0 text strings). "
+        "Fast to train, exact, but does not generalise to unseen states."
+    ),
+    "dqn": (
+        "Deep Q-Network (DQN) \u2013 two-hidden-layer neural net with experience replay "
+        "and a target network.  Works on any flat-vector or text observation; "
+        "observations are encoded to a numeric vector automatically.  "
+        "Good balance of speed and expressiveness."
+    ),
+    "ppo": (
+        "Proximal Policy Optimisation (PPO) \u2013 actor-critic policy-gradient method "
+        "with GAE advantage estimation and clipped surrogate objective.  "
+        "Robust and sample-efficient; suitable for longer training runs."
+    ),
+}
 
 
 # ---------------------------------------------------------------------------

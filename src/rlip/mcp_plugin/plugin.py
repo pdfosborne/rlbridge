@@ -109,7 +109,9 @@ _dispatch.py         – _dispatch(), _proxy_dispatch(), _fmt_obs()
 _env_wrappers.py     – _ShapedEnv, _LangStateEnv
 _tools_env.py        – basic environment interaction tools
 _tools_instruction.py– instruction-following tools
-_tools_agents.py     – RL agent training / evaluation tools
+_tools_agents_training.py  – RL agent training tools (rl_train_agent, rl_train_agent_auto, rl_get_training_result)
+_tools_agents_utils.py     – RL agent utilities (rl_list_agents, rl_list_trained_agents, rl_load_agent, rl_run_agent_episode)
+_tools_agents_eval.py      – RL agent evaluation (rl_create_training_report, rl_evaluate_agent)
 _tools_builder.py    – custom environment builder tools
 _tools_render.py     – rendering tools and MCP resources
 _tools_dashboard.py  – live training dashboard server tools
@@ -131,7 +133,9 @@ from ._state import _in_process, _registry, log, mcp
 from . import (  # noqa: F401, E402
     _tools_env,
     _tools_instruction,
-    _tools_agents,
+    _tools_agents_training,
+    _tools_agents_utils,
+    _tools_agents_eval,
     _tools_builder,
     _tools_render,
     _tools_derived_instructions,
