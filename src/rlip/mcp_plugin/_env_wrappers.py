@@ -209,6 +209,18 @@ class _SequentialShapedEnv:
                     elif isinstance(result, dict):
                         result = dict(result)
                         result["reward"] = result.get("reward", 0.0) + self._bonus
+                    # Inject sub_goal info into info dict so renderers can highlight it
+                    try:
+                        if hasattr(result, "info"):
+                            new_info = dict(result.info or {})
+                            new_info["sub_goal_reached"] = True
+                            new_info["sub_goal_similarity"] = round(float(sim), 4)
+                            object.__setattr__(result, "info", new_info)
+                        elif isinstance(result, dict):
+                            result["sub_goal_reached"] = True
+                            result["sub_goal_similarity"] = round(float(sim), 4)
+                    except Exception:
+                        pass
                     self._current_stage += 1
         except Exception:
             pass

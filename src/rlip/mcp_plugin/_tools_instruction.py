@@ -64,7 +64,7 @@ async def _decompose_instruction_with_llm(
     Ask the host LLM to break *instruction* into clear, ordered sub-steps
     that use the environment's exact language vocabulary.
 
-    Builds an explicit vocabulary lexicon from the observed state descriptions
+    Builds an explicit vocabulary lexicon from the translated language strings
     and requires the LLM to use those phrases verbatim rather than abstract
     domain jargon.
 
@@ -72,19 +72,19 @@ async def _decompose_instruction_with_llm(
     """
     import mcp.types as _t
 
-    # Sample ~20 evenly-spaced descriptions; keep full list for vocab extraction.
+    # Sample ~20 evenly-spaced translated language strings; keep full list for vocab extraction.
     n_sample = min(20, len(observed_langs))
     step = max(1, len(observed_langs) // n_sample)
     sample = observed_langs[::step][:n_sample]
-    obs_block = "\n".join(f"  - {lg}" for lg in sample)
+    lang_block = "\n".join(f"  - {lg}" for lg in sample)
     if len(observed_langs) > n_sample:
-        obs_block += f"\n  … ({len(observed_langs) - n_sample} more not shown)"
+        lang_block += f"\n  … ({len(observed_langs) - n_sample} more not shown)"
 
     # Extracted vocabulary atoms: the reusable clauses the LLM should copy.
     vocab_clauses = _extract_vocab_clauses(observed_langs)
     vocab_block = "\n".join(f"  • {v}" for v in vocab_clauses[:60])
 
-    prompt = decompose_instruction_vocab_prompt(env_id, instruction, obs_block, vocab_block)
+    prompt = decompose_instruction_vocab_prompt(env_id, instruction, lang_block, vocab_block)
 
     try:
         result = await ctx.session.create_message(

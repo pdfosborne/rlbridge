@@ -50,11 +50,11 @@ async def _decompose_instruction_with_llm(
     n_sample = min(20, len(observed_langs))
     step = max(1, len(observed_langs) // n_sample)
     sample = observed_langs[::step][:n_sample]
-    obs_block = "\n".join(f"  - {lg}" for lg in sample)
+    lang_block = "\n".join(f"  - {lg}" for lg in sample)
     if len(observed_langs) > n_sample:
-        obs_block += f"\n  ... ({len(observed_langs) - n_sample} more not shown)"
+        lang_block += f"\n  ... ({len(observed_langs) - n_sample} more not shown)"
 
-    prompt = decompose_instruction_simple_prompt(env_id, instruction, obs_block)
+    prompt = decompose_instruction_simple_prompt(env_id, instruction, lang_block)
 
     try:
         result = await ctx.session.create_message(

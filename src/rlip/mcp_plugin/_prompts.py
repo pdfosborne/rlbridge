@@ -10,7 +10,7 @@ Constants
 ---------
 AGENT_DESCRIPTIONS
     Human-readable descriptions of each trainable agent type, used by
-    rl_list_agents() and validated in rl_train_agent / rl_train_agent_auto.
+    rl_list_agents() and validated in rl_train_agent / rl_experiment_process.
 
 Call-site labels
 ----------------
@@ -85,7 +85,7 @@ def rlip_system_prompt() -> str:
         "A language translator lets you specify the goal as plain text.\n"
         "  • PROCEDURE AUTOMATION: model a multi-step procedure as a "
         "sequential environment where completing each step unlocks the next. "
-        "Use rl_train_agent_auto(instruction=...) to shape rewards toward "
+        "Use rl_experiment_process(instruction=...) to shape rewards toward "
         "the correct ordering automatically.\n"
         "  • OPTIMISATION UNDER CONSTRAINTS: wrap an optimisation problem "
         "as an RL env where the agent adjusts parameters each step and "
@@ -114,7 +114,7 @@ def rlip_system_prompt() -> str:
 
         "RL agent training workflow:\n"
         "1. rl_list_agents() – tabular_q / dqn / ppo guidance.\n"
-        "2. rl_train_agent_auto(agent_type, env_id) – DEFAULT.  Full pipeline: "
+        "2. rl_experiment_process(agent_type, env_id) – DEFAULT.  Full pipeline: "
         "baseline + language tracking → instruction derivation → shaped "
         "training.  Pass instruction= to specify a goal.  Returns job_id.\n"
         "   • rl_train_agent() only for manual control (custom match_id, "
@@ -127,7 +127,7 @@ def rlip_system_prompt() -> str:
         "7. rl_create_training_report(agent_id, compare_agent_ids=[...]) – "
         "comparative PNG: reward convergence, eval bar chart, metadata.\n\n"
 
-        "IMPORTANT — training is asynchronous: rl_train_agent_auto(), "
+        "IMPORTANT — training is asynchronous: rl_experiment_process(), "
         "rl_train_agent(), and rl_train_and_derive_instructions() all return "
         "immediately with a job_id.  ALWAYS call rl_get_training_result(job_id) "
         "and wait for status 'done' before calling rl_run_agent_episode or "
@@ -148,10 +148,10 @@ def rlip_system_prompt() -> str:
         "reusing it and explain why.\n\n"
 
         "Combined instruction + training (preferred):\n"
-        "rl_train_agent_auto(agent_type, env_id, instruction=instruction)\n\n"
+        "rl_experiment_process(agent_type, env_id, instruction=instruction)\n\n"
 
         "Auto-derived instruction (no instruction needed):\n"
-        "rl_train_agent_auto(agent_type, env_id)  # derives instruction automatically\n\n"
+        "rl_experiment_process(agent_type, env_id)  # derives instruction automatically\n\n"
 
         "Instruction planning database: every match and training run is "
         "recorded in ~/.rlip/environments/<env>/instruction_plan.json.  "
@@ -193,7 +193,7 @@ AGENT_DESCRIPTIONS: dict[str, str] = {
 def decompose_instruction_vocab_prompt(
     env_id: str,
     instruction: str,
-    obs_block: str,
+    lang_block: str,
     vocab_block: str,
 ) -> str:
     """
@@ -211,21 +211,22 @@ def decompose_instruction_vocab_prompt(
         The environment identifier (e.g. ``"CartPole-v1"``).
     instruction:
         The raw user/LLM instruction to decompose.
-    obs_block:
-        Pre-formatted block of sampled observed state descriptions (one per line,
-        indented with ``  - ``).  ~20 evenly-spaced entries from the full set.
+    lang_block:
+        Pre-formatted block of sampled translated language strings produced by
+        the environment's language translator (one per line, indented with
+        ``  - ``).  ~20 evenly-spaced entries from the full translated set.
     vocab_block:
         Pre-formatted block of recurring vocabulary clauses extracted from
-        *obs_block* (one per line, indented with ``  • ``).  Capped at ~60
-        entries by the caller.
+        the translated language strings in *obs_block* (one per line, indented
+        with ``  • ``).  Capped at ~60 entries by the caller.
     """
     return (
         f"You are setting up reward shaping for a reinforcement learning agent "
         f"in the environment \"{env_id}\".\n\n"
         f"The user's instruction is:\n  \"{instruction}\"\n\n"
-        f"These are a representative sample of state descriptions the environment's language "
-        f"translator can produce — use these as vocabulary examples (the full set may be larger):\n"
-        f"{obs_block}\n\n"
+        f"These are a representative sample of translated language strings the environment's "
+        f"language translator can produce — use these as vocabulary examples (the full set may be larger):\n"
+        f"{lang_block}\n\n"
         f"Recurring vocabulary clauses extracted from the descriptions above "
         f"(state, position, orientation, and condition phrases you MUST reuse verbatim):\n"
         f"{vocab_block}\n\n"
@@ -251,7 +252,7 @@ def decompose_instruction_vocab_prompt(
 def decompose_instruction_simple_prompt(
     env_id: str,
     instruction: str,
-    obs_block: str,
+    lang_block: str,
 ) -> str:
     """
     Prompt used by ``_decompose_instruction_with_llm`` in
@@ -264,14 +265,15 @@ def decompose_instruction_simple_prompt(
         The environment identifier.
     instruction:
         The high-level instruction to decompose.
-    obs_block:
-        Pre-formatted block of sampled observed language state strings (one per
-        line, indented with ``  - ``).  ~20 evenly-spaced entries from the full set.
+    lang_block:
+        Pre-formatted block of sampled translated language strings produced by
+        the environment's language translator (one per line, indented with
+        ``  - ``).  ~20 evenly-spaced entries from the full translated set.
     """
     return (
         f"You are helping set up sequential reward shaping for RL in environment '{env_id}'.\n\n"
         f"High-level instruction:\n  '{instruction}'\n\n"
-        f"Observed environment language states:\n{obs_block}\n\n"
+        f"Observed environment language states:\n{lang_block}\n\n"
         "Break the instruction into 1-5 ordered, distinct, concrete sub-steps. "
         "The FIRST step must focus on what to do at episode start of the environment. "
         "Use environment vocabulary from the language states. Avoid duplicate or overlapping steps. "

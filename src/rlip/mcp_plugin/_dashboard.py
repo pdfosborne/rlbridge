@@ -43,7 +43,7 @@ class _AgentState:
         "use_language_state", "uses_instructions", "instructions",
         "n_episodes", "completed", "episode_rewards",
         "epsilon", "best_reward", "last_reward",
-        "policy_text", "policy_gif_b64", "policy_frames",
+        "policy_text", "policy_gif_b64", "policy_frames", "policy_frame_meta",
         "started_at", "updated_at",
     )
 
@@ -72,6 +72,7 @@ class _AgentState:
         self.policy_text     = ""          # formatted text snapshot of current policy
         self.policy_gif_b64  = ""          # base64 GIF of the best episode
         self.policy_frames: list[str] = [] # ANSI text frames (fallback)
+        self.policy_frame_meta: list[dict] = []  # per-frame metadata (sub_goal_reached, etc.)
         self.started_at      = time.time()
         self.updated_at      = time.time()
 
@@ -140,6 +141,7 @@ class TrainingDashboard:
         policy_text: str = "",
         policy_gif_b64: str = "",
         policy_frames: Optional[list[str]] = None,
+        policy_frame_meta: Optional[list[dict]] = None,
     ) -> None:
         with self._lock:
             state = self._agents.get(agent_id)
@@ -151,6 +153,8 @@ class TrainingDashboard:
                 state.policy_gif_b64 = policy_gif_b64
             if policy_frames:
                 state.policy_frames = policy_frames
+            if policy_frame_meta:
+                state.policy_frame_meta = policy_frame_meta
             # Mark as fully complete; update() may have already set this.
             state.completed  = state.n_episodes
             state.updated_at = time.time()
@@ -275,6 +279,62 @@ h1   { font-size: 1.4rem; font-weight: 700; color: #f8fafc;
 """
 
 _JS = """
+// ── Global slideshow manager ──────────────────────────────────────────────────
+// Drives all policy-replay slideshows from a single setInterval so they
+// survive innerHTML replacement (inline <script> tags don't re-execute).
+var _slideshows = {};
+
+function _initSlideshows() {
+  document.querySelectorAll('[data-frames]').forEach(function(el) {
+    if (_slideshows[el.id]) return; // already running
+    try {
+      var frames   = JSON.parse(el.dataset.frames);
+      var meta     = JSON.parse(el.dataset.meta   || '[]');
+      var bannerId = el.dataset.banner || '';
+      if (frames.length === 0) return;
+      _slideshows[el.id] = {el: el, frames: frames, meta: meta, idx: 0, bannerId: bannerId};
+      // Show first frame immediately
+      _applyFrame(_slideshows[el.id]);
+    } catch(e) {}
+  });
+  // Prune entries whose elements have been removed from the DOM
+  Object.keys(_slideshows).forEach(function(id) {
+    if (!document.getElementById(id)) delete _slideshows[id];
+  });
+}
+
+function _applyFrame(sw) {
+  var el = sw.el;
+  var frame = sw.frames[sw.idx];
+  var m = (sw.meta && sw.meta[sw.idx]) || {};
+  el.textContent = frame;
+  var bn = sw.bannerId ? document.getElementById(sw.bannerId)          : null;
+  var bs = sw.bannerId ? document.getElementById(sw.bannerId + '_sim') : null;
+  var bl = sw.bannerId ? document.getElementById(sw.bannerId + '_lang'): null;
+  if (m.sub_goal_reached) {
+    el.style.borderColor = '#22c55e';
+    el.style.boxShadow   = '0 0 0 2px rgba(34,197,94,0.35)';
+    if (bn) bn.style.display = 'block';
+    if (bs) bs.textContent = (m.sub_goal_similarity != null)
+        ? ('sim=' + Number(m.sub_goal_similarity).toFixed(3)) : '';
+    if (bl) bl.textContent = m.language_obs || '';
+  } else {
+    el.style.borderColor = '';
+    el.style.boxShadow   = '';
+    if (bn) bn.style.display = 'none';
+  }
+}
+
+setInterval(function() {
+  Object.values(_slideshows).forEach(function(sw) {
+    sw.idx = (sw.idx + 1) % sw.frames.length;
+    _applyFrame(sw);
+  });
+}, 600);
+
+_initSlideshows();
+
+// ── Polling ───────────────────────────────────────────────────────────────────
 let _ver = -1;
 async function poll() {
   try {
@@ -290,6 +350,7 @@ async function poll() {
           doc.getElementById('main').innerHTML;
       document.getElementById('ts').textContent =
           'Updated ' + new Date().toLocaleTimeString();
+      _initSlideshows();
       // Flash refresh dot
       const dot = document.getElementById('refresh-dot');
       if (dot) {
@@ -353,33 +414,51 @@ def _render_agent_card(state: _AgentState) -> str:
                     'margin-top:6px;display:block" alt="policy replay gif">'
                 )
         elif state.policy_frames:
-            # ANSI / text frames — show as a cycling JS slideshow
-            frames_json = json.dumps(state.policy_frames)
-            card_id = f"pf_{state.agent_id}"
+            # ANSI / text frames — show as a cycling JS slideshow.
+            # policy_frame_meta (parallel list) carries sub_goal_reached,
+            # sub_goal_similarity, language_obs, reward, step per frame.
+            frames_json = html.escape(json.dumps(state.policy_frames))
+            meta_json   = html.escape(json.dumps(state.policy_frame_meta or []))
+            card_id     = f"pf_{state.agent_id}"
+            banner_id   = f"pb_{state.agent_id}"
+
+            # Banner div — hidden by default; shown by the global slideshow timer
+            sg_banner = (
+                f'<div id="{banner_id}" style="'
+                f'display:none;margin-bottom:6px;padding:6px 10px;'
+                f'background:rgba(34,197,94,0.15);border:1px solid #22c55e;'
+                f'border-radius:6px;font-size:0.75rem;color:#86efac;'
+                f'font-weight:600;letter-spacing:0.02em;">'
+                f'\u2713 Sub-goal reached'
+                f'<span id="{banner_id}_sim" style="font-weight:400;color:#4ade80;'
+                f'margin-left:8px"></span>'
+                f'<span id="{banner_id}_lang" style="font-weight:400;color:#94a3b8;'
+                f'margin-left:8px;font-style:italic"></span>'
+                f'</div>'
+            )
+
+            # Frame data embedded as data-* attributes; driven by _JS global timer
+            slideshow_div = (
+                f'<div class="policy-pre" id="{card_id}"'
+                f' data-frames="{frames_json}"'
+                f' data-meta="{meta_json}"'
+                f' data-banner="{banner_id}">'
+                f'</div>'
+            )
+
             if instruction_panel:
                 policy_section = (
                     '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
                     '<div class="policy-grid">'
                     f'{instruction_panel}'
-                    f'<div class="policy-pre" id="{card_id}"></div>'
+                    f'<div>{sg_banner}{slideshow_div}</div>'
                     '</div>'
-                    f'<script>(function(){{'
-                    f'var frames={frames_json},i=0,el=document.getElementById("{card_id}");'
-                    f'if(!el)return;'
-                    f'el.textContent=frames[0];'
-                    f'setInterval(function(){{i=(i+1)%frames.length;el.textContent=frames[i];}},600);'
-                    f'}})();</script>'
                 )
             else:
                 policy_section = (
                     '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
-                    f'<div class="policy-pre" id="{card_id}"></div>'
-                    f'<script>(function(){{'
-                    f'var frames={frames_json},i=0,el=document.getElementById("{card_id}");'
-                    f'if(!el)return;'
-                    f'el.textContent=frames[0];'
-                    f'setInterval(function(){{i=(i+1)%frames.length;el.textContent=frames[i];}},600);'
-                    f'}})();</script>'
+                    + sg_banner
+                    + slideshow_div
                 )
         elif state.policy_text:
             policy_section = (

@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ._dashboard import dashboard as _dash
-from ._env_wrappers import _LangStateEnv
+from ._env_wrappers import _LangStateEnv, _SequentialShapedEnv
 from ._prompts import AGENT_DESCRIPTIONS as _AGENT_DESCRIPTIONS
 from ._state import (
     _cache_root,
@@ -201,6 +201,21 @@ def _render_policy_for_dashboard(
         translator = _custom_translators.get(env_id) or get_translator(env_id)
         factory = _env_registry.get(env_id)
 
+        # Reconstruct stage_languages for sub_goal highlighting in replay
+        match_id = stored.get("match_id")
+        sub_goal_threshold = stored.get("sub_goal_threshold") or 0.5
+        stage_languages: list[list[str]] | None = None
+        if match_id and match_id in _instruction_protocols:
+            proto = _instruction_protocols[match_id]["protocol"]
+            matches = getattr(proto, "matches", None)
+            if matches:
+                stage_languages = [
+                    [lg for lg, _obs, _sc in m.matched_states] or [m.matched_language]
+                    for m in matches
+                ]
+        if stage_languages is None and stored.get("instructions_used"):
+            stage_languages = [[instr] for instr in stored["instructions_used"]]
+
         if use_lang_state and translator is None:
             _dash.finish(
                 agent_id,
@@ -216,6 +231,15 @@ def _render_policy_for_dashboard(
         try:
             if use_lang_state:
                 eval_env = _LangStateEnv(eval_env, translator=translator, env_id=env_id)
+            if stage_languages and translator:
+                eval_env = _SequentialShapedEnv(
+                    eval_env,
+                    stage_languages=stage_languages,
+                    bonus=None,
+                    threshold=sub_goal_threshold,
+                    translator=translator,
+                    env_id=env_id,
+                )
 
             def _greedy_fn(obs: Any) -> Any:
                 if hasattr(agent, "act_greedy"):
@@ -257,6 +281,15 @@ def _render_policy_for_dashboard(
             try:
                 if use_lang_state:
                     render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
+                if stage_languages and translator:
+                    render_env = _SequentialShapedEnv(
+                        render_env,
+                        stage_languages=stage_languages,
+                        bonus=None,
+                        threshold=sub_goal_threshold,
+                        translator=translator,
+                        env_id=env_id,
+                )
                 render_result = render_optimal_policy(
                     eval_result,
                     env=render_env,
@@ -284,6 +317,15 @@ def _render_policy_for_dashboard(
             try:
                 if use_lang_state:
                     render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
+                if stage_languages and translator:
+                    render_env = _SequentialShapedEnv(
+                        render_env,
+                        stage_languages=stage_languages,
+                        bonus=None,
+                        threshold=sub_goal_threshold,
+                        translator=translator,
+                        env_id=env_id,
+                    )
                 render_result = render_optimal_policy(
                     eval_result,
                     env=render_env,
@@ -294,9 +336,20 @@ def _render_policy_for_dashboard(
                 )
             finally:
                 render_env.close()
-            text_frames = [f.ansi_text for f in render_result.frames if f.ansi_text]
-            if text_frames:
-                _dash.finish(agent_id, policy_frames=text_frames)
+            frame_data = [(f.ansi_text, f) for f in render_result.frames if f.ansi_text]
+            if frame_data:
+                text_frames = [t for t, _ in frame_data]
+                frame_meta = [
+                    {
+                        "sub_goal_reached":    f.sub_goal_reached,
+                        "sub_goal_similarity": f.sub_goal_similarity,
+                        "language_obs":        f.language_obs,
+                        "reward":              f.reward,
+                        "step":                f.step,
+                    }
+                    for _, f in frame_data
+                ]
+                _dash.finish(agent_id, policy_frames=text_frames, policy_frame_meta=frame_meta)
                 return
             if rgb_error:
                 _dash.finish(
@@ -376,7 +429,7 @@ def _build_agent(
 @mcp.tool()
 def rl_list_agents() -> str:
     """
-    List the available RL agent types that can be trained with rl_train_agent_auto() or rl_train_agent().
+    List the available RL agent types that can be trained with rl_experiment_process() or rl_train_agent().
 
     Returns a description of each agent's algorithm and when to use it.
     """
@@ -384,7 +437,7 @@ def rl_list_agents() -> str:
     for name, desc in _AGENT_DESCRIPTIONS.items():
         lines.append(f"  • {name}\n      {desc}\n")
     lines.append(
-        "Use rl_train_agent_auto(agent_type=..., env_id=...) to train an agent (recommended).\n"
+        "Use rl_experiment_process(agent_type=..., env_id=...) to train an agent (recommended).\n"
         "After training, use rl_run_agent_episode(agent_id=...) to evaluate it."
     )
     return "\n".join(lines)
