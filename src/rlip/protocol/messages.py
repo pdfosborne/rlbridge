@@ -108,8 +108,7 @@ class SuggestedHyperparameters(BaseModel):
     """
     agent_type: str = "tabular_q"
     # Episode counts
-    n_episodes_baseline: int = 300
-    n_episodes_instruction: int = 300
+    n_episodes: int = 300
     max_steps: int = 200
     # Instruction-matching
     sub_goal_threshold: float = 0.5

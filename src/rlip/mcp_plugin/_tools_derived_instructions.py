@@ -87,9 +87,11 @@ async def _decompose_instruction_with_llm(
 
 def _fallback_decompose_instruction(instruction: str) -> list[str]:
     """Deterministic decomposition when LLM output is unavailable."""
+    # Only split on explicit sequential connectors — never on commas, which
+    # would fragment instruction text into meaningless phrase fragments.
     parts = [
         p.strip(" .")
-        for p in re.split(r"\bthen\b|\band\b|,|;|->|=>", instruction, flags=re.IGNORECASE)
+        for p in re.split(r"\bthen\b|\band then\b", instruction, flags=re.IGNORECASE)
         if p.strip(" .")
     ]
     uniq: list[str] = []
@@ -102,12 +104,8 @@ def _fallback_decompose_instruction(instruction: str) -> list[str]:
         uniq.append(p)
     if len(uniq) >= 2:
         return uniq[:5]
-    core = instruction.strip().rstrip(".")
-    return [
-        f"observe the starting state for: {core}",
-        f"move into an intermediate observable state for: {core}",
-        f"reach the final observable state for: {core}",
-    ]
+    # Single instruction — return it as-is rather than inventing sub-steps.
+    return [instruction.strip().rstrip(".")]
 
 
 def _normalize_steps(instruction: str, llm_steps: list[str]) -> list[str]:

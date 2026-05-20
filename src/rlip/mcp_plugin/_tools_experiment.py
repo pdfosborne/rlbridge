@@ -31,8 +31,7 @@ def rl_experiment_process(
     env_id: str,
     agent_type: Optional[str] = None,
     instruction: str = "",
-    n_episodes_baseline: Optional[int] = None,
-    n_episodes_instruction: Optional[int] = None,
+    n_episodes: Optional[int] = None,
     max_steps: Optional[int] = None,
     seed: Optional[int] = None,
     top_k: Optional[int] = None,
@@ -90,12 +89,9 @@ def rl_experiment_process(
     instruction:
         Optional natural-language goal.  When provided, stages 3–4 use this
         instruction directly instead of auto-deriving one from baseline.
-    n_episodes_baseline:
-        Episodes for the baseline phase.  Defaults to the environment's
-        suggestion (``suggested_hyperparameters.n_episodes_baseline``) or 300.
-    n_episodes_instruction:
-        Episodes for the instruction-shaped phase.  Defaults to the
-        environment's suggestion or 300.
+    n_episodes:
+        Episodes for each training phase.  Defaults to the environment's
+        suggestion (``suggested_hyperparameters.n_episodes``) or 300.
     max_steps:
         Step cap per episode (both phases).  Defaults to the environment's
         suggestion or 200.
@@ -149,8 +145,7 @@ def rl_experiment_process(
         return val if val is not None else (suggested if _hp is not None else default)
 
     agent_type   = _r(agent_type,   getattr(_hp, "agent_type",  None) if _hp else None, "tabular_q")
-    n_episodes_baseline    = _r(n_episodes_baseline,    getattr(_hp, "n_episodes_baseline",   None), 300)
-    n_episodes_instruction = _r(n_episodes_instruction, getattr(_hp, "n_episodes_instruction", None), 300)
+    n_episodes = _r(n_episodes, getattr(_hp, "n_episodes", None), 300)
     max_steps              = _r(max_steps,              getattr(_hp, "max_steps",              None), 200)
     top_k                  = _r(top_k,                  getattr(_hp, "top_k",                 None), 3)
     min_episode_visits     = _r(min_episode_visits,     getattr(_hp, "min_episode_visits",    None), 2)
@@ -208,7 +203,7 @@ def rl_experiment_process(
         "status": "running",
         "agent_id": None,
         "env_id": env_id,
-        "n_episodes": n_episodes_baseline + n_episodes_instruction,
+        "n_episodes": n_episodes * 2,
         "progress_env": None,
         "phase": "baseline",
     }
@@ -244,7 +239,7 @@ def rl_experiment_process(
                 baseline_agent_id,
                 agent_type=agent_type,
                 env_id=env_id,
-                n_episodes=n_episodes_baseline,
+                n_episodes=n_episodes,
                 use_language_state=False,
                 uses_instructions=False,
                 instructions=[],
@@ -316,7 +311,7 @@ def rl_experiment_process(
                 return getattr(self._w, name)
 
         track_env = _TrackBar(
-            wrapper, n_episodes_baseline,
+            wrapper, n_episodes,
             dash_id=baseline_agent_id if _dash_running() else "",
             agent_ref=agent1,
         )
@@ -324,7 +319,7 @@ def rl_experiment_process(
 
         try:
             result1 = agent1.train(
-                track_env, n_episodes=n_episodes_baseline,
+                track_env, n_episodes=n_episodes,
                 max_steps=max_steps, seed=seed,
             )
         except Exception as exc:
@@ -364,7 +359,7 @@ def rl_experiment_process(
         rl_train_agent(
             agent_type=agent_type,
             env_id=env_id,
-            n_episodes=n_episodes_baseline,
+            n_episodes=n_episodes,
             max_steps=max_steps,
             seed=seed,
             use_language_state=True,
@@ -401,13 +396,13 @@ def rl_experiment_process(
             if not derived:
                 _training_jobs[job_id]["status"] = "done"
                 _training_jobs[job_id]["result"] = (
-                    f"Baseline training complete ({n_episodes_baseline} episodes) but no "
+                    f"Baseline training complete ({n_episodes} episodes) but no "
                     f"instruction candidates could be derived (too few successful episodes "
                     f"or min_episode_visits={min_episode_visits} not satisfied).\n\n"
                     f"Baseline agent saved as agent_id='{baseline_agent_id}'.\n"
                     f"Mean reward: {result1.mean_reward:.4f}  "
                     f"Best: {result1.best_reward:.4f}\n\n"
-                    "Try increasing n_episodes_baseline or lowering min_episode_visits, "
+                    "Try increasing n_episodes or lowering min_episode_visits, "
                     "or pass an explicit instruction= to skip derivation."
                 )
                 return
@@ -453,7 +448,7 @@ def rl_experiment_process(
         rl_train_agent(
             agent_type=agent_type,
             env_id=env_id,
-            n_episodes=n_episodes_instruction,
+            n_episodes=n_episodes,
             max_steps=max_steps,
             seed=seed,
             match_id=synthetic_match_id,
@@ -515,7 +510,7 @@ def rl_experiment_process(
         rl_train_agent(
             agent_type=agent_type,
             env_id=env_id,
-            n_episodes=n_episodes_instruction,
+            n_episodes=n_episodes,
             max_steps=max_steps,
             seed=seed,
             match_id=synthetic_match_id,
@@ -567,13 +562,13 @@ def rl_experiment_process(
                 f"Best: {lang_result.best_reward:.4f}\n"
             )
         lang_section = (
-            f"\nPhase 1b \u2014 Language-state training ({n_episodes_baseline} episodes):\n"
+            f"\nPhase 1b \u2014 Language-state training ({n_episodes} episodes):\n"
             + (lang_reward_line or "  (no result)\n")
             + f"  Language agent_id: {lang_agent_id}\n"
         ) if lang_agent_id else ""
 
         phase3_section = (
-            f"\nPhase 3 \u2014 Instruction + language-state training ({n_episodes_instruction} episodes):\n"
+            f"\nPhase 3 \u2014 Instruction + language-state training ({n_episodes} episodes):\n"
             + (phase3_reward_line or "  (no result)\n")
             + lang_instr_eval_line
             + f"  Instruction+lang agent_id: {lang_instr_agent_id}\n"
@@ -591,13 +586,13 @@ def rl_experiment_process(
         result_text = (
             f"Experiment pipeline complete \u2014 {agent_type} on {env_id}\n\n"
             f"Dashboard: {_final_dash_url}\n\n"
-            f"Phase 1 \u2014 Baseline training ({n_episodes_baseline} episodes):\n"
+            f"Phase 1 \u2014 Baseline training ({n_episodes} episodes):\n"
             f"  Mean reward: {result1.mean_reward:.4f}  Best: {result1.best_reward:.4f}\n"
             f"  Baseline agent_id: {baseline_agent_id}\n"
             + lang_section
             + f"\nInstruction used ({instruction_source}):\n"
             + "".join(f"  {i + 1}. {s}\n" for i, s in enumerate(instructions_to_use))
-            + f"\nPhase 2 \u2014 Instruction-shaped training ({n_episodes_instruction} episodes):\n"
+            + f"\nPhase 2 \u2014 Instruction-shaped training ({n_episodes} episodes):\n"
             + phase2_reward_line
             + eval_line
             + f"  Instruction agent_id: {instr_agent_id}\n"
@@ -621,8 +616,8 @@ def rl_experiment_process(
         f"Experiment pipeline started \u2014 {agent_type} on {env_id}\n\n"
         f"  Job ID:        {job_id}\n"
         f"{instr_note}"
-        f"  Phase 1:       {n_episodes_baseline} baseline episodes\n"
-        f"  Phase 2+3:     {n_episodes_instruction} instruction-shaped episodes each\n"
+        f"  Phase 1:       {n_episodes} baseline episodes\n"
+        f"  Phase 2+3:     {n_episodes} instruction-shaped episodes each\n"
         f"  max_steps:     {max_steps}\n\n"
         + _suggested_note
         + auto_translator_note

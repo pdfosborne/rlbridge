@@ -1486,8 +1486,7 @@ class FleshAndBloodFactory(RLIPEnvironmentFactory):
             max_episode_steps=self._max_turns,
             suggested_hyperparameters=SuggestedHyperparameters(
                 agent_type="tabular_q",
-                n_episodes_baseline=300,
-                n_episodes_instruction=300,
+                n_episodes=300,
                 max_steps=self._max_turns,
                 alpha=0.1,
                 gamma=0.99,

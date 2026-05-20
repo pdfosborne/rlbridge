@@ -126,8 +126,7 @@ class GridWorldFactory(RLIPEnvironmentFactory):
             render_modes=["ansi"],
             suggested_hyperparameters=SuggestedHyperparameters(
                 agent_type="tabular_q",
-                n_episodes_baseline=100,
-                n_episodes_instruction=100,
+                n_episodes=10000,
                 max_steps=100,
                 alpha=0.1,
                 gamma=0.99,

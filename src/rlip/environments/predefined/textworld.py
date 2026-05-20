@@ -464,8 +464,7 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float | None, int]] = {
 _SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
     "TextWorld-Take-v0": SuggestedHyperparameters(
         agent_type="tabular_q",
-        n_episodes_baseline=200,
-        n_episodes_instruction=200,
+        n_episodes=200,
         max_steps=30,
         alpha=0.1,
         gamma=0.99,
@@ -475,8 +474,7 @@ _SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
     ),
     "TextWorld-Navigate-v0": SuggestedHyperparameters(
         agent_type="tabular_q",
-        n_episodes_baseline=300,
-        n_episodes_instruction=300,
+        n_episodes=300,
         max_steps=50,
         alpha=0.1,
         gamma=0.99,
@@ -486,8 +484,7 @@ _SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
     ),
     "TextWorld-TreasureHunt-v0": SuggestedHyperparameters(
         agent_type="tabular_q",
-        n_episodes_baseline=500,
-        n_episodes_instruction=500,
+        n_episodes=500,
         max_steps=100,
         alpha=0.1,
         gamma=0.99,
@@ -497,8 +494,7 @@ _SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
     ),
     "TextWorld-CoinCollector-Easy-v0": SuggestedHyperparameters(
         agent_type="tabular_q",
-        n_episodes_baseline=200,
-        n_episodes_instruction=200,
+        n_episodes=200,
         max_steps=30,
         alpha=0.1,
         gamma=0.99,
@@ -508,8 +504,7 @@ _SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
     ),
     "TextWorld-CoinCollector-Medium-v0": SuggestedHyperparameters(
         agent_type="tabular_q",
-        n_episodes_baseline=400,
-        n_episodes_instruction=400,
+        n_episodes=400,
         max_steps=100,
         alpha=0.1,
         gamma=0.99,
@@ -519,8 +514,7 @@ _SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
     ),
     "TextWorld-Cooking-Easy-v0": SuggestedHyperparameters(
         agent_type="tabular_q",
-        n_episodes_baseline=400,
-        n_episodes_instruction=400,
+        n_episodes=400,
         max_steps=50,
         alpha=0.1,
         gamma=0.99,
@@ -530,8 +524,7 @@ _SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
     ),
     "TextWorld-Cooking-Medium-v0": SuggestedHyperparameters(
         agent_type="tabular_q",
-        n_episodes_baseline=500,
-        n_episodes_instruction=500,
+        n_episodes=500,
         max_steps=150,
         alpha=0.1,
         gamma=0.99,

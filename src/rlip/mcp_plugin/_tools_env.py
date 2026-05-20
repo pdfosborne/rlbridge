@@ -466,8 +466,7 @@ def rl_get_suggested_hyperparameters(env_id: str) -> str:
     lines = [
         f"Suggested hyperparameters for '{env_id}' {source}:\n",
         f"  agent_type:              {hp.agent_type}",
-        f"  n_episodes_baseline:     {hp.n_episodes_baseline}",
-        f"  n_episodes_instruction:  {hp.n_episodes_instruction}",
+        f"  n_episodes:              {hp.n_episodes}",
         f"  max_steps:               {hp.max_steps}",
         "",
         "  Instruction matching:",
@@ -496,8 +495,7 @@ def rl_get_suggested_hyperparameters(env_id: str) -> str:
 def rl_update_suggested_hyperparameters(
     env_id: str,
     agent_type: Optional[str] = None,
-    n_episodes_baseline: Optional[int] = None,
-    n_episodes_instruction: Optional[int] = None,
+    n_episodes: Optional[int] = None,
     max_steps: Optional[int] = None,
     sub_goal_threshold: Optional[float] = None,
     top_k: Optional[int] = None,
@@ -523,9 +521,9 @@ def rl_update_suggested_hyperparameters(
     be loaded automatically in future sessions.  ``rl_experiment_process()``
     picks them up immediately.
 
-    **Convergence guidance** — set ``n_episodes_baseline`` and
-    ``n_episodes_instruction`` to the *lowest* episode count at which training
-    reliably converges on this environment, not a conservative upper bound.
+    **Convergence guidance** — set ``n_episodes`` to the *lowest* episode
+    count at which training reliably converges on this environment, not a
+    conservative upper bound.
     This keeps experiment runs fast and avoids wasted compute on subsequent calls.
 
     Parameters
@@ -534,10 +532,8 @@ def rl_update_suggested_hyperparameters(
         A registered RLIP environment ID, e.g. ``"Sailing-v0"``.
     agent_type:
         Best agent type found (``"tabular_q"``, ``"dqn"``, or ``"ppo"``).
-    n_episodes_baseline:
-        Minimum episodes for reliable baseline convergence.
-    n_episodes_instruction:
-        Minimum episodes for reliable instruction-shaped convergence.
+    n_episodes:
+        Minimum episodes for reliable convergence.
     max_steps:
         Step cap per episode.
     sub_goal_threshold / top_k / min_episode_visits:
@@ -571,8 +567,7 @@ def rl_update_suggested_hyperparameters(
     updates: dict[str, Any] = {}
     _fields = {
         "agent_type": agent_type,
-        "n_episodes_baseline": n_episodes_baseline,
-        "n_episodes_instruction": n_episodes_instruction,
+        "n_episodes": n_episodes,
         "max_steps": max_steps,
         "sub_goal_threshold": sub_goal_threshold,
         "top_k": top_k,
@@ -615,8 +610,7 @@ def rl_update_suggested_hyperparameters(
         + "\n".join(changed_lines)
         + f"\n\nFull updated values:\n"
         f"  agent_type:              {new_hp.agent_type}\n"
-        f"  n_episodes_baseline:     {new_hp.n_episodes_baseline}\n"
-        f"  n_episodes_instruction:  {new_hp.n_episodes_instruction}\n"
+        f"  n_episodes:              {new_hp.n_episodes}\n"
         f"  max_steps:               {new_hp.max_steps}\n"
         f"  sub_goal_threshold:      {new_hp.sub_goal_threshold}\n"
         f"  top_k:                   {new_hp.top_k}\n"
