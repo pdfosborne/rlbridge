@@ -138,6 +138,27 @@ class _ProgressEnv:
         return getattr(self._env, name)
 
 
+class _ParallelProgressProxy:
+    """
+    Lightweight proxy that acts as the *progress_env* slot in ``_training_jobs``
+    when parallel training is active.  Each sub-worker calls ``_increment()``
+    after every completed episode so that ``rl_get_training_result`` can report
+    an accurate aggregate progress percentage.
+    """
+
+    def __init__(self, n_total_episodes: int) -> None:
+        self._completed_episodes: int = 0
+        self._lock = threading.Lock()
+        self._n_total = n_total_episodes
+
+    def _increment(self) -> None:
+        with self._lock:
+            self._completed_episodes += 1
+
+    def close(self) -> None:
+        pass
+
+
 @mcp.tool()
 
 def rl_train_agent(
@@ -170,6 +191,8 @@ def rl_train_agent(
     n_steps: int = 256,
     ppo_epochs: int = 4,
     mini_batch_size: int = 64,
+    # Parallel environments
+    n_envs: int = 10,
 ) -> str:
     """
     Train an RL agent on a registered environment (manual / advanced mode).
@@ -255,6 +278,12 @@ def rl_train_agent(
         (ppo) Gradient-update passes per PPO iteration.
     mini_batch_size:
         (ppo) Mini-batch size within each PPO epoch.
+    n_envs:
+        Number of independent parallel environments to train on simultaneously.
+        Each worker gets its own environment instance and a unique seed offset.
+        After all workers finish, the agent with the highest best-episode reward
+        is selected.  Combined episode statistics from all workers are reported.
+        Set to 1 to disable parallel training (original single-env behaviour).
 
     Returns
     -------
@@ -373,6 +402,105 @@ def rl_train_agent(
         env = _LangStateEnv(env, translator=translator, env_id=env_id)
         lang_state_summary = f"\n  Language state:   ON  (translator={type(translator).__name__})"
 
+    # ── Capture parameters for parallel worker env / agent creation ──────────
+    # Computed once here (after shaping and lang-state wrappers are validated)
+    # so that each parallel worker can build its own identically-configured env.
+    _par_shaping_mode: str = ""          # "sequential" | "single" | ""
+    _par_stage_languages: list[list[str]] = []
+    _par_sub_goal_language: str = ""
+    _par_extra_sg_languages: list[str] = []
+    _par_translate: Any = True
+    _par_encoder_name: str = "tfidf"
+    _par_translator: Any = None
+
+    if match_id and match_id in _instruction_protocols:
+        _par_entry = _instruction_protocols[match_id]
+        _par_protocol = _par_entry["protocol"]
+        _par_is_sequential = bool(_par_entry.get("is_sequential"))
+        _par_encode_name_val = _par_entry.get("encoder_name", "tfidf")
+        _par_encoder_name = _par_encode_name_val
+        _par_translate = getattr(_par_protocol, "translate", True)
+        if _par_is_sequential:
+            _par_shaping_mode = "sequential"
+            for _par_m in getattr(_par_protocol, "matches", []):
+                _par_langs = [lg for lg, _obs, _sc in getattr(_par_m, "matched_states", [])]
+                if not _par_langs and getattr(_par_m, "matched_language", None):
+                    _par_langs = [_par_m.matched_language]
+                if _par_langs:
+                    _par_stage_languages.append(_par_langs)
+        else:
+            _par_shaping_mode = "single"
+            _par_sub_goal_language = _par_protocol.sub_goal_language
+            _par_extra_sg_languages = [
+                lg for lg in _par_protocol._all_sub_goal_languages
+                if lg != _par_protocol.sub_goal_language
+            ]
+
+    if use_language_state:
+        from ..language_translation import get_translator as _gtr_par  # noqa: PLC0415
+        _par_translator = _custom_translators.get(env_id) or _gtr_par(env_id)
+
+    def _build_worker_env() -> Any:
+        """Create a fresh env with all configured wrappers for a parallel worker."""
+        from ..environments.registry import registry as _ereg  # noqa: PLC0415
+        from ..instruction_matching import get_encoder as _genc  # noqa: PLC0415
+        _we = _ereg.get(env_id).create()
+        if _par_shaping_mode == "sequential" and _par_stage_languages:
+            _enc_name = _par_encoder_name
+            def _enc_factory_seq(_n=_enc_name): return _genc(_n)
+            _wse = _SequentialShapedEnv(
+                _we,
+                stage_languages=_par_stage_languages,
+                bonus=resolved_bonus,   # already scaled; never None at call time
+                threshold=sub_goal_threshold,
+                translator=_par_translate,
+                env_id=env_id,
+                encoder_factory=_enc_factory_seq,
+            )
+            _wse._ensure_encoders()
+            _we = _wse
+        elif _par_shaping_mode == "single" and _par_sub_goal_language:
+            _enc_name = _par_encoder_name
+            def _enc_factory_sgl(_n=_enc_name): return _genc(_n)
+            _wse = _ShapedEnv(
+                _we,
+                sub_goal_language=_par_sub_goal_language,
+                sub_goal_languages=_par_extra_sg_languages,
+                bonus=resolved_bonus,   # already scaled; never None at call time
+                threshold=sub_goal_threshold,
+                translator=_par_translate,
+                env_id=env_id,
+                encoder_factory=_enc_factory_sgl,
+            )
+            _wse._ensure_encoder()
+            _we = _wse
+        if use_language_state and _par_translator is not None:
+            _we = _LangStateEnv(_we, translator=_par_translator, env_id=env_id)
+        return _we
+
+    def _build_worker_agent(worker_idx: int) -> Any:
+        """Create a fresh agent instance for a parallel training worker."""
+        from ..rl_agents import TabularQAgent as _TQ, DQNAgent as _DQ, PPOAgent as _PP  # noqa: PLC0415
+        _ws = None if seed is None else seed + worker_idx
+        if agent_type == "tabular_q":
+            return _TQ(
+                n_actions=2, alpha=alpha, gamma=gamma, epsilon=epsilon,
+                epsilon_min=epsilon_min, epsilon_decay=epsilon_decay, seed=_ws,
+            )
+        elif agent_type == "dqn":
+            return _DQ(
+                hidden_size=hidden_size, lr=lr, gamma=gamma, epsilon=epsilon,
+                epsilon_min=epsilon_min, epsilon_decay=epsilon_decay,
+                buffer_size=buffer_size, batch_size=batch_size,
+                target_update_freq=target_update_freq, seed=_ws,
+            )
+        else:
+            return _PP(
+                hidden_size=hidden_size, lr_actor=lr, lr_critic=lr_critic,
+                gamma=gamma, lam=lam, clip_eps=clip_eps, n_steps=n_steps,
+                ppo_epochs=ppo_epochs, mini_batch_size=mini_batch_size, seed=_ws,
+            )
+
     # Build the requested agent
     if agent_type == "tabular_q":
         agent = TabularQAgent(
@@ -445,35 +573,148 @@ def rl_train_agent(
     )
 
     job_id = uuid.uuid4().hex[:12]
+    _par_proxy: Any = None
+    if n_envs > 1:
+        _par_proxy = _ParallelProgressProxy(n_envs * n_episodes)
+        # Replace the progress_env slot with the proxy so rl_get_training_result
+        # can report aggregate progress across all workers.
+        _progress_env_for_job: Any = _par_proxy
+    else:
+        _progress_env_for_job = progress_env
+
     _training_jobs[job_id] = {
         "status": "running",
         "agent_id": agent_id,
         "env_id": env_id,
-        "n_episodes": n_episodes,
-        "progress_env": progress_env,
+        "n_episodes": n_episodes * n_envs if n_envs > 1 else n_episodes,
+        "progress_env": _progress_env_for_job,
     }
 
     def _job() -> None:
-        try:
-            result = agent.train(
-                progress_env,
-                n_episodes=n_episodes,
-                max_steps=max_steps,
-                seed=seed,
+        nonlocal agent
+        _parallel_summary = ""
+
+        if n_envs > 1:
+            # ── Parallel training across n_envs independent workers ───────────
+            import tqdm as _tqdm  # noqa: PLC0415
+            _par_lock = threading.Lock()
+            _worker_results: list[Any] = [None] * n_envs
+            _par_bar = _tqdm.tqdm(
+                total=n_envs * n_episodes,
+                desc=f"Training {n_envs}x {agent_type} on {env_id}",
+                unit="ep",
+                file=sys.stderr,
+                dynamic_ncols=True,
+                leave=True,
             )
-        except Exception as exc:
-            _training_jobs[job_id]["status"] = "failed"
-            _training_jobs[job_id]["result"] = f"Training failed: {exc}"
+
+            def _sub_worker(widx: int) -> None:
+                _ws = None if seed is None else seed + widx
+                _we = _build_worker_env()
+                _wa = _build_worker_agent(widx)
+                _ep_r: list[float] = [0.0]
+                _resets: list[int] = [0]
+
+                class _CntEnv:
+                    def reset(self_, seed_: Any = None, options: Any = None) -> Any:
+                        if _resets[0] > 0:
+                            with _par_lock:
+                                _par_proxy._increment()
+                                _par_bar.update(1)
+                            _ep_r[0] = 0.0
+                        _resets[0] += 1
+                        return _we.reset(seed=seed_, options=options)
+
+                    def step(self_, action: Any) -> Any:
+                        out = _we.step(action)
+                        try:
+                            r = out.reward if hasattr(out, "reward") else out.get("reward", 0.0)
+                            _ep_r[0] += float(r)
+                        except Exception:
+                            pass
+                        return out
+
+                    def close(self_) -> None:
+                        if _resets[0] > 0:
+                            with _par_lock:
+                                _par_proxy._increment()
+                                _par_bar.update(1)
+                        _we.close()
+
+                    @property
+                    def action_space(self_) -> Any:
+                        return _we.action_space
+
+                    @property
+                    def env_id(self_) -> str:
+                        return getattr(_we, "env_id", env_id)
+
+                    def __getattr__(self_, name: str) -> Any:
+                        return getattr(_we, name)
+
+                try:
+                    wr = _wa.train(
+                        _CntEnv(),
+                        n_episodes=n_episodes,
+                        max_steps=max_steps,
+                        seed=_ws,
+                    )
+                    _worker_results[widx] = (_wa, wr)
+                except Exception as exc:  # pragma: no cover
+                    log.warning("Parallel training worker %d failed: %s", widx, exc)
+
+            _sub_threads = [
+                threading.Thread(target=_sub_worker, args=(i,), daemon=True)
+                for i in range(n_envs)
+            ]
+            for _t in _sub_threads:
+                _t.start()
+            for _t in _sub_threads:
+                _t.join()
+            _par_bar.close()
+
+            _valid = [(wa, wr) for wa, wr in _worker_results if wr is not None]
+            if not _valid:
+                _training_jobs[job_id]["status"] = "failed"
+                _training_jobs[job_id]["result"] = "All parallel training workers failed."
+                return
+
+            # Pick best agent by highest single-episode reward seen during training
+            _best_wa, result = max(_valid, key=lambda x: x[1].best_reward)
+            agent = _best_wa
+
+            # Aggregate episode rewards across all workers for combined statistics
+            _all_ep_rewards = [r for _, wr in _valid for r in wr.episode_rewards]
+            _comb_mean = sum(_all_ep_rewards) / len(_all_ep_rewards) if _all_ep_rewards else 0.0
+            _parallel_summary = (
+                f"\n\n  Parallel workers:  {len(_valid)}/{n_envs} succeeded"
+                f"\n  Combined episodes: {len(_all_ep_rewards)}"
+                f"  (combined mean={_comb_mean:.4f})"
+                f"\n  Best worker:       best_reward={result.best_reward:.4f}"
+            )
+
+        else:
+            # ── Single-env training (original path) ───────────────────────────
+            try:
+                result = agent.train(
+                    progress_env,
+                    n_episodes=n_episodes,
+                    max_steps=max_steps,
+                    seed=seed,
+                )
+            except Exception as exc:
+                _training_jobs[job_id]["status"] = "failed"
+                _training_jobs[job_id]["result"] = f"Training failed: {exc}"
+                try:
+                    progress_env.close()
+                except Exception:
+                    pass
+                return
+
             try:
                 progress_env.close()
             except Exception:
                 pass
-            return
-
-        try:
-            progress_env.close()
-        except Exception:
-            pass
 
         instructions_used = _collect_training_instructions(match_id)
 
@@ -655,7 +896,8 @@ def rl_train_agent(
             )
 
         summary = (
-            f"Training complete — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}\n\n"
+            f"Training complete — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}"
+            f"{_parallel_summary}\n\n"
             f"  {result}\n\n"
             f"  Mean reward (last 10 %): {result.last_n_mean:.4f}\n"
             f"{eval_summary}"
@@ -672,11 +914,13 @@ def rl_train_agent(
 
     threading.Thread(target=_job, daemon=True).start()
 
+    _envs_line = f"  Envs:      {n_envs} parallel\n" if n_envs > 1 else ""
     return (
         f"Training started — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}\n\n"
         f"  Agent ID:  {agent_id}\n"
         f"  Job ID:    {job_id}\n"
-        f"  Episodes:  {n_episodes}  max_steps={max_steps}\n\n"
+        f"  Episodes:  {n_episodes}  max_steps={max_steps}\n"
+        f"{_envs_line}\n"
         f"Training runs in the background with no time limits.\n"
         f"Call rl_get_training_result(job_id='{job_id}') to check progress and get the result."
     )
