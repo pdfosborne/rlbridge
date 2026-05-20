@@ -230,7 +230,7 @@ async def rl_experiment_process(
         "status": "running",
         "agent_id": None,
         "env_id": env_id,
-        "n_episodes": n_episodes * 2,
+        "n_episodes": n_episodes,
         "progress_env": None,
         "phase": "baseline",
     }
@@ -254,7 +254,11 @@ async def rl_experiment_process(
         # one episode to measure wall time and token usage. These are
         # extrapolated to estimate the cost of using an LLM for the full
         # training budget, providing a practical reference vs. the RL methods.
-        _training_jobs[job_id]["phase"] = "llm baseline"
+        #
+        # We perform EXACTLY ONE sampling call (one action decision) to measure
+        # per-step latency and token usage, then extrapolate to the full budget.
+        # This avoids blocking the pipeline for a full episode's worth of calls.
+        _training_jobs[job_id]["phase"] = "llm baseline (1 sample)"
         llm_baseline_info: dict[str, Any] = {}
         try:
             import mcp.types as _mcp_t  # noqa: PLC0415
@@ -297,7 +301,6 @@ async def rl_experiment_process(
                             return _a
                     except Exception:
                         pass
-                # fallback: first integer found
                 _digits = _re.search(r'\d+', text)
                 if _digits:
                     _a = int(_digits.group())
@@ -310,45 +313,36 @@ async def rl_experiment_process(
 
             _llm_est_prompt_chars = 0
             _llm_est_completion_chars = 0
-            _llm_total_reward = 0.0
-            _llm_steps_taken = 0
             _llm_model = "(connected LLM)"
 
-            async def _run_llm_episode() -> None:
-                nonlocal _llm_est_prompt_chars, _llm_est_completion_chars
-                nonlocal _llm_total_reward, _llm_steps_taken, _llm_model
+            # Single-action probe: reset env, build one prompt, call create_message once.
+            async def _run_llm_probe() -> None:
+                nonlocal _llm_est_prompt_chars, _llm_est_completion_chars, _llm_model
                 _reset_out = _llm_env.reset(seed=seed)
                 _obs = _ag_get(_reset_out, "observation", _reset_out)
                 _action_space = getattr(_llm_env, "action_space", None)
-                for _ in range(max_steps):
-                    _prompt_text = _sys_prompt + "\n" + _build_step_prompt(_obs, _action_space)
-                    _llm_est_prompt_chars += len(_prompt_text)
-                    _result = await ctx.session.create_message(
-                        messages=[_mcp_t.SamplingMessage(
-                            role="user",
-                            content=_mcp_t.TextContent(type="text", text=_prompt_text),
-                        )],
-                        max_tokens=64,
-                    )
-                    _llm_model = getattr(_result, "model", _llm_model)
-                    _raw = (
-                        _result.content.text
-                        if hasattr(_result.content, "text")
-                        else str(_result.content)
-                    )
-                    _llm_est_completion_chars += len(_raw)
-                    _action = _parse_action_from_text(_raw, _action_space)
-                    _step_out = _llm_env.step(_action)
-                    _obs = _ag_get(_step_out, "observation", _obs)
-                    _r = float(_ag_get(_step_out, "reward", 0.0))
-                    _llm_total_reward += _r
-                    _llm_steps_taken += 1
-                    if _ag_get(_step_out, "terminated", False) or _ag_get(_step_out, "truncated", False):
-                        break
+                _prompt_text = _sys_prompt + "\n" + _build_step_prompt(_obs, _action_space)
+                _llm_est_prompt_chars = len(_prompt_text)
+                _result = await ctx.session.create_message(
+                    messages=[_mcp_t.SamplingMessage(
+                        role="user",
+                        content=_mcp_t.TextContent(type="text", text=_prompt_text),
+                    )],
+                    max_tokens=64,
+                )
+                _llm_model = getattr(_result, "model", _llm_model)
+                _raw = (
+                    _result.content.text
+                    if hasattr(_result.content, "text")
+                    else str(_result.content)
+                )
+                _llm_est_completion_chars = len(_raw)
 
             _t0_llm = time.time()
-            future = asyncio.run_coroutine_threadsafe(_run_llm_episode(), _loop)
-            future.result(timeout=600)
+            _llm_future = asyncio.run_coroutine_threadsafe(_run_llm_probe(), _loop)
+            # Short timeout: one sampling call should return within 60 s.
+            # If the client doesn't support sampling or it times out, skip gracefully.
+            _llm_future.result(timeout=60)
             _llm_elapsed = time.time() - _t0_llm
 
             try:
@@ -356,27 +350,28 @@ async def rl_experiment_process(
             except Exception:
                 pass
 
-            # MCP sampling does not expose token counts; estimate via chars / 4.
+            # Estimate tokens from character counts (chars / 4 is a standard proxy).
             _llm_est_prompt_tokens = _llm_est_prompt_chars // 4
             _llm_est_completion_tokens = _llm_est_completion_chars // 4
-            _llm_total_tokens = _llm_est_prompt_tokens + _llm_est_completion_tokens
+            _llm_tokens_per_step = _llm_est_prompt_tokens + _llm_est_completion_tokens
+            # Extrapolate: n_episodes × avg_steps_per_episode (use max_steps as upper bound)
+            _llm_steps_per_ep = max_steps
+            _llm_etok_phase = _llm_tokens_per_step * _llm_steps_per_ep * n_episodes
+            _llm_et_phase = _llm_elapsed * _llm_steps_per_ep * n_episodes
 
             llm_baseline_info = {
-                "reward": _llm_total_reward,
-                "steps": _llm_steps_taken,
-                "elapsed_secs": _llm_elapsed,
-                "est_prompt_tokens": _llm_est_prompt_tokens,
-                "est_completion_tokens": _llm_est_completion_tokens,
-                "est_total_tokens": _llm_total_tokens,
-                "est_tokens_per_phase": _llm_total_tokens * n_episodes,
-                "est_time_per_phase_secs": _llm_elapsed * n_episodes,
+                "elapsed_per_step_secs": _llm_elapsed,
+                "est_prompt_tokens_per_step": _llm_est_prompt_tokens,
+                "est_completion_tokens_per_step": _llm_est_completion_tokens,
+                "est_tokens_per_step": _llm_tokens_per_step,
+                "est_tokens_per_phase": _llm_etok_phase,
+                "est_time_per_phase_secs": _llm_et_phase,
                 "model": _llm_model,
+                "extrapolation_basis": f"{n_episodes} eps × {_llm_steps_per_ep} steps/ep",
             }
             log.info(
-                "rl_experiment_process: LLM baseline — reward=%.2f steps=%d "
-                "est_tokens=%d elapsed=%.1fs model=%s",
-                _llm_total_reward, _llm_steps_taken, _llm_total_tokens,
-                _llm_elapsed, _llm_model,
+                "rl_experiment_process: LLM probe — %.2fs/step  ~%d tokens/step  model=%s",
+                _llm_elapsed, _llm_tokens_per_step, _llm_model,
             )
         except Exception as _llm_exc:
             llm_baseline_info = {"error": str(_llm_exc)}
@@ -534,7 +529,16 @@ async def rl_experiment_process(
         lang_job_id = next(iter(set(_training_jobs.keys()) - jobs_before_lang), None)
 
         if lang_job_id:
+            # Forward sub-job's progress_env into the parent job so the counter
+            # advances during language-state training instead of staying frozen.
+            _lang_sub_penv = _training_jobs.get(lang_job_id, {}).get("progress_env")
+            if _lang_sub_penv is not None:
+                _training_jobs[job_id]["progress_env"] = _lang_sub_penv
             while _training_jobs.get(lang_job_id, {}).get("status") == "running":
+                # Keep the forwarded reference current (set after job is registered)
+                _lang_sub_penv = _training_jobs.get(lang_job_id, {}).get("progress_env")
+                if _lang_sub_penv is not None:
+                    _training_jobs[job_id]["progress_env"] = _lang_sub_penv
                 time.sleep(1)
         lang_agent_id = (
             _training_jobs.get(lang_job_id, {}).get("agent_id")
@@ -632,8 +636,12 @@ async def rl_experiment_process(
             )
             return
 
-        # Wait for phase 2 to finish
+        # Wait for phase 2 to finish — forward its progress_env so the
+        # parent counter advances past the phase 1/1b frozen position.
         while _training_jobs.get(phase2_job_id, {}).get("status") == "running":
+            _p2_penv = _training_jobs.get(phase2_job_id, {}).get("progress_env")
+            if _p2_penv is not None:
+                _training_jobs[job_id]["progress_env"] = _p2_penv
             time.sleep(1)
 
         if _training_jobs.get(phase2_job_id, {}).get("status") == "failed":
@@ -690,6 +698,9 @@ async def rl_experiment_process(
 
         if lang_instr_job_id:
             while _training_jobs.get(lang_instr_job_id, {}).get("status") == "running":
+                _p3_penv = _training_jobs.get(lang_instr_job_id, {}).get("progress_env")
+                if _p3_penv is not None:
+                    _training_jobs[job_id]["progress_env"] = _p3_penv
                 time.sleep(1)
 
         lang_instr_agent_id = (
@@ -749,27 +760,25 @@ async def rl_experiment_process(
             _llm_et = llm_baseline_info["est_time_per_phase_secs"]
             _llm_eh = _llm_et / 3600.0
             _llm_etok = llm_baseline_info["est_tokens_per_phase"]
-            _etok_1ep = llm_baseline_info["est_total_tokens"]
+            _tok_step = llm_baseline_info["est_tokens_per_step"]
+            _basis = llm_baseline_info["extrapolation_basis"]
             llm_section = (
-                f"\nPhase 0 \u2014 LLM direct-acting baseline "
-                f"(1 episode, model={llm_baseline_info['model']!r}):\n"
-                f"  Reward:           {llm_baseline_info['reward']:.4f}\n"
-                f"  Steps:            {llm_baseline_info['steps']}\n"
-                f"  Wall time (1 ep): {llm_baseline_info['elapsed_secs']:.1f}s\n"
-                f"  Est. tokens (1 ep): {_etok_1ep:,} "
-                f"(prompt\u2248{llm_baseline_info['est_prompt_tokens']:,}, "
-                f"completion\u2248{llm_baseline_info['est_completion_tokens']:,}) "
+                f"\nPhase 0 \u2014 LLM cost probe "
+                f"(1 action sample, model={llm_baseline_info['model']!r}):\n"
+                f"  Wall time / step: {llm_baseline_info['elapsed_per_step_secs']:.2f}s\n"
+                f"  Est. tokens / step: {_tok_step:,} "
+                f"(prompt\u2248{llm_baseline_info['est_prompt_tokens_per_step']:,}, "
+                f"completion\u2248{llm_baseline_info['est_completion_tokens_per_step']:,}) "
                 f"[estimated via char\u00f74]\n"
-                f"  Extrapolated to {n_episodes} episodes (one training phase):\n"
-                f"    Est. tokens/phase: {_llm_etok:,} "
-                f"({n_episodes}\u00d7{_etok_1ep:,})\n"
+                f"  Extrapolated to one training phase ({_basis}):\n"
+                f"    Est. tokens/phase: {_llm_etok:,}\n"
                 f"    Est. time/phase:   {_llm_eh:.2f}h ({_llm_et:.0f}s)\n"
                 f"  Note: RL training phases make no LLM calls; "
                 f"this estimates the equivalent LLM-as-policy cost.\n"
             )
         elif "error" in llm_baseline_info:
             llm_section = (
-                f"\nPhase 0 \u2014 LLM baseline: skipped "
+                f"\nPhase 0 \u2014 LLM cost probe: skipped "
                 f"({llm_baseline_info['error']})\n"
             )
         else:
@@ -883,7 +892,7 @@ async def rl_experiment_process(
         + auto_translator_note
         + f"Dashboard: {dash_url}  (open in browser for live reward curves)\n\n"
         f"Pipeline stages:\n"
-        f"  0. LLM direct-acting baseline (1 episode — time/token cost reference)\n"
+        f"  0. LLM cost probe (1 action sample — per-step time/token estimate)\n"
         f"  1. Baseline training with language state tracking\n"
         f"  2. Language-state training (comparison agent)\n"
         f"  3. {'Matching provided instruction' if instruction else 'Deriving instructions from baseline'}\n"
