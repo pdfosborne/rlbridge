@@ -2,14 +2,13 @@
 Instruction-following MCP tools for the RLIP plugin.
 
 Tools:
-- rl_clear_obs_cache
 - rl_match_instruction
 - rl_instruction_run_episode
 - rl_match_sequential_instructions
 - rl_sequential_instruction_run_episode
 
-Uses the shared ``_instruction_protocols`` cache from ``_state`` so that
-rl_train_agent (in _tools_agents) can access previously-matched sub-goals.
+Instruction plan/cache tools (rl_get_instruction_plan, rl_list_cached_instructions,
+rl_clear_instruction_cache) live in _tools_instruction_plan.py.
 """
 
 from __future__ import annotations
@@ -208,45 +207,7 @@ class _ExplorationProgressEnv:
         return getattr(self._env, name)
 
 
-@mcp.tool()
-def rl_clear_obs_cache(env_id: str = "") -> str:
-    """
-    Clear the in-memory observation corpus cache used by rl_match_instruction.
-
-    Call this when you have updated a language translator and want
-    rl_match_instruction to rebuild the corpus with fresh translations,
-    or when you want to force re-exploration of the state space.
-
-    Parameters
-    ----------
-    env_id:
-        Clear only the cache for this environment ID.
-        When empty (default) the entire cache is cleared for all environments.
-
-    Returns
-    -------
-    Confirmation of what was cleared.
-    """
-    from ..instruction_following import clear_obs_cache, obs_cache_info
-    from ..language_translation.caching import clear_translation_cache, translation_cache_info
-
-    before_obs = obs_cache_info()
-    before_trans = translation_cache_info()
-
-    target = env_id.strip() or None
-    clear_obs_cache(target)
-    clear_translation_cache(target)
-
-    scope = f"'{target}'" if target else "all environments"
-    obs_cleared = sum(before_obs[k] for k in (([target] if target else list(before_obs.keys()))) if k in before_obs)
-    trans_cleared = sum(before_trans[k] for k in (([target] if target else list(before_trans.keys()))) if k in before_trans)
-
-    return (
-        f"Cache cleared for {scope}.\n"
-        f"  Observation corpus entries removed: {obs_cleared}\n"
-        f"  Translation cache entries removed:  {trans_cleared}\n\n"
-        "Next call to rl_match_instruction will run fresh exploration."
-    )
+# rl_clear_obs_cache lives in _tools_cache.py.
 
 
 @mcp.tool()
@@ -840,62 +801,5 @@ def rl_sequential_instruction_run_episode(
         f"\n\nTrajectory excerpt:\n" + "\n".join(excerpt_lines)
     )
 
-
-@mcp.tool()
-def rl_get_instruction_plan(env_id: str) -> str:
-    """
-    Show the instruction planning database for an environment.
-
-    Returns a summary of all instructions that have been tried in this
-    environment, including:
-    - Source: whether each instruction was provided by the user/LLM ('llm'),
-      or automatically derived from a training run ('derived').
-    - Times used: how many training runs used this instruction.
-    - BestEval: the best clean evaluation reward seen after any training run
-      that used this instruction (measured WITHOUT any instruction-shaping
-      bonus, so it is an unbiased performance measure).
-    - DrvScore: for derived instructions, the CSR × log₂(1+visits) score
-      from rl_train_and_derive_instructions().
-    - Similarity: cosine similarity between the instruction text and its
-      best-matching observed environment state.
-
-    Use this tool to:
-    - Plan which instructions to try next based on past evaluation rewards.
-    - Understand which instructions have already been attempted.
-    - Compare the effectiveness of user-specified vs. derived instructions.
-    - Advise the user on whether RL training is making progress.
-
-    Parameters
-    ----------
-    env_id:
-        A registered RLIP environment ID, e.g. "Sailing-v0".
-
-    Returns
-    -------
-    A formatted table of all known instructions and their outcomes.
-    """
-    from ..instruction_plan_db import get_plan_database, _PLAN_DATABASES
-    from ._state import _env_plan_db_path
-
-    plan_path = str(_env_plan_db_path(env_id))
-
-    # Force a fresh load if there is no in-memory instance yet (MCP server
-    # restart between sessions, or first call after a fresh training run).
-    if env_id not in _PLAN_DATABASES:
-        db = get_plan_database(env_id, plan_path=plan_path)
-    else:
-        db = _PLAN_DATABASES[env_id]
-        # Re-load from disk in case another tool (e.g. rl_train_agent) wrote
-        # new eval_reward data outside this process.
-        db._load()
-
-    if not db._entries:
-        return (
-            f"No instruction plan data found for '{env_id}'.\n\n"
-            "Run rl_match_instruction() or rl_train_and_derive_instructions() "
-            "first to build the database."
-        )
-
-    return db.summary_text()
-
-
+# rl_get_instruction_plan, rl_list_cached_instructions, and
+# rl_clear_instruction_cache live in _tools_instruction_plan.py.

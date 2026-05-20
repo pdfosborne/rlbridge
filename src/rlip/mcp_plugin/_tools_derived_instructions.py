@@ -5,13 +5,12 @@ Tools:
   rl_train_and_derive_instructions  – train an RL agent while tracking
       language state visits, then automatically generate the top instruction
       candidates most correlated with success and cache them.
-  rl_list_cached_instructions       – inspect the instruction cache for an
-      environment (with per-instruction success-rate statistics).
-  rl_clear_instruction_cache        – discard cached instructions (and the
-      state→instruction map) for one or all environments.
   rl_apply_derived_instruction      – take a derived instruction from the
       cache and set it up as a sub-goal for rl_instruction_run_episode /
       rl_train_agent (returns a match_id).
+
+Instruction cache inspection tools (rl_list_cached_instructions,
+rl_clear_instruction_cache) live in _tools_instruction_plan.py.
 """
 
 from __future__ import annotations
@@ -451,88 +450,8 @@ def rl_train_and_derive_instructions(
         f"The agent_id and derived instructions will be available when training completes."
     )
 
-
-
-
-@mcp.tool()
-def rl_list_cached_instructions(env_id: str = "") -> str:
-    """
-    List all cached instruction entries for one environment (or all
-    environments), showing each instruction's matched state, similarity
-    score, and accumulated episode success statistics.
-
-    Instructions are populated by:
-      • rl_match_instruction() — one entry per explicit user instruction
-      • rl_train_and_derive_instructions() — auto-derived entries
-
-    Parameters
-    ----------
-    env_id:
-        Restrict output to this environment.  When empty, all environments
-        are shown.
-
-    Returns
-    -------
-    A text table of cached instructions with success-rate statistics.
-    """
-    from ..instruction_following import list_instruction_cache
-
-    cache = list_instruction_cache(env_id.strip() or None)
-    if not cache:
-        scope = f"'{env_id}'" if env_id.strip() else "any environment"
-        return f"No cached instructions found for {scope}."
-
-    lines: list[str] = []
-    for eid, entries in sorted(cache.items()):
-        lines.append(f"Environment: {eid}  ({len(entries)} instruction(s))\n")
-        for instr, entry in entries.items():
-            sr = f"{entry.success_rate:.1%}" if entry.episodes_run > 0 else "n/a"
-            lines.append(
-                f"  instruction:   {instr!r}\n"
-                f"  matched state: {entry.match.matched_language!r}\n"
-                f"  similarity:    {entry.match.similarity_score:.4f}\n"
-                f"  episodes_run:  {entry.episodes_run}  "
-                f"successes={entry.successes}  success_rate={sr}\n"
-            )
-        lines.append("")
-
-    lines.append(
-        "Use rl_apply_derived_instruction(env_id, instruction) to turn any of "
-        "these into a match_id for rl_instruction_run_episode() or rl_train_agent()."
-    )
-    return "\n".join(lines)
-
-
-@mcp.tool()
-def rl_clear_instruction_cache(env_id: str = "") -> str:
-    """
-    Clear the instruction cache (and the state→instruction map) for one
-    environment or all environments.
-
-    Parameters
-    ----------
-    env_id:
-        Clear only this environment.  When empty the entire cache is cleared.
-
-    Returns
-    -------
-    Confirmation string.
-    """
-    from ..instruction_following import (
-        clear_instruction_cache,
-        list_instruction_cache,
-    )
-
-    target = env_id.strip() or None
-    before = list_instruction_cache(target)
-    total = sum(len(v) for v in before.values())
-    clear_instruction_cache(target)
-
-    scope = f"'{target}'" if target else "all environments"
-    return (
-        f"Instruction cache cleared for {scope}.\n"
-        f"Removed {total} cached instruction(s)."
-    )
+# rl_list_cached_instructions and rl_clear_instruction_cache live in
+# _tools_instruction_plan.py.
 
 
 @mcp.tool()

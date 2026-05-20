@@ -28,10 +28,12 @@ from ._state import (
     log,
     mcp,
 )
+from ._tools_agents_io import (
+    _package_trained_agent,
+)
 from ._tools_agents_utils import (
     _build_agent,
     _collect_training_instructions,
-    _package_trained_agent,
     _render_policy_for_dashboard,
 )
 from ._tools_agents_eval import _run_clean_evaluation

@@ -1,8 +1,7 @@
 """
 Environment builder MCP tools for the RLIP plugin.
 
-Tools: rl_build_environment, rl_load_cached_environments,
-       rl_list_cached_environments, rl_sample_states_for_translation,
+Tools: rl_build_environment, rl_sample_states_for_translation,
        rl_set_translator_code, rl_translate_state.
 """
 
@@ -23,6 +22,9 @@ from ._state import (
     _sampled_states,
     mcp,
 )
+
+# Cache-related tools (rl_load_cached_environments, rl_list_cached_environments)
+# live in _tools_cache.py.
 
 
 @mcp.tool()
@@ -121,90 +123,6 @@ def rl_build_environment(
         f"rl_sample_states_for_translation(env_id='{env_id}') to start "
         f"building a language translator."
     )
-
-
-@mcp.tool()
-def rl_load_cached_environments() -> str:
-    """
-    Load all custom environments previously built with rl_build_environment()
-    from ``~/.rlip/environments/`` and register them into this session.
-
-    Call this once at the start of a session to restore environments that were
-    created in a previous session.  Already-registered environments are
-    re-registered without error (the latest cached version takes precedence).
-
-    Returns
-    -------
-    A list of loaded environment IDs and their translator status.
-    """
-    from ..environments.builder import load_cached_environments  # noqa: PLC0415
-
-    try:
-        loaded = load_cached_environments(cache_dir=_custom_env_cache_root())
-    except Exception as exc:
-        return f"Failed to load cached environments: {exc}"
-
-    if not loaded:
-        return (
-            f"No cached environments found in {_custom_env_cache_root()}.\n"
-            "Use rl_build_environment() to create and cache a new environment."
-        )
-
-    # Also refresh in-process translator cache
-    for built in loaded:
-        if built.translator is not None:
-            _custom_translators[built.spec.env_id] = built.translator
-
-    lines = [f"Loaded {len(loaded)} cached environment(s):\n"]
-    for built in loaded:
-        has_t = "yes" if built.translator else "no"
-        lines.append(
-            f"  • {built.spec.env_id:40s}  translator={has_t}  "
-            f"namespace={built.spec.namespace}"
-        )
-    return "\n".join(lines)
-
-
-@mcp.tool()
-def rl_list_cached_environments() -> str:
-    """
-    List all custom environments stored in the RLIP cache (``~/.rlip/environments/``).
-
-    Does not register them — call rl_load_cached_environments() to register.
-
-    Returns summary metadata for each cached environment.
-    """
-    root = _custom_env_cache_root()
-    if not root.exists():
-        return (
-            f"No cached environments found ({root} does not exist).\n"
-            "Use rl_build_environment() to create your first custom environment."
-        )
-
-    entries: list[dict] = []
-    for env_dir in sorted(root.iterdir()):
-        spec_path = env_dir / "spec.json"
-        if not spec_path.exists():
-            continue
-        try:
-            entries.append(json.loads(spec_path.read_text()))
-        except Exception:
-            continue
-
-    if not entries:
-        return "No cached environments found."
-
-    lines = [f"Cached environments ({len(entries)}):\n"]
-    for spec in entries:
-        has_t = "yes" if spec.get("language_translation") else "no"
-        lines.append(
-            f"  • {spec['env_id']}\n"
-            f"    {spec.get('description', '(no description)')}\n"
-            f"    tags={spec.get('tags', [])}  namespace={spec.get('namespace', '')}  "
-            f"translator={has_t}\n"
-            f"    created: {spec.get('created_at', '?')[:19]}"
-        )
-    return "\n".join(lines)
 
 
 @mcp.tool()
