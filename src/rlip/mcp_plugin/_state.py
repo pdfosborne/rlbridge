@@ -237,3 +237,37 @@ def _load_hp_overrides() -> None:
 
 
 _load_hp_overrides()
+
+
+# ── Saved experiments ─────────────────────────────────────────────────────────
+
+# In-memory cache of saved experiment records keyed by experiment_id.
+# Populated at import time from the persisted registry and updated by
+# rl_save_experiment().
+_saved_experiments: dict[str, Any] = {}
+
+
+def _experiments_registry_path() -> Path:
+    """Path to the global saved-experiments registry JSON file."""
+    return _cache_root() / "experiments_registry.json"
+
+
+def _experiments_local_dir(env_id: str) -> Path:
+    """Local (cwd-relative) output directory for experiment JSON files."""
+    return _local_output_root() / _safe_env_name(env_id) / "experiments"
+
+
+def _load_saved_experiments() -> None:
+    """Populate ``_saved_experiments`` from the persisted registry on disk."""
+    import json as _json  # noqa: PLC0415
+    reg = _experiments_registry_path()
+    if not reg.exists():
+        return
+    try:
+        data = _json.loads(reg.read_text(encoding="utf-8"))
+        _saved_experiments.update(data)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Could not load experiments registry from %s: %s", reg, exc)
+
+
+_load_saved_experiments()

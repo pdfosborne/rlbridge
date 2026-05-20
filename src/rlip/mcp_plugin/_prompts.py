@@ -12,6 +12,10 @@ AGENT_DESCRIPTIONS
     Human-readable descriptions of each trainable agent type, used by
     rl_list_agents() and validated in rl_train_agent / rl_experiment_process.
 
+EXPERIMENT_SAVE_GUIDE
+    Decision checklist shown to the LLM to determine when to call
+    rl_save_experiment() and what fields to populate.
+
 Call-site labels
 ----------------
 SYSTEM: FastMCP(instructions=...)
@@ -192,7 +196,22 @@ def rlip_system_prompt() -> str:
         "recorded in ~/.rlip/environments/<env>/instruction_plan.json.  "
         "rl_get_instruction_plan(env_id) shows all tried instructions, "
         "sub-steps, eval rewards, similarity scores, and usage history.  "
-        "Always read it before any planning decision."
+        "Always read it before any planning decision.\n\n"
+
+        "SAVING AND RECALLING EXPERIMENTS\n"
+        "At the start of every session, call rl_list_experiments() to check "
+        "whether the user's objective has already been solved.  If a matching "
+        "experiment with a strong eval reward is found, use "
+        "rl_load_experiment(experiment_id=...) to recover the full "
+        "configuration, then rl_load_agent(artifact_path=...) to restore the "
+        "agent without re-training.\n"
+        "After validating a new agent (rl_evaluate_agent passes, "
+        "rl_run_agent_episode reaches the goal), always call "
+        "rl_save_experiment() to persist the confirmed configuration.  "
+        "Include the original user objective verbatim, the instruction used, "
+        "the eval metrics, and notes explaining what was tried and why this "
+        "configuration was selected.  Pass prompt_log= to capture the key "
+        "conversation turns for reproducibility."
     )
 
 
@@ -218,6 +237,35 @@ AGENT_DESCRIPTIONS: dict[str, str] = {
         "Robust and sample-efficient; suitable for longer training runs."
     ),
 }
+
+
+# ---------------------------------------------------------------------------
+# Experiment-save guidance (used in the system prompt and tool docstring)
+# ---------------------------------------------------------------------------
+
+EXPERIMENT_SAVE_GUIDE: str = (
+    "SAVING A CONFIRMED EXPERIMENT\n"
+    "After verifying the agent passes evaluation, call rl_save_experiment() to\n"
+    "persist the confirmed configuration.  Use this checklist:\n\n"
+    "  REQUIRED\n"
+    "  • user_objective – the user's original goal, verbatim.\n"
+    "  • env_id         – the environment the agent was trained on.\n"
+    "  • agent_id       – the best agent's ID from the training result.\n"
+    "  • agent_type     – 'tabular_q', 'dqn', or 'ppo'.\n\n"
+    "  RECOMMENDED (add whenever available)\n"
+    "  • instruction        – the instruction that shaped training.\n"
+    "  • use_language_state – True if the agent saw translated obs strings.\n"
+    "  • eval_mean / eval_std – from rl_evaluate_agent().\n"
+    "  • notes              – why this configuration was chosen; what was tried\n"
+    "    first; any observations about instruction quality or training stability.\n"
+    "  • prompt_log         – key conversation turns that led to this config\n"
+    "    (a list of {\"role\": ..., \"content\": ...} dicts).\n\n"
+    "  OPTIONAL\n"
+    "  • name       – short human-readable label (auto-generated if omitted).\n"
+    "  • save_local – True to also write a copy to <cwd>/rlip_results/…\n\n"
+    "After saving, confirm to the user with the experiment_id so they can\n"
+    "recall it in future sessions with rl_load_experiment().\n"
+)
 
 
 # ---------------------------------------------------------------------------

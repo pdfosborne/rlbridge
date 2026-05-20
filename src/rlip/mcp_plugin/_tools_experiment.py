@@ -29,6 +29,7 @@ from ._state import (
 from ._dashboard import dashboard as _dash, is_running as _dash_running, start_dashboard as _start_dashboard, dashboard_url as _dashboard_url
 from ._tools_agents_utils import _build_agent, _render_policy_for_dashboard
 from ._tools_agents_training import rl_train_agent
+from ._tools_saved_experiments import rl_save_experiment as _rl_save_experiment
 
 
 @mcp.tool()
@@ -52,6 +53,9 @@ async def rl_experiment_process(
     # DQN / PPO shared
     hidden_size: Optional[int] = None,
     lr: Optional[float] = None,
+    # Experiment saving
+    user_objective: str = "",
+    auto_save_experiment: bool = True,
 ) -> str:
     """
     Automated RL experiment pipeline — one call runs the full sequence in the
@@ -117,12 +121,25 @@ async def rl_experiment_process(
         when available, then RLIP global defaults.
     hidden_size / lr:
         dqn and ppo hyper-parameters.  Same defaulting strategy.
+    user_objective:
+        The user's original goal verbatim (e.g. the prompt they sent at the
+        start of the session).  Used as the primary search key when recalling
+        this experiment in future sessions.  Defaults to the instruction when
+        empty.
+    auto_save_experiment:
+        When True (default), the pipeline automatically saves the best-
+        performing agent configuration as a named experiment via
+        ``rl_save_experiment()`` once training is complete.  The experiment
+        is stored in ``~/.rlip/experiments_registry.json`` and can be recalled
+        with ``rl_list_experiments()`` / ``rl_load_experiment()``.  Set to
+        False to skip auto-saving (e.g. when running exploratory sweeps).
 
     Returns
     -------
     A job_id string.  Poll with ``rl_get_training_result(job_id)`` until the
     status is ``"done"``.  The final result includes both agent IDs, the
-    instruction used, and clean evaluation metrics.
+    instruction used, clean evaluation metrics, and the saved experiment_id
+    when ``auto_save_experiment=True``.
     """
     from ..environments.registry import registry as _env_registry  # noqa: PLC0415
     from ..language_translation import get_translator  # noqa: PLC0415
@@ -724,7 +741,7 @@ async def rl_experiment_process(
         if lang_instr_agent_id:
             compare_ids.append(lang_instr_agent_id)
 
-        best_agent_id = lang_instr_agent_id or instr_agent_id
+        # best_agent_id is determined later after comparing eval means
         _final_dash_url = _dashboard_url() or dash_url
 
         # Build LLM baseline section
@@ -758,6 +775,72 @@ async def rl_experiment_process(
         else:
             llm_section = ""
 
+        # ── Pick the overall best agent by clean eval mean ─────────────────
+        _candidates: list[tuple[str, Optional[float], bool]] = [
+            # (agent_id, eval_mean, use_language_state)
+            (baseline_agent_id, _trained_agents.get(baseline_agent_id, {}).get("eval_mean"), False),
+            (instr_agent_id, _eval_mean, False),
+        ]
+        if lang_agent_id:
+            _candidates.append((lang_agent_id, _trained_agents.get(lang_agent_id, {}).get("eval_mean"), True))
+        if lang_instr_agent_id:
+            _candidates.append((lang_instr_agent_id, _li_eval_mean, True))
+
+        _best_candidate = max(
+            _candidates,
+            key=lambda x: x[1] if x[1] is not None else float("-inf"),
+        )
+        best_agent_id = _best_candidate[0]
+        best_eval_mean = _best_candidate[1]
+        best_use_lang = _best_candidate[2]
+        best_entry = _trained_agents.get(best_agent_id, {})
+        best_eval_std = best_entry.get("eval_std")
+
+        # ── Auto-save experiment if requested ─────────────────────────────────
+        saved_experiment_id: str = ""
+        saved_experiment_section = ""
+        if auto_save_experiment:
+            _obj = user_objective.strip() or instruction or " → ".join(instructions_to_use)
+            _instr_str = " → ".join(instructions_to_use) if instructions_to_use else instruction
+            _notes = (
+                f"Auto-saved by rl_experiment_process pipeline.\n"
+                f"Agent type: {agent_type}.  Instruction source: {instruction_source}.\n"
+                f"Best agent selected from {len(_candidates)} trained agents by clean eval mean.\n"
+                f"Candidates: "
+                + ", ".join(
+                    f"{aid} (eval={ev:.4f}, lang={ls})"
+                    if ev is not None else f"{aid} (eval=n/a, lang={ls})"
+                    for aid, ev, ls in _candidates
+                )
+            )
+            try:
+                _save_result = _rl_save_experiment(
+                    user_objective=_obj,
+                    env_id=env_id,
+                    agent_id=best_agent_id,
+                    agent_type=agent_type,
+                    instruction=_instr_str,
+                    use_language_state=best_use_lang,
+                    eval_mean=best_eval_mean,
+                    eval_std=best_eval_std,
+                    notes=_notes,
+                )
+                # Extract the experiment_id from the confirmation string
+                import re as _re_exp  # noqa: PLC0415
+                _m = _re_exp.search(r"Experiment ID:\s+(\S+)", _save_result)
+                if _m:
+                    saved_experiment_id = _m.group(1)
+            except Exception as _save_exc:
+                log.warning("rl_experiment_process: auto-save experiment failed: %s", _save_exc)
+
+        if saved_experiment_id:
+            saved_experiment_section = (
+                f"\nExperiment auto-saved (best agent: {best_agent_id}, "
+                f"use_language_state={best_use_lang}):\n"
+                f"  experiment_id: {saved_experiment_id}\n"
+                f"  Recall with: rl_load_experiment(experiment_id='{saved_experiment_id}')\n"
+            )
+
         result_text = (
             f"Experiment pipeline complete \u2014 {agent_type} on {env_id}\n\n"
             f"Dashboard: {_final_dash_url}\n"
@@ -773,6 +856,7 @@ async def rl_experiment_process(
             + eval_line
             + f"  Instruction agent_id: {instr_agent_id}\n"
             + phase3_section
+            + saved_experiment_section
             + f"\nUse rl_run_agent_episode(agent_id='{best_agent_id}') to evaluate the "
             f"best agent.\n"
             f"Use rl_create_training_report(agent_id='{best_agent_id}', "
