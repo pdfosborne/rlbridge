@@ -83,6 +83,7 @@ class EpisodeResult:
     total_reward: float
     end_reason: str                        # "terminated" | "truncated" | "max_steps"
     history: list[StepRecord] = field(default_factory=list, repr=False)
+    seed: Optional[int] = field(default=None, repr=False)
 
     @property
     def done(self) -> bool:
@@ -539,10 +540,12 @@ class MultiEpisodeProtocol(_BaseProtocol):
             if self.base_seed is not None and hasattr(self.base, "seed"):
                 self.base.seed = self.base_seed + i  # type: ignore[union-attr]
 
+            episode_seed = (self.base_seed + i) if self.base_seed is not None else None
             ep_result = self.base(env)
             if ep_result.episodes:
                 ep = ep_result.episodes[0]
                 ep.episode = i + 1
+                ep.seed = episode_seed
                 result.episodes.append(ep)
 
         return result

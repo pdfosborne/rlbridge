@@ -253,7 +253,7 @@ def _render_policy_for_dashboard(
                     seed=0,
                     record_history=True,
                 ),
-                n_episodes=12,
+                n_episodes=100,
                 base_seed=0,
             )
             eval_result = eval_protocol(eval_env)
@@ -264,8 +264,8 @@ def _render_policy_for_dashboard(
             _dash.finish(agent_id, policy_text="Dashboard render error: evaluation produced no episodes.")
             return
 
-        # Deterministic non-random fallback for replay when a state wasn't
-        # present in the extracted best-episode trajectory.
+        # Deterministic non-random fallback for replay when the recorded action
+        # sequence runs out (e.g. render max_steps > episode length).
         def _greedy_missing_state(obs: Any) -> Any:
             if hasattr(agent, "act_greedy"):
                 return agent.act_greedy(obs)

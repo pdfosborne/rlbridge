@@ -282,6 +282,8 @@ class PolicyRenderer:
         self,
         max_steps: int = 200,
         seed: Optional[int] = None,
+        action_sequence: Optional[list] = None,
+        step_infos: Optional[list[dict]] = None,
     ) -> list[RenderedFrame]:
         """
         Run one episode using the greedy policy and collect rendered frames.
@@ -292,6 +294,17 @@ class PolicyRenderer:
             Hard cap on episode length.
         seed:
             Seed for the environment reset.
+        action_sequence:
+            If provided, replay these exact actions in order instead of
+            consulting the policy table.  Any steps beyond the list fall
+            back to the normal policy/fallback logic.  Use this to
+            reproduce a specific recorded episode exactly.
+        step_infos:
+            Parallel list of ``info`` dicts from the original recorded
+            episode (one per step).  When provided, sub-goal metadata
+            (``sub_goal_reached``, ``sub_goal_similarity``) is taken from
+            these recorded dicts instead of the bare replay environment's
+            ``info``, which would otherwise always be empty.
 
         Returns
         -------
@@ -328,9 +341,15 @@ class PolicyRenderer:
         action_history: list[Any] = []
 
         for step_n in range(1, max_steps + 1):
-            # Select action from policy or fallback
-            key = _hashable_obs(obs)
-            action = self.policy.get(key, fallback_fn(obs))
+            # If a recorded action sequence is provided, replay it directly.
+            # This guarantees we show the exact episode from evaluation rather
+            # than relying on the obs-keyed policy table (which has an
+            # off-by-one: it stores obs_after_action → action).
+            if action_sequence is not None and step_n - 1 < len(action_sequence):
+                action = action_sequence[step_n - 1]
+            else:
+                key = _hashable_obs(obs)
+                action = self.policy.get(key, fallback_fn(obs))
             action_history.append(action)
 
             step_out = self.env.step(action)
@@ -339,6 +358,17 @@ class PolicyRenderer:
             terminated = bool(_get(step_out, "terminated", False))
             truncated  = bool(_get(step_out, "truncated", False))
             info       = dict(_get(step_out, "info", {}) or {})
+
+            # Overlay sub-goal metadata from the recorded history when
+            # replaying an action sequence.  The fresh render environment
+            # doesn't have the instruction-following wrapper active, so its
+            # info dict will never contain sub_goal_reached; use the
+            # originally recorded values instead.
+            rec_info = (step_infos[step_n - 1] if step_infos and step_n - 1 < len(step_infos) else None)
+            if rec_info:
+                for key in ("sub_goal_reached", "sub_goal_similarity"):
+                    if key in rec_info:
+                        info[key] = rec_info[key]
 
             # Language translation
             language_obs: Optional[str] = None
@@ -622,7 +652,7 @@ def save_overlay_image(
         img = Image.merge("RGB", (r, g, b))
 
         # Incremental equal-weight blend: result = result*(i/(i+1)) + frame*(1/(i+1))
-        alpha = 1.0 / (i + 1)
+        alpha = 1.0 / ((i + 1)**2)
         composite = Image.blend(composite.convert("RGB"), img, alpha=alpha).convert("RGBA")
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -910,6 +940,21 @@ def render_optimal_policy(
     # ── 1. Extract optimal policy ──────────────────────────────────────────────
     best_ep, policy = extract_optimal_policy(result)
 
+    # Use the seed the best episode was actually run with so the replay
+    # starts from the same initial state and the policy table matches.
+    replay_seed = best_ep.seed if best_ep.seed is not None else seed
+
+    # Build an exact action sequence from the recorded history so the replay
+    # reproduces the episode frame-for-frame rather than relying on the
+    # obs-keyed policy table (which has an off-by-one: it maps obs_after_action
+    # → action, not obs_before_action → action).
+    action_sequence = [rec.action for rec in best_ep.history] if best_ep.history else None
+
+    # Carry sub-goal metadata (sub_goal_reached, sub_goal_similarity) from
+    # the recorded history so the render highlights instruction-completion
+    # frames even though the fresh render env has no instruction wrapper.
+    step_infos = [rec.info for rec in best_ep.history] if best_ep.history else None
+
     # ── 2. Build rendering environment ────────────────────────────────────────
     if env_factory is not None:
         render_env: _EnvLike = env_factory.create(render_mode=render_mode)
@@ -925,7 +970,7 @@ def render_optimal_policy(
         fallback=fallback,
         translate=translate,
     )
-    frames = renderer.run(max_steps=max_steps, seed=seed)
+    frames = renderer.run(max_steps=max_steps, seed=replay_seed, action_sequence=action_sequence, step_infos=step_infos)
 
     # ── 4. Save outputs ────────────────────────────────────────────────────────
     n_png_saved = 0

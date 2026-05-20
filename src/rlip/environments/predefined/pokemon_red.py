@@ -63,7 +63,6 @@ from ...protocol.messages import (
 # ── File paths ────────────────────────────────────────────────────────────────
 
 _STATE_ROOT = Path.home() / ".rlip" / "pokemon_red"
-_STATE_ROOT.mkdir(parents=True, exist_ok=True)
 
 _DEFAULT_ROM_PATH   = _STATE_ROOT / "rom.gb"
 _DEFAULT_STATE_PATH = _STATE_ROOT / "gary_battle.state"
@@ -325,6 +324,7 @@ class PokemonRedEnvironment(RLIPEnvironment):
                 pass
             self._pyboy = None
 
+        _STATE_ROOT.mkdir(parents=True, exist_ok=True)
         if self._rom_path is None:
             self._rom_path = _find_rom()
         if self._variant == "gary_battle" and self._state_path is None:

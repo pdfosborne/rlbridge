@@ -48,7 +48,7 @@ def instances_resource() -> str:
 @mcp.tool()
 def rl_render_policy(
     env_id: str,
-    n_episodes: int = 30,
+    n_episodes: int = 100,
     max_steps: int = 200,
     seed: Optional[int] = None,
     fps: float = 6.0,
@@ -110,13 +110,10 @@ def rl_render_policy(
     _ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     gif_path = env_render_dir / f"{safe_id}_{agent_type_label}_{n_episodes}ep_{_ts}.gif"
 
-    # ── Collect episodes ──────────────────────────────────────────────────────
-    train_env = factory.create(render_mode=None)
+    # ── Collect evaluation episodes ───────────────────────────────────────────
+    eval_env = factory.create(render_mode=None)
     try:
         if agent_id and agent_id in _trained_agents:
-            # Use stored best-training-episode history directly.
-            # This avoids re-running the greedy policy, which may cycle for
-            # agents like TabularQ whose Q-values didn't fully propagate.
             stored = _trained_agents[agent_id]
             use_lang_state = bool(stored.get("use_language_state", False))
             translator = None
@@ -130,45 +127,9 @@ def rl_render_policy(
                         f"but no translator is registered for '{env_id}'.\n"
                         "Register one with rl_set_translator_code() first."
                     )
+                eval_env = _LangStateEnv(eval_env, translator=translator, env_id=env_id)
 
-            training_history = stored.get("best_episode_history", [])
-            if training_history:
-                from ..policy_rendering import PolicyRenderer  # noqa: PLC0415
-                from ..policy_rendering import save_gif, PolicyRenderResult  # noqa: PLC0415
-                from ..policy_rendering import _hashable_obs  # noqa: PLC0415
-
-                policy = {_hashable_obs(obs): act for obs, act in training_history}
-                render_env = factory.create(render_mode="rgb_array")
-                if use_lang_state:
-                    render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
-                renderer = PolicyRenderer(env=render_env, policy=policy)
-                frames = renderer.run(max_steps=max_steps, seed=seed)
-
-                n_gif_frames = save_gif(frames, gif_path, fps=fps, annotate=True)
-                if n_gif_frames == 0:
-                    return (
-                        f"Policy replay completed but no frames were captured.\n"
-                        f"Environment '{env_id}' may not support rgb_array rendering."
-                    )
-
-                agent_type = stored.get("agent_type", "unknown")
-                summary = (
-                    f"PolicyRenderResult\n"
-                    f"  Agent type:        {agent_type}\n"
-                    f"  Environment:       {env_id}\n"
-                    f"  Source:            best training episode ({len(training_history)} steps)\n"
-                    f"  Frames rendered:   {len(frames)}\n"
-                    f"  GIF saved:         {n_gif_frames} frames  \u2192 {gif_path}"
-                )
-                gif_bytes = Path(gif_path).read_bytes()
-                b64 = base64.b64encode(gif_bytes).decode("ascii")
-                return f"{summary}\n\nSaved to: {gif_path}\n\ndata:image/gif;base64,{b64}"
-
-            # Fallback: no stored history — run greedy evaluation episodes
             agent = stored["agent"]
-
-            if use_lang_state:
-                train_env = _LangStateEnv(train_env, translator=translator, env_id=env_id)
 
             def _greedy_fn(obs: Any) -> Any:
                 if hasattr(agent, "act_greedy"):
@@ -190,9 +151,9 @@ def rl_render_policy(
             )
             protocol = MultiEpisodeProtocol(base, n_episodes=n_episodes, base_seed=seed)
 
-        result = protocol(train_env)
+        result = protocol(eval_env)
     finally:
-        train_env.close()
+        eval_env.close()
 
     # ── Render best episode to GIF ────────────────────────────────────────────
     try:
@@ -232,7 +193,7 @@ def rl_render_policy(
 @mcp.tool()
 def rl_render_policy_image(
     env_id: str,
-    n_episodes: int = 30,
+    n_episodes: int = 100,
     max_steps: int = 200,
     seed: Optional[int] = None,
     agent_id: str = "",
@@ -287,10 +248,6 @@ def rl_render_policy_image(
     )
     from ..policy_rendering import (
         render_optimal_policy,
-        PolicyRenderer,
-        save_path_image,
-        PolicyRenderResult,
-        _hashable_obs,
     )
 
     # ── Resolve environment factory ───────────────────────────────────────────
@@ -308,11 +265,8 @@ def rl_render_policy_image(
     _ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     png_path = env_render_dir / f"{safe_id}_{agent_type_label}_{n_episodes}ep_{_ts}_path.png"
 
-    # ── Collect episodes ──────────────────────────────────────────────────────
-    train_env = factory.create(render_mode=None)
-    frames = None
-    summary = None
-
+    # ── Collect evaluation episodes ───────────────────────────────────────────
+    eval_env = factory.create(render_mode=None)
     try:
         if agent_id and agent_id in _trained_agents:
             stored = _trained_agents[agent_id]
@@ -328,42 +282,22 @@ def rl_render_policy_image(
                         f"but no translator is registered for '{env_id}'.\n"
                         "Register one with rl_set_translator_code() first."
                     )
+                eval_env = _LangStateEnv(eval_env, translator=translator, env_id=env_id)
 
-            training_history = stored.get("best_episode_history", [])
-            if training_history:
-                policy = {_hashable_obs(obs): act for obs, act in training_history}
-                render_env = factory.create(render_mode="rgb_array")
-                if use_lang_state:
-                    render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
-                renderer = PolicyRenderer(env=render_env, policy=policy)
-                frames = renderer.run(max_steps=max_steps, seed=seed)
-                agent_type = stored.get("agent_type", "unknown")
-                summary = (
-                    f"PolicyRenderResult\n"
-                    f"  Agent type:        {agent_type}\n"
-                    f"  Environment:       {env_id}\n"
-                    f"  Source:            best training episode ({len(training_history)} steps)\n"
-                    f"  Frames rendered:   {len(frames)}\n"
-                )
-            else:
-                # Fallback: run greedy evaluation episodes
-                agent = stored["agent"]
-                if use_lang_state:
-                    train_env = _LangStateEnv(train_env, translator=translator, env_id=env_id)
+            agent = stored["agent"]
 
-                def _greedy_fn(obs: Any) -> Any:
-                    if hasattr(agent, "act_greedy"):
-                        return agent.act_greedy(obs)
-                    return agent.act(obs)
+            def _greedy_fn(obs: Any) -> Any:
+                if hasattr(agent, "act_greedy"):
+                    return agent.act_greedy(obs)
+                return agent.act(obs)
 
-                base = GreedyEpisodeProtocol(
-                    policy_fn=_greedy_fn,
-                    max_steps=max_steps,
-                    seed=seed,
-                    record_history=True,
-                )
-                protocol = MultiEpisodeProtocol(base, n_episodes=n_episodes, base_seed=seed)
-                result = protocol(train_env)
+            base = GreedyEpisodeProtocol(
+                policy_fn=_greedy_fn,
+                max_steps=max_steps,
+                seed=seed,
+                record_history=True,
+            )
+            protocol = MultiEpisodeProtocol(base, n_episodes=n_episodes, base_seed=seed)
         else:
             base = RandomEpisodeProtocol(
                 max_steps=max_steps,
@@ -371,59 +305,37 @@ def rl_render_policy_image(
                 record_history=True,
             )
             protocol = MultiEpisodeProtocol(base, n_episodes=n_episodes, base_seed=seed)
-            result = protocol(train_env)
+
+        result = protocol(eval_env)
     finally:
-        train_env.close()
+        eval_env.close()
 
-    # ── If frames not yet collected, use render_optimal_policy ────────────────
-    if frames is None:
-        try:
-            render_result = render_optimal_policy(
-                result,
-                env_factory=factory,
-                render_mode="rgb_array",
-                max_steps=max_steps,
-                seed=seed,
-                output_path_image=png_path,
-                path_image_max_cols=max_cols,
-                path_image_thumb_width=thumb_width,
-            )
-        except Exception as exc:
-            return f"Rendering failed: {exc}"
-
-        if not Path(png_path).exists():
-            return (
-                f"Policy replay completed but no frames were captured.\n"
-                f"Environment '{env_id}' may not support rgb_array rendering.\n\n"
-                f"{render_result}"
-            )
-
-        png_bytes = Path(png_path).read_bytes()
-        b64 = base64.b64encode(png_bytes).decode("ascii")
-        return (
-            f"{render_result}\n\n"
-            f"Saved to: {png_path}\n\n"
-            f"data:image/png;base64,{b64}"
+    # ── Render best episode to path image ─────────────────────────────────────
+    try:
+        render_result = render_optimal_policy(
+            result,
+            env_factory=factory,
+            render_mode="rgb_array",
+            max_steps=max_steps,
+            seed=seed,
+            output_path_image=png_path,
+            path_image_max_cols=max_cols,
+            path_image_thumb_width=thumb_width,
         )
+    except Exception as exc:
+        return f"Rendering failed: {exc}"
 
-    # ── Save path image from pre-collected frames ─────────────────────────────
-    saved = save_path_image(
-        frames,
-        png_path,
-        max_cols=max_cols,
-        thumb_width=thumb_width,
-    )
-    if not saved:
+    if not Path(png_path).exists():
         return (
             f"Policy replay completed but no frames were captured.\n"
-            f"Environment '{env_id}' may not support rgb_array rendering."
+            f"Environment '{env_id}' may not support rgb_array rendering.\n\n"
+            f"{render_result}"
         )
 
     png_bytes = Path(png_path).read_bytes()
     b64 = base64.b64encode(png_bytes).decode("ascii")
     return (
-        f"{summary}"
-        f"  Path image saved:  {png_path}\n\n"
+        f"{render_result}\n\n"
         f"Saved to: {png_path}\n\n"
         f"data:image/png;base64,{b64}"
     )
@@ -434,7 +346,7 @@ def rl_render_policy_image(
 @mcp.tool()
 def rl_render_policy_overlay(
     env_id: str,
-    n_episodes: int = 30,
+    n_episodes: int = 100,
     max_steps: int = 200,
     seed: Optional[int] = None,
     agent_id: str = "",
@@ -484,9 +396,6 @@ def rl_render_policy_overlay(
     )
     from ..policy_rendering import (
         render_optimal_policy,
-        PolicyRenderer,
-        save_overlay_image,
-        _hashable_obs,
     )
 
     # ── Resolve environment factory ───────────────────────────────────────────
@@ -504,11 +413,8 @@ def rl_render_policy_overlay(
     _ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     png_path = env_render_dir / f"{safe_id}_{agent_type_label}_{n_episodes}ep_{_ts}_overlay.png"
 
-    # ── Collect episodes ──────────────────────────────────────────────────────
-    train_env = factory.create(render_mode=None)
-    frames = None
-    summary = None
-
+    # ── Collect evaluation episodes ───────────────────────────────────────────
+    eval_env = factory.create(render_mode=None)
     try:
         if agent_id and agent_id in _trained_agents:
             stored = _trained_agents[agent_id]
@@ -524,41 +430,22 @@ def rl_render_policy_overlay(
                         f"but no translator is registered for '{env_id}'.\n"
                         "Register one with rl_set_translator_code() first."
                     )
+                eval_env = _LangStateEnv(eval_env, translator=translator, env_id=env_id)
 
-            training_history = stored.get("best_episode_history", [])
-            if training_history:
-                policy = {_hashable_obs(obs): act for obs, act in training_history}
-                render_env = factory.create(render_mode="rgb_array")
-                if use_lang_state:
-                    render_env = _LangStateEnv(render_env, translator=translator, env_id=env_id)
-                renderer = PolicyRenderer(env=render_env, policy=policy)
-                frames = renderer.run(max_steps=max_steps, seed=seed)
-                agent_type = stored.get("agent_type", "unknown")
-                summary = (
-                    f"PolicyRenderResult\n"
-                    f"  Agent type:        {agent_type}\n"
-                    f"  Environment:       {env_id}\n"
-                    f"  Source:            best training episode ({len(training_history)} steps)\n"
-                    f"  Frames rendered:   {len(frames)}\n"
-                )
-            else:
-                agent = stored["agent"]
-                if use_lang_state:
-                    train_env = _LangStateEnv(train_env, translator=translator, env_id=env_id)
+            agent = stored["agent"]
 
-                def _greedy_fn(obs: Any) -> Any:
-                    if hasattr(agent, "act_greedy"):
-                        return agent.act_greedy(obs)
-                    return agent.act(obs)
+            def _greedy_fn(obs: Any) -> Any:
+                if hasattr(agent, "act_greedy"):
+                    return agent.act_greedy(obs)
+                return agent.act(obs)
 
-                base = GreedyEpisodeProtocol(
-                    policy_fn=_greedy_fn,
-                    max_steps=max_steps,
-                    seed=seed,
-                    record_history=True,
-                )
-                protocol = MultiEpisodeProtocol(base, n_episodes=n_episodes, base_seed=seed)
-                result = protocol(train_env)
+            base = GreedyEpisodeProtocol(
+                policy_fn=_greedy_fn,
+                max_steps=max_steps,
+                seed=seed,
+                record_history=True,
+            )
+            protocol = MultiEpisodeProtocol(base, n_episodes=n_episodes, base_seed=seed)
         else:
             base = RandomEpisodeProtocol(
                 max_steps=max_steps,
@@ -566,52 +453,35 @@ def rl_render_policy_overlay(
                 record_history=True,
             )
             protocol = MultiEpisodeProtocol(base, n_episodes=n_episodes, base_seed=seed)
-            result = protocol(train_env)
+
+        result = protocol(eval_env)
     finally:
-        train_env.close()
+        eval_env.close()
 
-    # ── If frames not yet collected, use render_optimal_policy ────────────────
-    if frames is None:
-        try:
-            render_result = render_optimal_policy(
-                result,
-                env_factory=factory,
-                render_mode="rgb_array",
-                max_steps=max_steps,
-                seed=seed,
-                output_overlay_image=png_path,
-            )
-        except Exception as exc:
-            return f"Rendering failed: {exc}"
-
-        if not Path(png_path).exists():
-            return (
-                f"Policy replay completed but no frames were captured.\n"
-                f"Environment '{env_id}' may not support rgb_array rendering.\n\n"
-                f"{render_result}"
-            )
-
-        png_bytes = Path(png_path).read_bytes()
-        b64 = base64.b64encode(png_bytes).decode("ascii")
-        return (
-            f"{render_result}\n\n"
-            f"Saved to: {png_path}\n\n"
-            f"data:image/png;base64,{b64}"
+    # ── Render best episode to overlay image ──────────────────────────────────
+    try:
+        render_result = render_optimal_policy(
+            result,
+            env_factory=factory,
+            render_mode="rgb_array",
+            max_steps=max_steps,
+            seed=seed,
+            output_overlay_image=png_path,
         )
+    except Exception as exc:
+        return f"Rendering failed: {exc}"
 
-    # ── Save overlay from pre-collected frames ────────────────────────────────
-    saved = save_overlay_image(frames, png_path)
-    if not saved:
+    if not Path(png_path).exists():
         return (
             f"Policy replay completed but no frames were captured.\n"
-            f"Environment '{env_id}' may not support rgb_array rendering."
+            f"Environment '{env_id}' may not support rgb_array rendering.\n\n"
+            f"{render_result}"
         )
 
     png_bytes = Path(png_path).read_bytes()
     b64 = base64.b64encode(png_bytes).decode("ascii")
     return (
-        f"{summary}"
-        f"  Overlay image saved: {png_path}\n\n"
+        f"{render_result}\n\n"
         f"Saved to: {png_path}\n\n"
         f"data:image/png;base64,{b64}"
     )

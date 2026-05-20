@@ -68,7 +68,6 @@ from ...protocol.messages import (
 # ── Cache directory ───────────────────────────────────────────────────────────
 
 _CACHE_ROOT = Path.home() / ".rlip" / "textworld"
-_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
 
 _REQUEST_INFOS_KWARGS: dict[str, bool] = dict(
     description=True,
