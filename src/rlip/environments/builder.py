@@ -6,7 +6,7 @@ Fluent API for defining, caching, and registering new RLIP environments.
 The builder handles three concerns in one place:
 
 * **Metadata** — description, tags, namespace, episode limits.
-* **Local cache** — persists everything to ``~/.rlip/envs/<env_id>/`` so the
+* **Local cache** — persists everything to ``~/.rlip/environments/<env_id>/`` so the
   environment can be reloaded in future sessions without repeating the build
   steps.
 * **Language translation** — attach a named, custom, or LLM-generated
@@ -95,7 +95,7 @@ from .base import RLIPEnvironment, RLIPEnvironmentFactory
 
 # ── Default paths ─────────────────────────────────────────────────────────────
 
-_DEFAULT_CACHE_DIR: Path = Path.home() / ".rlip" / "envs"
+_DEFAULT_CACHE_DIR: Path = Path.home() / ".rlip" / "environments"
 _USER_CATALOG: Path = Path.home() / ".rlip" / "catalog.json"
 
 
@@ -386,7 +386,7 @@ class BuiltEnvironment:
 
         The cache directory layout::
 
-            ~/.rlip/envs/<env_id>/
+            ~/.rlip/environments/<env_id>/
                 spec.json         — environment metadata
                 translator.py     — generated translator module (if present)
 
@@ -419,7 +419,7 @@ class BuiltEnvironment:
         env_id:
             The environment identifier used when it was built.
         cache_dir:
-            Root cache directory.  Defaults to ``~/.rlip/envs/``.
+            Root cache directory.  Defaults to ``~/.rlip/environments/``.
 
         Returns
         -------
@@ -692,7 +692,7 @@ class EnvironmentBuilder:
         Parameters
         ----------
         cache_dir:
-            Override the default cache root (``~/.rlip/envs/``).
+            Override the default cache root (``~/.rlip/environments/``).
         auto_register:
             If *True*, immediately call
             :meth:`BuiltEnvironment.register` after building so the
@@ -879,7 +879,7 @@ def load_cached_environments(
         :class:`~rlip.environments.registry.EnvironmentRegistry` to register
         into.  Defaults to the global ``registry`` singleton.
     cache_dir:
-        Root cache directory.  Defaults to ``~/.rlip/envs/``.
+        Root cache directory.  Defaults to ``~/.rlip/environments/``.
     register_translators:
         Whether to also register translators into the global ``TRANSLATORS``
         dict.

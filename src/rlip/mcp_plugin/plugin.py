@@ -113,7 +113,8 @@ _tools_agents_training.py  – RL agent training tools (rl_train_agent, rl_get_t
 _tools_agents_utils.py     – RL agent utilities (rl_list_agents, rl_list_trained_agents, rl_load_agent)
 _tools_agents_eval.py      – RL agent evaluation (rl_run_agent_episode, rl_create_training_report, rl_evaluate_agent)
 _tools_experiment.py       – Automated RL experiment pipeline (rl_experiment_process)
-_tools_builder.py    – custom environment builder tools
+_tools_builder.py    – custom environment builder tools (wrap Gymnasium envs)
+_tools_create_env.py – custom environment creation from code (rl_create_environment_from_code, rl_get_environment_template, rl_validate_environment_code, rl_delete_custom_environment)
 _tools_render.py     – rendering tools and MCP resources
 _tools_dashboard.py  – live training dashboard server tools
 env custom tools     – discovered from environment modules at startup
@@ -139,6 +140,7 @@ from . import (  # noqa: F401, E402
     _tools_agents_eval,
     _tools_experiment,
     _tools_builder,
+    _tools_create_env,
     _tools_render,
     _tools_derived_instructions,
     _tools_dashboard,

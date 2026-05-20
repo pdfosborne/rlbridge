@@ -43,6 +43,7 @@ from ...protocol.messages import (
     RenderResult,
     ResetResult,
     StepResult,
+    SuggestedHyperparameters,
 )
 
 class GridWorldEnv(RLIPEnvironment):
@@ -123,6 +124,20 @@ class GridWorldFactory(RLIPEnvironmentFactory):
             reward_threshold=0.9,
             namespace="custom",
             render_modes=["ansi"],
+            suggested_hyperparameters=SuggestedHyperparameters(
+                agent_type="tabular_q",
+                n_episodes_baseline=100,
+                n_episodes_instruction=100,
+                max_steps=100,
+                alpha=0.1,
+                gamma=0.99,
+                epsilon=1.0,
+                epsilon_min=0.01,
+                epsilon_decay=0.99,
+                sub_goal_threshold=0.5,
+                top_k=3,
+                min_episode_visits=2,
+            ),
         )
 
     def create(

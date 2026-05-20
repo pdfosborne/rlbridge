@@ -70,6 +70,7 @@ from ...protocol.messages import (
     ResetResult,
     SpaceDescription,
     StepResult,
+    SuggestedHyperparameters,
     TextSpace,
 )
 from ..base import RLIPEnvironment, RLIPEnvironmentFactory
@@ -301,6 +302,7 @@ class SailingFactory(RLIPEnvironmentFactory):
         max_episode_steps: int = 200,
         description: str = "",
         reward_threshold: Optional[float] = None,
+        suggested_hyperparameters: Optional[SuggestedHyperparameters] = None,
     ) -> None:
         self._env_id = env_id
         self._y_limit = y_limit
@@ -314,6 +316,7 @@ class SailingFactory(RLIPEnvironmentFactory):
             f"within |x|<{x_limit:.0f}."
         )
         self._reward_threshold = reward_threshold
+        self._suggested_hyperparameters = suggested_hyperparameters
 
     @property
     def env_info(self) -> EnvironmentInfo:
@@ -325,6 +328,7 @@ class SailingFactory(RLIPEnvironmentFactory):
             render_modes=["rgb_array"],
             max_episode_steps=self._max_episode_steps,
             reward_threshold=self._reward_threshold,
+            suggested_hyperparameters=self._suggested_hyperparameters,
         )
 
     def create(
@@ -358,6 +362,20 @@ SAILING_V0 = SailingFactory(
         "within x-bounds of ±10.  Discrete action space (turn left / right)."
     ),
     reward_threshold=1.0,
+    suggested_hyperparameters=SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=300,
+        n_episodes_instruction=300,
+        max_steps=200,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.995,
+        sub_goal_threshold=0.5,
+        top_k=3,
+        min_episode_visits=2,
+    ),
 )
 
 SAILING_HARD_V0 = SailingFactory(
@@ -373,6 +391,20 @@ SAILING_HARD_V0 = SailingFactory(
         "and supervised heading reward to guide exploration."
     ),
     reward_threshold=1.0,
+    suggested_hyperparameters=SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=500,
+        n_episodes_instruction=500,
+        max_steps=500,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.998,
+        sub_goal_threshold=0.5,
+        top_k=3,
+        min_episode_visits=2,
+    ),
 )
 
 #: All built-in sailing factories, in registration order.

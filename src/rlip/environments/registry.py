@@ -38,6 +38,11 @@ class EnvironmentRegistry:
         with self._lock:
             self._factories[factory.env_info.env_id] = factory
 
+    def deregister(self, env_id: str) -> bool:
+        """Remove a factory by env_id.  Returns True if it was present."""
+        with self._lock:
+            return self._factories.pop(env_id, None) is not None
+
     def register_gymnasium_ids(
         self,
         env_ids: list[str],

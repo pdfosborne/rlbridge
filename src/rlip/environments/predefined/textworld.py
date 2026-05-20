@@ -61,6 +61,7 @@ from ...protocol.messages import (
     RenderResult,
     ResetResult,
     StepResult,
+    SuggestedHyperparameters,
     TextSpace,
 )
 
@@ -460,6 +461,87 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float | None, int]] = {
 }
 
 
+_SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
+    "TextWorld-Take-v0": SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=200,
+        n_episodes_instruction=200,
+        max_steps=30,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.99,
+    ),
+    "TextWorld-Navigate-v0": SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=300,
+        n_episodes_instruction=300,
+        max_steps=50,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.993,
+    ),
+    "TextWorld-TreasureHunt-v0": SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=500,
+        n_episodes_instruction=500,
+        max_steps=100,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.996,
+    ),
+    "TextWorld-CoinCollector-Easy-v0": SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=200,
+        n_episodes_instruction=200,
+        max_steps=30,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.99,
+    ),
+    "TextWorld-CoinCollector-Medium-v0": SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=400,
+        n_episodes_instruction=400,
+        max_steps=100,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.995,
+    ),
+    "TextWorld-Cooking-Easy-v0": SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=400,
+        n_episodes_instruction=400,
+        max_steps=50,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.995,
+    ),
+    "TextWorld-Cooking-Medium-v0": SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=500,
+        n_episodes_instruction=500,
+        max_steps=150,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.997,
+    ),
+}
+
+
 class TextWorldFactory(RLIPEnvironmentFactory):
     """Factory for a single compiled TextWorld game variant."""
 
@@ -487,6 +569,7 @@ class TextWorldFactory(RLIPEnvironmentFactory):
             reward_threshold=self._threshold,
             namespace="textworld",
             render_modes=["ansi"],
+            suggested_hyperparameters=_SUGGESTED_PARAMS.get(self._env_id),
         )
 
     def create(

@@ -57,6 +57,7 @@ from ...protocol.messages import (
     RenderResult,
     ResetResult,
     StepResult,
+    SuggestedHyperparameters,
     TextSpace,
 )
 
@@ -802,6 +803,65 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float | None, dict[str, Any]
 }
 
 
+_SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
+    "Chess-v0": SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=300,
+        n_episodes_instruction=300,
+        max_steps=400,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.997,
+    ),
+    "Chess-Discrete-v0": SuggestedHyperparameters(
+        agent_type="dqn",
+        n_episodes_baseline=500,
+        n_episodes_instruction=500,
+        max_steps=400,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.997,
+        hidden_size=128,
+        lr=1e-3,
+    ),
+    "Chess-SelfPlay-v0": SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=300,
+        n_episodes_instruction=300,
+        max_steps=400,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.997,
+    ),
+    "Chess-FirstCapture-v0": SuggestedHyperparameters(
+        agent_type="tabular_q",
+        n_episodes_baseline=200,
+        n_episodes_instruction=200,
+        max_steps=80,
+        alpha=0.1,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.995,
+    ),
+    "Chess-FirstCapture-Discrete-v0": SuggestedHyperparameters(
+        agent_type="dqn",
+        n_episodes_baseline=200,
+        n_episodes_instruction=200,
+        max_steps=80,
+        epsilon=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.995,
+        hidden_size=128,
+        lr=1e-3,
+    ),
+}
+
+
 class ChessFactory(RLIPEnvironmentFactory):
     """Factory for a chess environment variant."""
 
@@ -829,6 +889,7 @@ class ChessFactory(RLIPEnvironmentFactory):
             reward_threshold=self._threshold,
             namespace="chess",
             render_modes=["ansi", "rgb_array"],
+            suggested_hyperparameters=_SUGGESTED_PARAMS.get(self._env_id),
         )
 
     def create(

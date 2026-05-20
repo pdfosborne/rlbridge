@@ -39,7 +39,7 @@ def rl_build_environment(
     Wrap a Gymnasium environment with custom metadata, cache it locally,
     and register it so it is immediately available in this session.
 
-    The environment is saved to ``~/.rlip/envs/<env_id>/`` and written to
+    The environment is saved to ``~/.rlip/environments/<env_id>/`` and written to
     ``~/.rlip/catalog.json`` so it is reloaded automatically on restart via
     rl_load_cached_environments().
 
@@ -96,17 +96,10 @@ def rl_build_environment(
         built = builder.build(cache_dir=_custom_env_cache_root(), update_catalog=False)
         built.update_catalog(catalog_path=_catalog_path())
 
-        # Ensure per-environment output layout exists and mirror env cache code.
+        # Ensure per-environment output layout exists.
         _env_renders_dir(env_id).mkdir(parents=True, exist_ok=True)
         _env_agents_dir(env_id).mkdir(parents=True, exist_ok=True)
-        env_cache_dir = _env_cache_dir(env_id)
-        env_cache_dir.mkdir(parents=True, exist_ok=True)
-        if built.cache_path.exists():
-            shutil.copytree(
-                built.cache_path,
-                env_cache_dir / "builder_cache",
-                dirs_exist_ok=True,
-            )
+        _env_cache_dir(env_id).mkdir(parents=True, exist_ok=True)
     except Exception as exc:
         return f"Failed to build environment '{env_id}': {exc}"
 
@@ -134,7 +127,7 @@ def rl_build_environment(
 def rl_load_cached_environments() -> str:
     """
     Load all custom environments previously built with rl_build_environment()
-    from ``./.rlip/envs/`` and register them into this session.
+    from ``~/.rlip/environments/`` and register them into this session.
 
     Call this once at the start of a session to restore environments that were
     created in a previous session.  Already-registered environments are
@@ -175,7 +168,7 @@ def rl_load_cached_environments() -> str:
 @mcp.tool()
 def rl_list_cached_environments() -> str:
     """
-    List all custom environments stored in the RLIP cache (``~/.rlip/envs/``).
+    List all custom environments stored in the RLIP cache (``~/.rlip/environments/``).
 
     Does not register them — call rl_load_cached_environments() to register.
 
@@ -338,7 +331,7 @@ def rl_set_translator_code(
         - Do not import external packages; only Python built-ins are safe.
     save:
         If True (default), persist the translator to
-        ``./.rlip/envs/<env_id>/translator.py`` and update ``spec.json``
+        ``~/.rlip/environments/<env_id>/translator.py`` and update ``spec.json``
         so it is reloaded automatically by ``rl_load_cached_environments()``.
 
     Returns

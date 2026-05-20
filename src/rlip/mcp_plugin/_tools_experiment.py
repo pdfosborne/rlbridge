@@ -14,6 +14,7 @@ from typing import Any, Optional
 from ._prompts import AGENT_DESCRIPTIONS as _AGENT_DESCRIPTIONS
 from ._state import (
     _custom_translators,
+    _hp_overrides,
     _instruction_protocols,
     _trained_agents,
     _training_jobs,
@@ -27,25 +28,25 @@ from ._tools_agents_training import rl_train_agent
 
 @mcp.tool()
 def rl_experiment_process(
-    agent_type: str,
     env_id: str,
+    agent_type: Optional[str] = None,
     instruction: str = "",
-    n_episodes_baseline: int = 300,
-    n_episodes_instruction: int = 300,
-    max_steps: int = 200,
+    n_episodes_baseline: Optional[int] = None,
+    n_episodes_instruction: Optional[int] = None,
+    max_steps: Optional[int] = None,
     seed: Optional[int] = None,
-    top_k: int = 3,
-    min_episode_visits: int = 2,
-    sub_goal_threshold: float = 0.5,
+    top_k: Optional[int] = None,
+    min_episode_visits: Optional[int] = None,
+    sub_goal_threshold: Optional[float] = None,
     # Tabular Q hyper-parameters
-    alpha: float = 0.1,
-    gamma: float = 0.99,
-    epsilon: float = 1.0,
-    epsilon_min: float = 0.01,
-    epsilon_decay: float = 0.995,
+    alpha: Optional[float] = None,
+    gamma: Optional[float] = None,
+    epsilon: Optional[float] = None,
+    epsilon_min: Optional[float] = None,
+    epsilon_decay: Optional[float] = None,
     # DQN / PPO shared
-    hidden_size: int = 64,
-    lr: float = 1e-3,
+    hidden_size: Optional[int] = None,
+    lr: Optional[float] = None,
 ) -> str:
     """
     Automated RL experiment pipeline — one call runs the full sequence in the
@@ -74,36 +75,46 @@ def rl_experiment_process(
        in the observation cache; no new environment exploration is required.
     6. **Instruction-shaped training** — calls rl_train_agent(match_id=...)
        to train a fresh agent with sequential sub-goal reward shaping.
+    7. **Instruction + language-state training** — repeats stage 6 with
+       ``use_language_state=True`` so the agent sees translated language
+       strings *and* benefits from sub-goal reward shaping simultaneously.
 
     Parameters
     ----------
-    agent_type:
-        One of ``"tabular_q"``, ``"dqn"``, or ``"ppo"``.
     env_id:
         A registered RLIP environment ID, e.g. ``"Sailing-v0"``.
+    agent_type:
+        One of ``"tabular_q"``, ``"dqn"``, or ``"ppo"``.  Defaults to the
+        environment's ``suggested_hyperparameters.agent_type`` when omitted,
+        then falls back to ``"tabular_q"``.
     instruction:
         Optional natural-language goal.  When provided, stages 3–4 use this
         instruction directly instead of auto-deriving one from baseline.
     n_episodes_baseline:
-        Episodes for the baseline phase.
+        Episodes for the baseline phase.  Defaults to the environment's
+        suggestion (``suggested_hyperparameters.n_episodes_baseline``) or 300.
     n_episodes_instruction:
-        Episodes for the instruction-shaped phase.
+        Episodes for the instruction-shaped phase.  Defaults to the
+        environment's suggestion or 300.
     max_steps:
-        Step cap per episode (both phases).
+        Step cap per episode (both phases).  Defaults to the environment's
+        suggestion or 200.
     seed:
         Optional reproducibility seed.
     top_k:
         Max derived instruction candidates (ignored when instruction= is
-        provided).  The top-scoring candidate is used.
+        provided).  Defaults to the environment's suggestion or 3.
     min_episode_visits:
         States visited in fewer than this many distinct episodes are excluded
-        from derived candidates.
+        from derived candidates.  Defaults to suggestion or 2.
     sub_goal_threshold:
         Cosine similarity threshold to trigger the sub-goal bonus (0–1).
+        Defaults to suggestion or 0.5.
     alpha / gamma / epsilon / epsilon_min / epsilon_decay:
-        tabular_q hyper-parameters (epsilon params also apply to dqn).
+        tabular_q hyper-parameters.  All default to environment suggestions
+        when available, then RLIP global defaults.
     hidden_size / lr:
-        dqn and ppo hyper-parameters.
+        dqn and ppo hyper-parameters.  Same defaulting strategy.
 
     Returns
     -------
@@ -114,20 +125,50 @@ def rl_experiment_process(
     from ..environments.registry import registry as _env_registry  # noqa: PLC0415
     from ..language_translation import get_translator  # noqa: PLC0415
 
+    try:
+        _env_factory = _env_registry.get(env_id)
+    except KeyError:
+        return (
+            f"Environment '{env_id}' is not registered.  "
+            "Call rl_list_environments() to see available environments."
+        )
+
+    # ── Resolve hyperparameters (env suggestion → RLIP global default) ────────
+    # Persisted override (from rl_update_suggested_hyperparameters) takes
+    # precedence over the factory's built-in default.
+    _hp = _hp_overrides.get(env_id) or _env_factory.env_info.suggested_hyperparameters
+    _suggested_note = ""
+    if _hp is not None:
+        _suggested_note = (
+            f"  Using suggested hyperparameters from '{env_id}'.\n"
+            f"  Override any value by passing it explicitly.\n\n"
+        )
+
+    def _r(val, suggested, default):
+        """Return val if explicitly provided, else suggested, else default."""
+        return val if val is not None else (suggested if _hp is not None else default)
+
+    agent_type   = _r(agent_type,   getattr(_hp, "agent_type",  None) if _hp else None, "tabular_q")
+    n_episodes_baseline    = _r(n_episodes_baseline,    getattr(_hp, "n_episodes_baseline",   None), 300)
+    n_episodes_instruction = _r(n_episodes_instruction, getattr(_hp, "n_episodes_instruction", None), 300)
+    max_steps              = _r(max_steps,              getattr(_hp, "max_steps",              None), 200)
+    top_k                  = _r(top_k,                  getattr(_hp, "top_k",                 None), 3)
+    min_episode_visits     = _r(min_episode_visits,     getattr(_hp, "min_episode_visits",    None), 2)
+    sub_goal_threshold     = _r(sub_goal_threshold,     getattr(_hp, "sub_goal_threshold",    None), 0.5)
+    alpha                  = _r(alpha,                  getattr(_hp, "alpha",                 None), 0.1)
+    gamma                  = _r(gamma,                  getattr(_hp, "gamma",                 None), 0.99)
+    epsilon                = _r(epsilon,                getattr(_hp, "epsilon",               None), 1.0)
+    epsilon_min            = _r(epsilon_min,            getattr(_hp, "epsilon_min",           None), 0.01)
+    epsilon_decay          = _r(epsilon_decay,          getattr(_hp, "epsilon_decay",         None), 0.995)
+    hidden_size            = _r(hidden_size,            getattr(_hp, "hidden_size",           None), 64)
+    lr                     = _r(lr,                     getattr(_hp, "lr",                    None), 1e-3)
+
     agent_type = agent_type.lower().strip()
     if agent_type not in _AGENT_DESCRIPTIONS:
         return (
             f"Unknown agent type '{agent_type}'.  "
             f"Valid choices: {', '.join(_AGENT_DESCRIPTIONS)}.\n"
             "Call rl_list_agents() for details."
-        )
-
-    try:
-        _env_registry.get(env_id)
-    except KeyError:
-        return (
-            f"Environment '{env_id}' is not registered.  "
-            "Call rl_list_environments() to see available environments."
         )
 
     translator = _custom_translators.get(env_id) or get_translator(env_id)
@@ -467,6 +508,56 @@ def rl_experiment_process(
                 f"Best: {train_result2.best_reward:.4f}\n"
             )
 
+        # ── Phase 3: Instructions + language-state training ───────────────────
+        _training_jobs[job_id]["phase"] = "instruction + language-state training"
+
+        jobs_before_lang_instr = set(_training_jobs.keys())
+        rl_train_agent(
+            agent_type=agent_type,
+            env_id=env_id,
+            n_episodes=n_episodes_instruction,
+            max_steps=max_steps,
+            seed=seed,
+            match_id=synthetic_match_id,
+            sub_goal_threshold=sub_goal_threshold,
+            use_language_state=True,
+            alpha=alpha,
+            gamma=gamma,
+            epsilon=epsilon,
+            epsilon_min=epsilon_min,
+            epsilon_decay=epsilon_decay,
+            hidden_size=hidden_size,
+            lr=lr,
+        )
+        lang_instr_job_id = next(
+            iter(set(_training_jobs.keys()) - jobs_before_lang_instr), None
+        )
+
+        if lang_instr_job_id:
+            while _training_jobs.get(lang_instr_job_id, {}).get("status") == "running":
+                time.sleep(1)
+
+        lang_instr_agent_id = (
+            _training_jobs.get(lang_instr_job_id, {}).get("agent_id")
+            if lang_instr_job_id else None
+        )
+
+        lang_instr_entry = _trained_agents.get(lang_instr_agent_id, {}) if lang_instr_agent_id else {}
+        _li_eval_mean = lang_instr_entry.get("eval_mean")
+        _li_eval_std = lang_instr_entry.get("eval_std")
+        lang_instr_eval_line = ""
+        if _li_eval_mean is not None and _li_eval_std is not None:
+            lang_instr_eval_line = (
+                f"  Clean eval (100 eps): mean={_li_eval_mean:.4f}  \u00b1{_li_eval_std:.4f}\n"
+            )
+        train_result3 = lang_instr_entry.get("train_result")
+        phase3_reward_line = ""
+        if train_result3 is not None:
+            phase3_reward_line = (
+                f"  Mean reward: {train_result3.mean_reward:.4f}  "
+                f"Best: {train_result3.best_reward:.4f}\n"
+            )
+
         lang_entry = _trained_agents.get(lang_agent_id, {}) if lang_agent_id else {}
         lang_result = lang_entry.get("train_result")
         lang_reward_line = ""
@@ -476,32 +567,44 @@ def rl_experiment_process(
                 f"Best: {lang_result.best_reward:.4f}\n"
             )
         lang_section = (
-            f"\nPhase 1b — Language-state training ({n_episodes_baseline} episodes):\n"
+            f"\nPhase 1b \u2014 Language-state training ({n_episodes_baseline} episodes):\n"
             + (lang_reward_line or "  (no result)\n")
             + f"  Language agent_id: {lang_agent_id}\n"
         ) if lang_agent_id else ""
 
+        phase3_section = (
+            f"\nPhase 3 \u2014 Instruction + language-state training ({n_episodes_instruction} episodes):\n"
+            + (phase3_reward_line or "  (no result)\n")
+            + lang_instr_eval_line
+            + f"  Instruction+lang agent_id: {lang_instr_agent_id}\n"
+        ) if lang_instr_agent_id else ""
+
         compare_ids = [baseline_agent_id]
         if lang_agent_id:
             compare_ids.append(lang_agent_id)
+        compare_ids.append(instr_agent_id)
+        if lang_instr_agent_id:
+            compare_ids.append(lang_instr_agent_id)
 
+        best_agent_id = lang_instr_agent_id or instr_agent_id
         _final_dash_url = _dashboard_url() or dash_url
         result_text = (
-            f"Experiment pipeline complete — {agent_type} on {env_id}\n\n"
+            f"Experiment pipeline complete \u2014 {agent_type} on {env_id}\n\n"
             f"Dashboard: {_final_dash_url}\n\n"
-            f"Phase 1 — Baseline training ({n_episodes_baseline} episodes):\n"
+            f"Phase 1 \u2014 Baseline training ({n_episodes_baseline} episodes):\n"
             f"  Mean reward: {result1.mean_reward:.4f}  Best: {result1.best_reward:.4f}\n"
             f"  Baseline agent_id: {baseline_agent_id}\n"
             + lang_section
             + f"\nInstruction used ({instruction_source}):\n"
             + "".join(f"  {i + 1}. {s}\n" for i, s in enumerate(instructions_to_use))
-            + f"\nPhase 2 — Instruction-shaped training ({n_episodes_instruction} episodes):\n"
+            + f"\nPhase 2 \u2014 Instruction-shaped training ({n_episodes_instruction} episodes):\n"
             + phase2_reward_line
             + eval_line
-            + f"  Instruction agent_id: {instr_agent_id}\n\n"
-            f"Use rl_run_agent_episode(agent_id='{instr_agent_id}') to evaluate the "
-            f"instruction-shaped agent.\n"
-            f"Use rl_create_training_report(agent_id='{instr_agent_id}', "
+            + f"  Instruction agent_id: {instr_agent_id}\n"
+            + phase3_section
+            + f"\nUse rl_run_agent_episode(agent_id='{best_agent_id}') to evaluate the "
+            f"best agent.\n"
+            f"Use rl_create_training_report(agent_id='{best_agent_id}', "
             f"compare_agent_ids={compare_ids!r}) to compare all phases."
         )
         _training_jobs[job_id]["result"] = result_text
@@ -515,18 +618,20 @@ def rl_experiment_process(
         else "  Instruction:   (auto-derived from baseline)\n"
     )
     return (
-        f"Experiment pipeline started — {agent_type} on {env_id}\n\n"
+        f"Experiment pipeline started \u2014 {agent_type} on {env_id}\n\n"
         f"  Job ID:        {job_id}\n"
         f"{instr_note}"
         f"  Phase 1:       {n_episodes_baseline} baseline episodes\n"
-        f"  Phase 2:       {n_episodes_instruction} instruction-shaped episodes\n"
+        f"  Phase 2+3:     {n_episodes_instruction} instruction-shaped episodes each\n"
         f"  max_steps:     {max_steps}\n\n"
+        + _suggested_note
         + auto_translator_note
         + f"Dashboard: {dash_url}  (open in browser for live reward curves)\n\n"
         f"Pipeline stages:\n"
         f"  1. Baseline training with language state tracking\n"
         f"  2. Language-state training (comparison agent)\n"
         f"  3. {'Matching provided instruction' if instruction else 'Deriving instructions from baseline'}\n"
-        f"  4. Instruction-shaped training (via rl_train_agent)\n\n"
+        f"  4. Instruction-shaped training\n"
+        f"  5. Instruction + language-state training\n\n"
         f"Call rl_get_training_result(job_id='{job_id}') to check progress and get the result."
     )

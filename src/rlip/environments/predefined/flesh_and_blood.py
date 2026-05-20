@@ -41,6 +41,7 @@ from ...protocol.messages import (
     RenderResult,
     ResetResult,
     StepResult,
+    SuggestedHyperparameters,
     TextSpace,
 )
 from ..base import RLIPEnvironment, RLIPEnvironmentFactory
@@ -1483,6 +1484,20 @@ class FleshAndBloodFactory(RLIPEnvironmentFactory):
             namespace="flesh_and_blood",
             render_modes=["ansi", "rgb_array"],
             max_episode_steps=self._max_turns,
+            suggested_hyperparameters=SuggestedHyperparameters(
+                agent_type="tabular_q",
+                n_episodes_baseline=300,
+                n_episodes_instruction=300,
+                max_steps=self._max_turns,
+                alpha=0.1,
+                gamma=0.99,
+                epsilon=1.0,
+                epsilon_min=0.05,
+                epsilon_decay=0.997,
+                sub_goal_threshold=0.5,
+                top_k=3,
+                min_episode_visits=2,
+            ),
         )
 
     def create(

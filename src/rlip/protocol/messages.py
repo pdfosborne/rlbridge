@@ -98,6 +98,34 @@ DictSpace.model_rebuild()
 
 # ── Environment metadata ──────────────────────────────────────────────────────
 
+class SuggestedHyperparameters(BaseModel):
+    """
+    Recommended training hyperparameters for a specific environment.
+
+    Returned by ``factory.env_info.suggested_hyperparameters`` and exposed via
+    the ``rl_get_suggested_hyperparameters()`` MCP tool.  All fields are
+    optional; absent values mean "use the global default".
+    """
+    agent_type: str = "tabular_q"
+    # Episode counts
+    n_episodes_baseline: int = 300
+    n_episodes_instruction: int = 300
+    max_steps: int = 200
+    # Instruction-matching
+    sub_goal_threshold: float = 0.5
+    top_k: int = 3
+    min_episode_visits: int = 2
+    # Tabular-Q hyperparameters
+    alpha: float = 0.1
+    gamma: float = 0.99
+    epsilon: float = 1.0
+    epsilon_min: float = 0.01
+    epsilon_decay: float = 0.995
+    # DQN / PPO shared
+    hidden_size: int = 64
+    lr: float = 1e-3
+
+
 class EnvironmentInfo(BaseModel):
     env_id: str
     description: str = ""
@@ -107,6 +135,7 @@ class EnvironmentInfo(BaseModel):
     max_episode_steps: Optional[int] = None
     namespace: str = "gymnasium"
     render_modes: list[str] = Field(default_factory=list)
+    suggested_hyperparameters: Optional[SuggestedHyperparameters] = None
 
 
 # ── rlip/initialize ───────────────────────────────────────────────────────────

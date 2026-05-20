@@ -2,7 +2,8 @@
 Basic environment interaction MCP tools for the RLIP plugin.
 
 Tools: rl_list_environments, rl_create, rl_reset, rl_step, rl_sample_action,
-       rl_spaces, rl_render, rl_close, rl_list_instances, rl_run_episode.
+       rl_spaces, rl_render, rl_close, rl_list_instances, rl_run_episode,
+       rl_get_suggested_hyperparameters, rl_update_suggested_hyperparameters.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import json
 from typing import Any, Optional
 
 from ._dispatch import _dispatch, _fmt_obs
-from ._state import mcp
+from ._state import _hp_override_path, _hp_overrides, mcp
 
 
 @mcp.tool()
@@ -412,4 +413,221 @@ def rl_run_episode(
         f"  Total reward: {total_reward:.4f}\n"
         f"  End reason:   {end_reason}\n"
         f"  Seed:         {seed if seed is not None else 'random'}"
+    )
+
+
+@mcp.tool()
+def rl_get_suggested_hyperparameters(env_id: str) -> str:
+    """
+    Return the recommended training hyperparameters for a registered environment.
+
+    Predefined RLIP environments ship with environment-specific suggestions for
+    agent type, episode counts, step limits, and RL hyperparameters.  Use these
+    as a starting point before calling ``rl_train_agent()`` or
+    ``rl_experiment_process()``.
+
+    ``rl_experiment_process()`` automatically applies these suggestions when you
+    do not override individual parameters, so calling this tool first is optional
+    — it is mainly useful for inspection or when building a custom training call.
+
+    Call ``rl_update_suggested_hyperparameters()`` after training runs to persist
+    better values once convergence is observed.
+
+    Parameters
+    ----------
+    env_id:
+        A registered RLIP environment ID, e.g. ``"Sailing-v0"``.
+
+    Returns
+    -------
+    Formatted list of suggested hyperparameters, or a note that none are defined.
+    """
+    from ..environments.registry import registry as _env_registry  # noqa: PLC0415
+
+    try:
+        factory = _env_registry.get(env_id)
+    except KeyError:
+        return (
+            f"Environment '{env_id}' is not registered.  "
+            "Call rl_list_environments() to see available environments."
+        )
+
+    # Persisted override takes precedence over the factory default
+    hp = _hp_overrides.get(env_id) or factory.env_info.suggested_hyperparameters
+    source = "(persisted override)" if env_id in _hp_overrides else "(factory default)"
+    if hp is None:
+        return (
+            f"No suggested hyperparameters are defined for '{env_id}'.\n"
+            "You can pass hyperparameters explicitly to rl_experiment_process() "
+            "or rl_train_agent(), then save the best values with "
+            "rl_update_suggested_hyperparameters()."
+        )
+
+    lines = [
+        f"Suggested hyperparameters for '{env_id}' {source}:\n",
+        f"  agent_type:              {hp.agent_type}",
+        f"  n_episodes_baseline:     {hp.n_episodes_baseline}",
+        f"  n_episodes_instruction:  {hp.n_episodes_instruction}",
+        f"  max_steps:               {hp.max_steps}",
+        "",
+        "  Instruction matching:",
+        f"    sub_goal_threshold:    {hp.sub_goal_threshold}",
+        f"    top_k:                 {hp.top_k}",
+        f"    min_episode_visits:    {hp.min_episode_visits}",
+        "",
+        "  Tabular-Q:",
+        f"    alpha:                 {hp.alpha}",
+        f"    gamma:                 {hp.gamma}",
+        f"    epsilon:               {hp.epsilon}",
+        f"    epsilon_min:           {hp.epsilon_min}",
+        f"    epsilon_decay:         {hp.epsilon_decay}",
+        "",
+        "  DQN / PPO:",
+        f"    hidden_size:           {hp.hidden_size}",
+        f"    lr:                    {hp.lr}",
+        "",
+        f"Use: rl_experiment_process(agent_type='{hp.agent_type}', env_id='{env_id}')",
+        "Parameters with matching values will be applied automatically.",
+    ]
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def rl_update_suggested_hyperparameters(
+    env_id: str,
+    agent_type: Optional[str] = None,
+    n_episodes_baseline: Optional[int] = None,
+    n_episodes_instruction: Optional[int] = None,
+    max_steps: Optional[int] = None,
+    sub_goal_threshold: Optional[float] = None,
+    top_k: Optional[int] = None,
+    min_episode_visits: Optional[int] = None,
+    alpha: Optional[float] = None,
+    gamma: Optional[float] = None,
+    epsilon: Optional[float] = None,
+    epsilon_min: Optional[float] = None,
+    epsilon_decay: Optional[float] = None,
+    hidden_size: Optional[int] = None,
+    lr: Optional[float] = None,
+) -> str:
+    """
+    Update and persist the suggested training hyperparameters for an environment.
+
+    Use this after completing training runs to record better hyperparameter values
+    — in particular the **minimum number of episodes needed for convergence**.
+    Only pass the fields you want to change; all others are left at their current
+    suggested values.
+
+    The updated values are saved to
+    ``~/.rlip/environments/<env_id>/suggested_hyperparameters.json`` and will
+    be loaded automatically in future sessions.  ``rl_experiment_process()``
+    picks them up immediately.
+
+    **Convergence guidance** — set ``n_episodes_baseline`` and
+    ``n_episodes_instruction`` to the *lowest* episode count at which training
+    reliably converges on this environment, not a conservative upper bound.
+    This keeps experiment runs fast and avoids wasted compute on subsequent calls.
+
+    Parameters
+    ----------
+    env_id:
+        A registered RLIP environment ID, e.g. ``"Sailing-v0"``.
+    agent_type:
+        Best agent type found (``"tabular_q"``, ``"dqn"``, or ``"ppo"``).
+    n_episodes_baseline:
+        Minimum episodes for reliable baseline convergence.
+    n_episodes_instruction:
+        Minimum episodes for reliable instruction-shaped convergence.
+    max_steps:
+        Step cap per episode.
+    sub_goal_threshold / top_k / min_episode_visits:
+        Instruction-matching tuning.
+    alpha / gamma / epsilon / epsilon_min / epsilon_decay:
+        Best tabular-Q values found.
+    hidden_size / lr:
+        Best DQN/PPO values found.
+
+    Returns
+    -------
+    Confirmation showing the full updated parameter set.
+    """
+    import json as _json  # noqa: PLC0415
+    from ..environments.registry import registry as _env_registry  # noqa: PLC0415
+    from ..protocol.messages import SuggestedHyperparameters  # noqa: PLC0415
+
+    try:
+        factory = _env_registry.get(env_id)
+    except KeyError:
+        return (
+            f"Environment '{env_id}' is not registered.  "
+            "Call rl_list_environments() to see available environments."
+        )
+
+    # Start from the best existing values: persisted override → factory default → bare defaults
+    existing = _hp_overrides.get(env_id) or factory.env_info.suggested_hyperparameters
+    base = existing.model_dump() if existing is not None else {}
+
+    # Apply only the fields explicitly provided (not None)
+    updates: dict[str, Any] = {}
+    _fields = {
+        "agent_type": agent_type,
+        "n_episodes_baseline": n_episodes_baseline,
+        "n_episodes_instruction": n_episodes_instruction,
+        "max_steps": max_steps,
+        "sub_goal_threshold": sub_goal_threshold,
+        "top_k": top_k,
+        "min_episode_visits": min_episode_visits,
+        "alpha": alpha,
+        "gamma": gamma,
+        "epsilon": epsilon,
+        "epsilon_min": epsilon_min,
+        "epsilon_decay": epsilon_decay,
+        "hidden_size": hidden_size,
+        "lr": lr,
+    }
+    for field, val in _fields.items():
+        if val is not None:
+            updates[field] = val
+
+    if not updates:
+        return (
+            f"No fields were provided — nothing to update for '{env_id}'.\n"
+            "Pass at least one parameter to change."
+        )
+
+    merged = {**base, **updates}
+    new_hp = SuggestedHyperparameters(**merged)
+
+    # Persist to disk
+    hp_path = _hp_override_path(env_id)
+    hp_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = new_hp.model_dump()
+    payload["_env_id"] = env_id  # store env_id so the loader can recover it
+    hp_path.write_text(_json.dumps(payload, indent=2), encoding="utf-8")
+
+    # Update live cache
+    _hp_overrides[env_id] = new_hp
+
+    changed_lines = [f"  {k}: {base.get(k, '(new)')} → {v}" for k, v in updates.items()]
+    return (
+        f"Suggested hyperparameters updated for '{env_id}'.\n\n"
+        f"Changed fields:\n"
+        + "\n".join(changed_lines)
+        + f"\n\nFull updated values:\n"
+        f"  agent_type:              {new_hp.agent_type}\n"
+        f"  n_episodes_baseline:     {new_hp.n_episodes_baseline}\n"
+        f"  n_episodes_instruction:  {new_hp.n_episodes_instruction}\n"
+        f"  max_steps:               {new_hp.max_steps}\n"
+        f"  sub_goal_threshold:      {new_hp.sub_goal_threshold}\n"
+        f"  top_k:                   {new_hp.top_k}\n"
+        f"  min_episode_visits:      {new_hp.min_episode_visits}\n"
+        f"  alpha:                   {new_hp.alpha}\n"
+        f"  gamma:                   {new_hp.gamma}\n"
+        f"  epsilon:                 {new_hp.epsilon}\n"
+        f"  epsilon_min:             {new_hp.epsilon_min}\n"
+        f"  epsilon_decay:           {new_hp.epsilon_decay}\n"
+        f"  hidden_size:             {new_hp.hidden_size}\n"
+        f"  lr:                      {new_hp.lr}\n\n"
+        f"Saved to: {hp_path}\n"
+        f"rl_experiment_process() will use these values automatically."
     )

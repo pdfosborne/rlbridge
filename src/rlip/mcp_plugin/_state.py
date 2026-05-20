@@ -78,6 +78,12 @@ _custom_translators: dict[str, Any] = {}
 # without requiring the caller to pass the states back.
 _sampled_states: dict[str, list[Any]] = {}
 
+# Persisted hyperparameter overrides — LLM can update these via
+# rl_update_suggested_hyperparameters().  Stored per-env under
+# ~/.rlip/environments/<env_id>/suggested_hyperparameters.json
+# and loaded back at import time so they survive session restarts.
+_hp_overrides: dict[str, Any] = {}
+
 def _safe_env_name(env_id: str) -> str:
     """Normalize env IDs for filesystem-safe directory names."""
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", env_id).strip("._-")
@@ -175,11 +181,16 @@ def _env_agents_registry_path(env_id: str) -> Path:
 
 
 def _custom_env_cache_root() -> Path:
-    return _cache_root() / "envs"
+    return _cache_root() / "environments"
 
 
 def _catalog_path() -> Path:
     return _cache_root() / "catalog.json"
+
+
+def _hp_override_path(env_id: str) -> Path:
+    """JSON file storing a persisted SuggestedHyperparameters override."""
+    return _cache_root() / "environments" / _safe_env_name(env_id) / "suggested_hyperparameters.json"
 
 
 # ── Local-output paths (user-facing; relative to cwd) ────────────────────────
@@ -202,3 +213,27 @@ def _env_agents_dir(env_id: str) -> Path:
 def _env_reports_dir(env_id: str) -> Path:
     """Where training-report PNGs are saved (local results directory)."""
     return _local_env_dir(env_id) / "reports"
+
+
+# ── Load persisted hyperparameter overrides at startup ───────────────────────
+
+def _load_hp_overrides() -> None:
+    """
+    Scan ``~/.rlip/environments/*/suggested_hyperparameters.json`` and populate
+    ``_hp_overrides`` so previously saved tunings survive session restarts.
+    """
+    import json as _json  # noqa: PLC0415
+    from ..protocol.messages import SuggestedHyperparameters as _SHP  # noqa: PLC0415
+    envs_root = _cache_root() / "environments"
+    if not envs_root.exists():
+        return
+    for hp_file in envs_root.glob("*/suggested_hyperparameters.json"):
+        try:
+            data = _json.loads(hp_file.read_text())
+            env_id = data.pop("_env_id", hp_file.parent.name)
+            _hp_overrides[env_id] = _SHP(**data)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Could not load HP override from %s: %s", hp_file, exc)
+
+
+_load_hp_overrides()
