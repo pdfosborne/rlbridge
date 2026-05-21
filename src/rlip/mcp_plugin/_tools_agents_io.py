@@ -85,7 +85,15 @@ def _package_trained_agent(agent_id: str, entry: dict[str, Any]) -> tuple[Path |
         if custom_env_dir.exists() and custom_env_dir.is_dir():
             cached_dest = env_src_dir / "custom_env_cache"
             shutil.copytree(custom_env_dir, cached_dest, dirs_exist_ok=True)
-            shutil.copytree(custom_env_dir, cached_env_src_dir / "custom_env_cache", dirs_exist_ok=True)
+            # Exclude the "cache" subdirectory to prevent copying a directory
+            # into one of its own subdirectories, which would create an infinite
+            # directory cycle.
+            shutil.copytree(
+                custom_env_dir,
+                cached_env_src_dir / "custom_env_cache",
+                ignore=shutil.ignore_patterns("cache"),
+                dirs_exist_ok=True,
+            )
     except Exception:
         pass
 

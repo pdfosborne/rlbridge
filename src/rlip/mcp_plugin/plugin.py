@@ -145,6 +145,7 @@ from . import (  # noqa: F401, E402
     _tools_agents_eval,
     _tools_agents_io,
     _tools_experiment,
+    _tools_llm_play,
     _tools_builder,
     _tools_cache,
     _tools_create_env,

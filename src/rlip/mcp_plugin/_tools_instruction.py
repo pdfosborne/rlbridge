@@ -221,6 +221,7 @@ async def rl_match_instruction(
     encoder: str = "tfidf",
     encoder_model: str = "",
     encoder_device: str = "",
+    use_raw_observations: bool = False,
 ) -> str:
     """
     Explore an RL environment, translate observed states to language, and
@@ -263,6 +264,12 @@ async def rl_match_instruction(
     encoder_device:
         Optional sentence-transformers device override ("cpu", "cuda").
         Used only when encoder is sentence-transformers/sentence.
+    use_raw_observations:
+        When False (default) the system ALWAYS translates each observed state
+        to a natural-language description before comparing it to the
+        instruction.  Set to True only when the environment observations are
+        already human-readable strings (e.g. a text-adventure game) or when
+        you explicitly want to match against the raw observation values.
 
     Returns
     -------
@@ -274,9 +281,12 @@ async def rl_match_instruction(
     from ..instruction_following import (
         build_sequential_instruction_following_protocol,
         match_instruction,
+        obs_cache_langs,
     )
     from ..instruction_matching import get_encoder as _get_encoder
     from ..environments.registry import registry as _env_registry
+    from ..language_translation import get_translator as _get_translator
+    from ._state import _custom_translators as _ct  # noqa: PLC0415
 
     try:
         factory = _env_registry.get(env_id)
@@ -286,6 +296,13 @@ async def rl_match_instruction(
             f"Environment '{env_id}' is not registered.  "
             "Call rl_list_environments() to see what is available."
         )
+
+    # Always resolve the translator up front so every downstream call
+    # (match_instruction, build_sequential_instruction_following_protocol,
+    # and the protocol stored in _instruction_protocols) uses the same
+    # translator consistently.  Language translation is the required default;
+    # only skip it when the caller explicitly sets use_raw_observations=True.
+    _resolved_translator = _ct.get(env_id) or _get_translator(env_id)
 
     progress_env = _ExplorationProgressEnv(env, total_steps=exploration_steps, env_id=env_id)
 
@@ -317,9 +334,11 @@ async def rl_match_instruction(
                 lambda: match_instruction(
                     instruction,
                     progress_env,
+                    translator=_resolved_translator,
                     seed=seed,
                     max_steps=exploration_steps,
                     encoder=_encoder_instance,
+                    use_raw_observations=use_raw_observations,
                 ),
             )
         except ValueError as exc:
@@ -336,7 +355,6 @@ async def rl_match_instruction(
     # Ask the host LLM to break the instruction into ordered sub-steps using the
     # observed language states as grounding context.  Falls back to [] silently
     # so the rest of the tool always runs even when sampling is unavailable.
-    from ..instruction_following import obs_cache_langs
     observed_langs = obs_cache_langs(env_id)
     sub_steps_raw = await _decompose_instruction_with_llm(ctx, instruction, env_id, observed_langs)
     sub_steps = _normalize_sequential_steps(instruction, sub_steps_raw)
@@ -348,8 +366,10 @@ async def rl_match_instruction(
     protocol = build_sequential_instruction_following_protocol(
         sub_steps,
         env,
+        translator=_resolved_translator,
         seed=seed,
         max_steps=exploration_steps,
+        use_raw_observations=use_raw_observations,
     )
     # The env was consumed by exploration; protocol will reset it on __call__.
     match_id = uuid.uuid4().hex[:12]
@@ -540,6 +560,7 @@ async def rl_match_sequential_instructions(
     instructions: list[str],
     exploration_steps: int = 100,
     seed: Optional[int] = None,
+    use_raw_observations: bool = False,
 ) -> str:
     """
     Explore an RL environment and match multiple natural-language instructions
@@ -571,6 +592,11 @@ async def rl_match_sequential_instructions(
         50–200 is usually sufficient.
     seed:
         Optional integer seed for reproducible exploration.
+    use_raw_observations:
+        When False (default) the system ALWAYS translates observed states to
+        natural-language descriptions before matching.  Set to True only when
+        environment observations are already text, or when the LLM/user
+        explicitly requests raw-observation matching.
 
     Returns
     -------
@@ -585,6 +611,8 @@ async def rl_match_sequential_instructions(
         obs_cache_langs,
     )
     from ..environments.registry import registry as _env_registry
+    from ..language_translation import get_translator as _get_translator
+    from ._state import _custom_translators as _ct  # noqa: PLC0415
 
     if not instructions:
         return "Error: instructions list cannot be empty."
@@ -597,6 +625,10 @@ async def rl_match_sequential_instructions(
             f"Environment '{env_id}' is not registered.  "
             "Call rl_list_environments() to see what is available."
         )
+
+    # Resolve translator once and pass it through every matching call and the
+    # protocol, so translation is consistent throughout.
+    _resolved_translator = _ct.get(env_id) or _get_translator(env_id)
 
     progress_env = _ExplorationProgressEnv(env, total_steps=exploration_steps, env_id=env_id)
 
@@ -616,8 +648,10 @@ async def rl_match_sequential_instructions(
                     lambda i=instr, first=(idx == 0): match_instruction(
                         i,
                         progress_env if first else env,
+                        translator=_resolved_translator,
                         seed=seed,
                         max_steps=exploration_steps,
+                        use_raw_observations=use_raw_observations,
                     ),
                 )
                 matches.append(match)
@@ -644,8 +678,10 @@ async def rl_match_sequential_instructions(
     protocol = build_sequential_instruction_following_protocol(
         sequential_instructions,
         env,
+        translator=_resolved_translator,
         seed=seed,
         max_steps=exploration_steps,
+        use_raw_observations=use_raw_observations,
     )
 
     match_id = uuid.uuid4().hex[:12]

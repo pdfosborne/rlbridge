@@ -193,6 +193,9 @@ def rl_train_agent(
     mini_batch_size: int = 64,
     # Parallel environments
     n_envs: int = 10,
+    # Post-training clean evaluation
+    clean_eval_episodes: int = 100,
+    clean_eval_timeout_secs: int = 180,
 ) -> str:
     """
     Train an RL agent on a registered environment (manual / advanced mode).
@@ -284,6 +287,12 @@ def rl_train_agent(
         After all workers finish, the agent with the highest best-episode reward
         is selected.  Combined episode statistics from all workers are reported.
         Set to 1 to disable parallel training (original single-env behaviour).
+    clean_eval_episodes:
+        Number of post-training clean-evaluation episodes (fixed weights, no
+        instruction rewards).  Set to 0 to skip clean evaluation.
+    clean_eval_timeout_secs:
+        Hard timeout for clean evaluation. If exceeded, evaluation is skipped so
+        the training job can still complete.
 
     Returns
     -------
@@ -311,6 +320,12 @@ def rl_train_agent(
         )
 
     # ── Optional sub-goal shaping via a cached match_id ───────────────────────
+    # Cap matched states per stage: environments with numeric observations
+    # produce empty TF-IDF vocabularies, so all observed states tie at
+    # similarity 0.0 and ALL get included in matched_states.  Without this cap
+    # every training step iterates over potentially thousands of zero vectors,
+    # making training look permanently stuck.
+    _MAX_STAGE_LANGS = 20
     shaping_summary = ""
     if match_id:
         entry = _instruction_protocols.get(match_id)
@@ -336,7 +351,7 @@ def rl_train_agent(
                 if not langs and getattr(m, "matched_language", None):
                     langs = [m.matched_language]
                 if langs:
-                    stage_languages.append(langs)
+                    stage_languages.append(langs[:_MAX_STAGE_LANGS])
             if not stage_languages:
                 return (
                     f"match_id '{match_id}' does not have valid sequential stages. "
@@ -427,7 +442,8 @@ def rl_train_agent(
                 if not _par_langs and getattr(_par_m, "matched_language", None):
                     _par_langs = [_par_m.matched_language]
                 if _par_langs:
-                    _par_stage_languages.append(_par_langs)
+                    # Same cap as stage_languages above — avoids O(N) per step.
+                    _par_stage_languages.append(_par_langs[:_MAX_STAGE_LANGS])
         else:
             _par_shaping_mode = "single"
             _par_sub_goal_language = _par_protocol.sub_goal_language
@@ -591,6 +607,16 @@ def rl_train_agent(
     }
 
     def _job() -> None:
+        try:
+            _job_inner()
+        except Exception as _top_exc:
+            log.exception("rl_train_agent: unhandled exception in background job %s", job_id)
+            _training_jobs[job_id]["status"] = "failed"
+            _training_jobs[job_id]["result"] = (
+                f"Training job failed (unhandled error): {_top_exc}"
+            )
+
+    def _job_inner() -> None:
         nonlocal agent
         _parallel_summary = ""
 
@@ -609,21 +635,26 @@ def rl_train_agent(
             )
 
             def _sub_worker(widx: int) -> None:
-                _ws = None if seed is None else seed + widx
-                _we = _build_worker_env()
-                _wa = _build_worker_agent(widx)
+                try:
+                    _ws = None if seed is None else seed + widx
+                    _we = _build_worker_env()
+                    _wa = _build_worker_agent(widx)
+                except Exception as exc:
+                    log.warning("Parallel training worker %d setup failed: %s", widx, exc)
+                    return
+
                 _ep_r: list[float] = [0.0]
                 _resets: list[int] = [0]
 
                 class _CntEnv:
-                    def reset(self_, seed_: Any = None, options: Any = None) -> Any:
+                    def reset(self_, seed: Any = None, options: Any = None) -> Any:
                         if _resets[0] > 0:
                             with _par_lock:
                                 _par_proxy._increment()
                                 _par_bar.update(1)
                             _ep_r[0] = 0.0
                         _resets[0] += 1
-                        return _we.reset(seed=seed_, options=options)
+                        return _we.reset(seed=seed, options=options)
 
                     def step(self_, action: Any) -> Any:
                         out = _we.step(action)
@@ -663,6 +694,8 @@ def rl_train_agent(
                 except Exception as exc:  # pragma: no cover
                     log.warning("Parallel training worker %d failed: %s", widx, exc)
 
+            # Generous per-worker timeout: at least 5 min, scales with workload.
+            _worker_timeout = max(300, n_episodes * max_steps // 1000 + 60)
             _sub_threads = [
                 threading.Thread(target=_sub_worker, args=(i,), daemon=True)
                 for i in range(n_envs)
@@ -670,8 +703,16 @@ def rl_train_agent(
             for _t in _sub_threads:
                 _t.start()
             for _t in _sub_threads:
-                _t.join()
+                _t.join(timeout=_worker_timeout)
             _par_bar.close()
+
+            # Warn about workers that didn't complete within the timeout.
+            _timed_out = [i for i, _t in enumerate(_sub_threads) if _t.is_alive()]
+            if _timed_out:
+                log.warning(
+                    "rl_train_agent: %d/%d parallel workers timed out after %ss: %s",
+                    len(_timed_out), n_envs, _worker_timeout, _timed_out,
+                )
 
             _valid = [(wa, wr) for wa, wr in _worker_results if wr is not None]
             if not _valid:
@@ -792,10 +833,12 @@ def rl_train_agent(
         if _dash_running():
             _render_policy_for_dashboard(agent_id, env_id, result.best_episode_history, max_steps)
 
-        # ── Clean 100-episode evaluation (fixed weights, no instruction rewards) ──
+        # ── Clean evaluation (fixed weights, no instruction rewards) ───────────
         _eval_mean: float | None = None
         _eval_std: float | None = None
         _eval_rewards: list[float] = []
+        if clean_eval_episodes > 0:
+            _training_jobs[job_id]["phase"] = "post-training clean evaluation"
         try:
             from ..environments.registry import registry as _eval_env_registry  # noqa: PLC0415
             from ..language_translation import get_translator as _get_translator  # noqa: PLC0415
@@ -806,20 +849,49 @@ def rl_train_agent(
                 _custom_translators.get(env_id) or _get_translator(env_id)
                 if use_language_state else None
             )
-            _eval_mean, _eval_std, _eval_rewards = _run_clean_evaluation(
-                agent=_eval_agent,
-                env_factory=_eval_factory,
-                n_episodes=100,
-                max_steps=max_steps,
-                use_language_state=use_language_state,
-                translator=_eval_translator,
-                env_id=env_id,
-                seed=seed if seed is not None else 0,
-            )
-            _trained_agents[agent_id]["eval_mean"] = _eval_mean
-            _trained_agents[agent_id]["eval_std"] = _eval_std
-            _trained_agents[agent_id]["eval_rewards"] = _eval_rewards
-        except Exception:
+            if clean_eval_episodes > 0:
+                _eval_payload: dict[str, Any] = {}
+                _eval_error: dict[str, Exception] = {}
+
+                def _eval_runner() -> None:
+                    try:
+                        _mean, _std, _rewards = _run_clean_evaluation(
+                            agent=_eval_agent,
+                            env_factory=_eval_factory,
+                            n_episodes=clean_eval_episodes,
+                            max_steps=max_steps,
+                            use_language_state=use_language_state,
+                            translator=_eval_translator,
+                            env_id=env_id,
+                            seed=seed if seed is not None else 0,
+                        )
+                        _eval_payload["mean"] = _mean
+                        _eval_payload["std"] = _std
+                        _eval_payload["rewards"] = _rewards
+                    except Exception as _exc:
+                        _eval_error["exc"] = _exc
+
+                _eval_thread = threading.Thread(target=_eval_runner, daemon=True)
+                _eval_thread.start()
+                _eval_thread.join(timeout=max(1, int(clean_eval_timeout_secs)))
+
+                if _eval_thread.is_alive():
+                    log.warning(
+                        "rl_train_agent: clean evaluation timed out after %ss for agent %s",
+                        clean_eval_timeout_secs,
+                        agent_id,
+                    )
+                elif "exc" in _eval_error:
+                    raise _eval_error["exc"]
+                else:
+                    _eval_mean = _eval_payload.get("mean")
+                    _eval_std = _eval_payload.get("std")
+                    _eval_rewards = _eval_payload.get("rewards", [])
+                    _trained_agents[agent_id]["eval_mean"] = _eval_mean
+                    _trained_agents[agent_id]["eval_std"] = _eval_std
+                    _trained_agents[agent_id]["eval_rewards"] = _eval_rewards
+        except Exception as _eval_exc:
+            log.warning("rl_train_agent: clean evaluation skipped due to error: %s", _eval_exc)
             pass
 
         artifact_path: str | None = None
@@ -891,7 +963,7 @@ def rl_train_agent(
         eval_summary = ""
         if _eval_mean is not None and _eval_std is not None:
             eval_summary = (
-                f"\n  Clean evaluation (100 eps, fixed weights, no instruction rewards):\n"
+                f"\n  Clean evaluation ({clean_eval_episodes} eps, fixed weights, no instruction rewards):\n"
                 f"    mean reward = {_eval_mean:.4f}  ±  {_eval_std:.4f}  (std)\n"
             )
 
@@ -934,9 +1006,13 @@ def rl_get_training_result(job_id: str) -> str:
     or rl_experiment_process.
 
     Training runs in a background thread with no time limits so that long
-    training runs are never interrupted by tool timeouts.  Call this tool
-    after starting training to check progress, then again when it is done to
-    retrieve the full result.
+    training runs are never interrupted by tool timeouts.
+
+    **MANDATORY BEHAVIOUR**: keep calling this tool every 30–60 seconds until
+    the status is "done".  When status is still "running", call it again —
+    do NOT stop, summarise partial progress, or present results early.
+    Only when the full result is returned (status == "done") should you
+    present results to the user.
 
     Parameters
     ----------
@@ -945,9 +1021,8 @@ def rl_get_training_result(job_id: str) -> str:
 
     Returns
     -------
-    If still running: episode progress and the agent_id.
-    If complete: the full training result summary (same as the old direct
-    return value).
+    If still running: episode progress and a reminder to keep polling.
+    If complete: the full training result summary.
     If failed: the error message.
     """
     job = _training_jobs.get(job_id)
@@ -964,11 +1039,20 @@ def rl_get_training_result(job_id: str) -> str:
         pct = f"{done / total * 100:.0f}%" if isinstance(total, int) and total > 0 else "?"
         phase = job.get("phase", "")
         phase_line = f"  Phase:    {phase}\n" if phase else ""
+        stages_done = job.get("stages_done", 0)
+        stages_total = job.get("stages_total")
+        stages_line = (
+            f"  Stages:   {stages_done}/{stages_total} complete\n"
+            if stages_total is not None else ""
+        )
+        agent_line = "  Agent ID: (not available until status is 'done')\n"
         return (
             f"Training in progress: {done}/{total} episodes ({pct})\n"
             f"{phase_line}"
-            f"  Agent ID: {job.get('agent_id', '?')}\n"
+            f"{stages_line}"
+            f"{agent_line}"
             f"  Env:      {job.get('env_id', '?')}\n\n"
-            f"Call rl_get_training_result(job_id='{job_id}') again to check."
+            f"** NOT DONE — call rl_get_training_result(job_id='{job_id}') again in ~30s. **\n"
+            f"Do NOT report results or consider the experiment finished until status is 'done'."
         )
     return job.get("result", "No result available.")

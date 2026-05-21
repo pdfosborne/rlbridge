@@ -373,6 +373,7 @@ def match_instruction(
     max_steps: int = 200,
     seed: Optional[int] = None,
     similarity_band: float = 0.05,
+    use_raw_observations: bool = False,
 ) -> InstructionMatch:
     """
     Explore *env* and find the observed state whose language description
@@ -425,6 +426,15 @@ def match_instruction(
         as equivalent sub-goals for reward shaping.  The default of ``0.05``
         captures near-identical states.  Use ``0.0`` to restrict to the
         single best state only.
+    use_raw_observations:
+        When *False* (default) a language translator is **required** — the
+        system always converts raw observations to natural-language strings
+        before encoding and comparing them to the instruction.  Pass
+        *True* only when the environment's observations are already
+        human-readable strings (e.g. a text-adventure game) **or** when
+        the LLM/user explicitly requests raw-observation matching.  In
+        that case, if no translator is provided, ``str(obs)`` is used as
+        the language representation.
 
     Returns
     -------
@@ -433,8 +443,8 @@ def match_instruction(
     Raises
     ------
     ValueError
-        If no translator is available for the environment and *translator*
-        is not supplied.
+        If *use_raw_observations* is ``False`` (the default) and no
+        translator is available for the environment.
     RuntimeError
         If the exploration episode produces no observations.
     """
@@ -444,11 +454,21 @@ def match_instruction(
     if translator is None:
         translator = get_translator(env_id)
     if translator is None:
-        raise ValueError(
-            f"No language translator registered for environment '{env_id}'. "
-            "Pass an explicit translator= argument or register one in "
-            "rlip.language_translation.TRANSLATORS."
-        )
+        if not use_raw_observations:
+            raise ValueError(
+                f"No language translator registered for environment '{env_id}'. "
+                "Pass an explicit translator= argument, register one in "
+                "rlip.language_translation.TRANSLATORS, or set "
+                "use_raw_observations=True to match against raw observation "
+                "strings directly."
+            )
+        # Explicit raw-observation mode: wrap str() as a minimal translator so
+        # the rest of the pipeline (exploration, caching, encoding) is uniform.
+        class _RawObsTranslator(LanguageTranslator):
+            name = "raw_obs"
+            def translate(self, state: Any, **_: Any) -> str:  # type: ignore[override]
+                return str(state)
+        translator = _RawObsTranslator()
 
     # Wrap the translator with a caching layer so every translate() call is
     # memoised across this and all future match_instruction calls for env_id.
@@ -584,6 +604,7 @@ def build_sequential_instruction_following_protocol(
     sub_goal_bonus: Optional[float] = None,
     sub_goal_threshold: float = 0.5,
     record_history: bool = True,
+    use_raw_observations: bool = False,
 ) -> "SequentialInstructionFollowingProtocol":
     """
     End-to-end builder for sequential multi-step instruction following.
@@ -628,6 +649,11 @@ def build_sequential_instruction_following_protocol(
         Cosine similarity threshold (0–1) to count as reaching a sub-goal.
     record_history:
         Whether to retain full step history in the result.
+    use_raw_observations:
+        Forwarded to :func:`match_instruction`.  When *False* (default) a
+        language translator is required.  Set to *True* only when the
+        environment observations are already text, or when the LLM/user
+        explicitly requests raw-observation matching.
 
     Returns
     -------
@@ -667,6 +693,7 @@ def build_sequential_instruction_following_protocol(
             max_steps=max_steps,
             seed=seed,
             similarity_band=similarity_band,
+            use_raw_observations=use_raw_observations,
         )
         matches.append(match)
 

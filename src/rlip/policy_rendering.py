@@ -480,6 +480,7 @@ def save_path_image(
     max_cols: int = 8,
     thumb_width: int = 120,
     annotate: bool = True,
+    frame_stride: int = 10,
 ) -> bool:
     """
     Compose all ``rgb_array`` frames into a single static PNG showing the
@@ -522,6 +523,9 @@ def save_path_image(
     rgb_frames = [f for f in frames if f.png_data]
     if not rgb_frames:
         return False
+
+    # Sub-sample: keep every `frame_stride`-th frame (always include the first)
+    rgb_frames = [f for i, f in enumerate(rgb_frames) if i % frame_stride == 0]
 
     # Build thumbnails
     thumbs: list[Image.Image] = []
@@ -652,7 +656,7 @@ def save_overlay_image(
         img = Image.merge("RGB", (r, g, b))
 
         # Incremental equal-weight blend: result = result*(i/(i+1)) + frame*(1/(i+1))
-        alpha = 1.0 / ((i + 1)**2)
+        alpha = (1.0 / (i + 1))
         composite = Image.blend(composite.convert("RGB"), img, alpha=alpha).convert("RGBA")
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
