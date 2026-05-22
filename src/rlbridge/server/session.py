@@ -12,16 +12,16 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from ..environments.base import RLIPEnvironment
+from ..environments.base import rlbridgeEnvironment
 from ..protocol.constants import ErrorCodes
-from .exceptions import RLIPError
+from .exceptions import rlbridgeError
 
 
 @dataclass
 class InstanceRecord:
     instance_id: str
     env_id: str
-    environment: RLIPEnvironment
+    environment: rlbridgeEnvironment
     render_mode: Optional[str]
     created_kwargs: dict[str, Any] = field(default_factory=dict)
 
@@ -37,13 +37,13 @@ class SessionManager:
     def create_instance(
         self,
         env_id: str,
-        environment: RLIPEnvironment,
+        environment: rlbridgeEnvironment,
         render_mode: Optional[str] = None,
         **kwargs: Any,
     ) -> InstanceRecord:
         with self._lock:
             if len(self._instances) >= self.max_instances:
-                raise RLIPError(
+                raise rlbridgeError(
                     code=ErrorCodes.ENV_CREATION_FAILED,
                     message=f"Maximum instance limit ({self.max_instances}) reached. "
                             "Close unused environments first.",
@@ -63,7 +63,7 @@ class SessionManager:
         with self._lock:
             record = self._instances.get(instance_id)
         if record is None:
-            raise RLIPError(
+            raise rlbridgeError(
                 code=ErrorCodes.INSTANCE_NOT_FOUND,
                 message=f"No live instance with id '{instance_id}'",
                 data={"instance_id": instance_id},

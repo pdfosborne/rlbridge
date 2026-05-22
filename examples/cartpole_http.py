@@ -20,7 +20,7 @@ from __future__ import annotations
 import sys
 sys.path.insert(0, "../src")  # for running from the examples/ directory
 
-from rlbridge.transport.http_client import RLIPClient, RLIPClientError
+from rlbridge.transport.http_client import rlbridgeClient, rlbridgeClientError
 
 
 def run_cartpole_episode(
@@ -28,7 +28,7 @@ def run_cartpole_episode(
     seed: int = 42,
     max_steps: int = 500,
 ) -> None:
-    with RLIPClient(base_url) as client:
+    with rlbridgeClient(base_url) as client:
         # ── Handshake ────────────────────────────────────────────────────────
         info = client.initialize(client_name="cartpole-example")
         print(f"Connected to: {info.server_name} v{info.server_version}")
@@ -78,7 +78,7 @@ def run_cartpole_episode(
 if __name__ == "__main__":
     try:
         run_cartpole_episode()
-    except RLIPClientError as e:
+    except rlbridgeClientError as e:
         print(f"rlbridge error: {e}")
     except Exception as e:
         print(f"Error: {e}\n\nMake sure the rlbridge server is running: rlbridge server")

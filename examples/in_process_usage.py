@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, "../src")
 
 from rlbridge.environments.registry import registry
-from rlbridge.server.dispatcher import RLIPDispatcher
+from rlbridge.server.dispatcher import rlbridgeDispatcher
 from rlbridge.server.session import SessionManager
 from rlbridge.protocol.constants import Methods
 
@@ -19,7 +19,7 @@ from rlbridge.protocol.constants import Methods
 def main() -> None:
     # Build the dispatcher directly - no HTTP needed
     session = SessionManager(max_instances=4)
-    dispatcher = RLIPDispatcher(registry=registry, session=session)
+    dispatcher = rlbridgeDispatcher(registry=registry, session=session)
 
     def rpc(method: str, **params) -> dict:
         req = {"jsonrpc": "2.0", "id": "test", "method": method, "params": params}

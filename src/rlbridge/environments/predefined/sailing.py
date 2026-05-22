@@ -73,7 +73,7 @@ from ...protocol.messages import (
     SuggestedHyperparameters,
     TextSpace,
 )
-from ..base import RLIPEnvironment, RLIPEnvironmentFactory
+from ..base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 
 
 # ── Physics helpers ───────────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ def _vel(theta: float, theta_0: float = 0.0) -> float:
 
 # ── Environment ───────────────────────────────────────────────────────────────
 
-class SailingEnvironment(RLIPEnvironment):
+class SailingEnvironment(rlbridgeEnvironment):
     """
     rlbridge sailing environment.
 
@@ -274,7 +274,7 @@ class SailingEnvironment(RLIPEnvironment):
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
-class SailingFactory(RLIPEnvironmentFactory):
+class SailingFactory(rlbridgeEnvironmentFactory):
     """
     Factory for :class:`SailingEnvironment` instances.
 

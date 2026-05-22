@@ -38,7 +38,7 @@ from __future__ import annotations
 import random
 from typing import Any, Optional
 
-from rlbridge.environments.base import RLIPEnvironment, RLIPEnvironmentFactory
+from rlbridge.environments.base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 from rlbridge.protocol.messages import (
     DiscreteSpace,
     EnvironmentInfo,
@@ -48,7 +48,7 @@ from rlbridge.protocol.messages import (
 )
 
 
-class {class_name}Env(RLIPEnvironment):
+class {class_name}Env(rlbridgeEnvironment):
     """
     Custom environment: {env_id}.
 
@@ -122,7 +122,7 @@ class {class_name}Env(RLIPEnvironment):
         return random.randrange(2)  # TODO: match your action_space.n
 
 
-class {class_name}Factory(RLIPEnvironmentFactory):
+class {class_name}Factory(rlbridgeEnvironmentFactory):
     @property
     def env_info(self) -> EnvironmentInfo:
         return EnvironmentInfo(
@@ -157,12 +157,12 @@ def _run(module_path, env_id):
 
     factory = getattr(module, "FACTORY", None)
     if factory is None:
-        # Try to find any RLIPEnvironmentFactory subclass
-        from rlbridge.environments.base import RLIPEnvironmentFactory
+        # Try to find any rlbridgeEnvironmentFactory subclass
+        from rlbridge.environments.base import rlbridgeEnvironmentFactory
         for name in dir(module):
             obj = getattr(module, name)
             try:
-                if isinstance(obj, RLIPEnvironmentFactory):
+                if isinstance(obj, rlbridgeEnvironmentFactory):
                     factory = obj
                     break
             except Exception:
@@ -416,7 +416,7 @@ def rl_create_environment_from_code(
         ``FACTORY.env_info`` returned by the code.
     python_code:
         Complete Python source.  Must define a module-level ``FACTORY``
-        instance that is a ``RLIPEnvironmentFactory`` subclass (see the
+        instance that is a ``rlbridgeEnvironmentFactory`` subclass (see the
         template from ``rl_get_environment_template()``).
     description:
         Human-readable description.  If empty, the value from
@@ -462,20 +462,20 @@ def rl_create_environment_from_code(
     env_file.write_text(code, encoding="utf-8")
 
     # ── 3. Load the module and instantiate the factory ────────────────────────
-    module_name = f"_rlip_custom_{env_id.replace('-', '_').replace('/', '_')}"
+    module_name = f"_rlbridge_custom_{env_id.replace('-', '_').replace('/', '_')}"
     try:
         module = _load_module_from_source(module_name, env_file)
     except Exception as exc:
         return f"Failed to import environment code: {exc}"
 
-    from ..environments.base import RLIPEnvironmentFactory  # noqa: PLC0415
+    from ..environments.base import rlbridgeEnvironmentFactory  # noqa: PLC0415
 
     factory = getattr(module, "FACTORY", None)
     if factory is None:
         for name in dir(module):
             obj = getattr(module, name)
             try:
-                if isinstance(obj, RLIPEnvironmentFactory):
+                if isinstance(obj, rlbridgeEnvironmentFactory):
                     factory = obj
                     break
             except Exception:

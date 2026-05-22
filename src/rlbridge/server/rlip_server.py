@@ -21,8 +21,8 @@ from fastapi.responses import JSONResponse
 
 from ..__init__ import __version__
 from ..environments.registry import EnvironmentRegistry, registry as default_registry
-from ..protocol.constants import RLIP_PROTOCOL_VERSION, ErrorCodes
-from .dispatcher import RLIPDispatcher
+from ..protocol.constants import rlbridge_PROTOCOL_VERSION, ErrorCodes
+from .dispatcher import rlbridgeDispatcher
 from .session import SessionManager
 
 log = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ def create_app(
     """
     reg = env_registry or default_registry
     session = SessionManager(max_instances=max_instances)
-    dispatcher = RLIPDispatcher(registry=reg, session=session)
+    dispatcher = rlbridgeDispatcher(registry=reg, session=session)
 
     app = FastAPI(
         title="rlbridge Server",
@@ -78,7 +78,7 @@ def create_app(
         return {
             "server_name": "rlbridge Server",
             "server_version": __version__,
-            "protocol_version": RLIP_PROTOCOL_VERSION,
+            "protocol_version": rlbridge_PROTOCOL_VERSION,
             "registered_environments": len(reg),
             "active_instances": len(session),
             "capabilities": {

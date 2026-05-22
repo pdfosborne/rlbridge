@@ -3,7 +3,7 @@ Shared state for the rlbridge MCP plugin.
 
 This module is imported first by every ``_tools_*.py`` submodule.  It:
 
-- Selects in-process vs. proxy mode based on ``RLIP_SERVER_URL``.
+- Selects in-process vs. proxy mode based on ``rlbridge_SERVER_URL``.
 - Creates the single ``FastMCP`` instance (``mcp``) that all tool submodules
   decorate their functions with.
 - Holds all mutable session caches (``_instruction_protocols``,
@@ -21,27 +21,27 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from ._prompts import rlip_system_prompt
+from ._prompts import rlbridge_system_prompt
 
 log = logging.getLogger(__name__)
 
 # ── Select in-process vs proxy mode ──────────────────────────────────────────
 
-_RLIP_SERVER_URL = os.environ.get("RLIP_SERVER_URL", "")
+_rlbridge_SERVER_URL = os.environ.get("rlbridge_SERVER_URL", "")
 
-if _RLIP_SERVER_URL:
+if _rlbridge_SERVER_URL:
     # Proxy mode - forward calls to a running rlbridge HTTP server
-    from ..transport.http_client import RLIPClient as _RLIPClient
-    _proxy: Any = _RLIPClient(_RLIP_SERVER_URL)
+    from ..transport.http_client import rlbridgeClient as _rlbridgeClient
+    _proxy: Any = _rlbridgeClient(_rlbridge_SERVER_URL)
     _in_process = False
     _registry: Any = None
     _dispatcher: Any = None
 else:
     # In-process mode - run environments directly in this process
     from ..environments.registry import registry as _registry  # type: ignore[assignment]
-    from ..server.dispatcher import RLIPDispatcher as _Dispatcher
+    from ..server.dispatcher import rlbridgeDispatcher as _Dispatcher
     from ..server.session import SessionManager as _SessionManager
-    _session = _SessionManager(max_instances=int(os.environ.get("RLIP_MAX_INSTANCES", "16")))
+    _session = _SessionManager(max_instances=int(os.environ.get("rlbridge_MAX_INSTANCES", "16")))
     _dispatcher = _Dispatcher(registry=_registry, session=_session)
     _in_process = True
     _proxy = None
@@ -51,7 +51,7 @@ else:
 
 mcp = FastMCP(
     "RL Bridge",
-    instructions=rlip_system_prompt(),
+    instructions=rlbridge_system_prompt(),
 )
 
 
@@ -94,24 +94,24 @@ def _safe_env_name(env_id: str) -> str:
 # Path resolution - two distinct roots
 # ---------------------------------------------------------------------------
 #
-# CACHE ROOT  (~/.rlbridge  or  RLIP_CACHE_ROOT)
+# CACHE ROOT  (~/.rlbridge  or  rlbridge_CACHE_ROOT)
 #   Used *internally* by the plugin to persist data that the agent tools
 #   read back automatically: custom environment definitions, the env catalog,
 #   language-translation source, instruction-matching data, and environment-
 #   source copies.  This is a stable, user-home location so it survives across
 #   different working directories.
 #
-# LOCAL OUTPUT ROOT  (<cwd>/rlip_results  or  RLIP_LOCAL_OUTPUT)
+# LOCAL OUTPUT ROOT  (<cwd>/rlbridge_results  or  rlbridge_LOCAL_OUTPUT)
 #   User-facing outputs written wherever Claude/Codex/etc. is run from.
 #   Includes policy-render GIFs, training-report PNGs, and trained-agent ZIP
-#   packages.  Structured as  rlip_results/<env_name>/{renders,reports,agents}/
+#   packages.  Structured as  rlbridge_results/<env_name>/{renders,reports,agents}/
 #   so everything is easy to find in the project directory.
 #
 # Both roots are resolved *lazily* (at call-time) to handle clients that set
 # the process cwd *after* import (e.g. Claude Desktop on Windows).
 #
-# Legacy env var RLIP_OUTPUT_ROOT is still honoured as an alias for
-# RLIP_CACHE_ROOT so existing configs keep working.
+# Legacy env var rlbridge_OUTPUT_ROOT is still honoured as an alias for
+# rlbridge_CACHE_ROOT so existing configs keep working.
 # ---------------------------------------------------------------------------
 
 def _cache_root() -> Path:
@@ -122,11 +122,11 @@ def _cache_root() -> Path:
     and instruction-matching data.
 
     Resolution order:
-      1. ``RLIP_CACHE_ROOT`` environment variable
-      2. ``RLIP_OUTPUT_ROOT`` environment variable  (legacy alias)
+      1. ``rlbridge_CACHE_ROOT`` environment variable
+      2. ``rlbridge_OUTPUT_ROOT`` environment variable  (legacy alias)
       3. User home directory  (~/.rlbridge)
     """
-    env_override = os.environ.get("RLIP_CACHE_ROOT") or os.environ.get("RLIP_OUTPUT_ROOT")
+    env_override = os.environ.get("rlbridge_CACHE_ROOT") or os.environ.get("rlbridge_OUTPUT_ROOT")
     if env_override:
         root = Path(env_override) / ".rlbridge"
     else:
@@ -136,7 +136,7 @@ def _cache_root() -> Path:
 
 
 # Keep legacy name as an alias so any external code still compiles.
-_rlip_root = _cache_root
+_rlbridge_root = _cache_root
 
 
 def _local_output_root() -> Path:
@@ -146,11 +146,11 @@ def _local_output_root() -> Path:
     written here so they land in the directory where Claude/Codex is run from.
 
     Resolution order:
-      1. ``RLIP_LOCAL_OUTPUT`` environment variable
-      2. ``<cwd>/rlip_results``
+      1. ``rlbridge_LOCAL_OUTPUT`` environment variable
+      2. ``<cwd>/rlbridge_results``
     """
-    env_override = os.environ.get("RLIP_LOCAL_OUTPUT")
-    root = Path(env_override) if env_override else Path.cwd() / "rlip_results"
+    env_override = os.environ.get("rlbridge_LOCAL_OUTPUT")
+    root = Path(env_override) if env_override else Path.cwd() / "rlbridge_results"
     root.mkdir(parents=True, exist_ok=True)
     return root
 

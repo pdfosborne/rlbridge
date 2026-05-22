@@ -21,19 +21,19 @@ import threading
 from typing import Any, Optional
 
 from ..protocol.messages import EnvironmentInfo
-from .base import RLIPEnvironment, RLIPEnvironmentFactory
+from .base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 
 
 class EnvironmentRegistry:
-    """Thread-safe registry of :class:`RLIPEnvironmentFactory` instances."""
+    """Thread-safe registry of :class:`rlbridgeEnvironmentFactory` instances."""
 
     def __init__(self) -> None:
-        self._factories: dict[str, RLIPEnvironmentFactory] = {}
+        self._factories: dict[str, rlbridgeEnvironmentFactory] = {}
         self._lock = threading.RLock()
 
     # ── Registration ─────────────────────────────────────────────────────────
 
-    def register(self, factory: RLIPEnvironmentFactory) -> None:
+    def register(self, factory: rlbridgeEnvironmentFactory) -> None:
         """Register a factory under its ``env_info.env_id``."""
         with self._lock:
             self._factories[factory.env_info.env_id] = factory
@@ -85,13 +85,13 @@ class EnvironmentRegistry:
 
     # ── Look-up ───────────────────────────────────────────────────────────────
 
-    def get(self, env_id: str) -> RLIPEnvironmentFactory:
+    def get(self, env_id: str) -> rlbridgeEnvironmentFactory:
         with self._lock:
             factory = self._factories.get(env_id)
         if factory is None:
             from ..protocol.constants import ErrorCodes
-            from ..server.exceptions import RLIPError
-            raise RLIPError(
+            from ..server.exceptions import rlbridgeError
+            raise rlbridgeError(
                 code=ErrorCodes.ENV_NOT_FOUND,
                 message=f"Environment '{env_id}' is not registered",
                 data={"env_id": env_id},
@@ -121,7 +121,7 @@ class EnvironmentRegistry:
         env_id: str,
         render_mode: Optional[str] = None,
         **kwargs: Any,
-    ) -> RLIPEnvironment:
+    ) -> rlbridgeEnvironment:
         factory = self.get(env_id)
         return factory.create(render_mode=render_mode, **kwargs)
 

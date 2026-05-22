@@ -91,7 +91,7 @@ from typing import Any, Callable, Optional
 
 from ..language_translation.base import LanguageTranslator
 from ..protocol.messages import EnvironmentInfo
-from .base import RLIPEnvironment, RLIPEnvironmentFactory
+from .base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 
 # ── Default paths ─────────────────────────────────────────────────────────────
 
@@ -137,7 +137,7 @@ class EnvSpec:
 
 # ── Factory recreation helpers ────────────────────────────────────────────────
 
-def _make_factory(spec: EnvSpec) -> RLIPEnvironmentFactory:
+def _make_factory(spec: EnvSpec) -> rlbridgeEnvironmentFactory:
     """Recreate the env factory from persisted *spec.source*."""
     src = spec.source
     src_type = src.get("type", "")
@@ -249,7 +249,7 @@ def _gymnasium_factory_with_overrides(
     namespace: str,
     max_episode_steps: Optional[int],
     render_modes: list[str],
-) -> RLIPEnvironmentFactory:
+) -> rlbridgeEnvironmentFactory:
     """Build a GymnasiumFactory wrapped with overridden EnvironmentInfo metadata."""
     from .gymnasium_adapter import GymnasiumFactory
 
@@ -280,7 +280,7 @@ class BuiltEnvironment:
     ----------
     spec : EnvSpec
         Full persisted metadata for this environment.
-    factory : RLIPEnvironmentFactory
+    factory : rlbridgeEnvironmentFactory
         Factory used to create environment instances.
     translator : LanguageTranslator or None
         Language translator, if one was configured.
@@ -291,7 +291,7 @@ class BuiltEnvironment:
     def __init__(
         self,
         spec: EnvSpec,
-        factory: RLIPEnvironmentFactory,
+        factory: rlbridgeEnvironmentFactory,
         translator: Optional[LanguageTranslator] = None,
         cache_path: Optional[Path] = None,
     ) -> None:
@@ -302,7 +302,7 @@ class BuiltEnvironment:
 
     # ── Environment creation ──────────────────────────────────────────────────
 
-    def create(self, render_mode: Optional[str] = None, **kwargs: Any) -> RLIPEnvironment:
+    def create(self, render_mode: Optional[str] = None, **kwargs: Any) -> rlbridgeEnvironment:
         """Instantiate a new environment instance from this factory."""
         return self.factory.create(render_mode=render_mode, **kwargs)
 
@@ -485,7 +485,7 @@ class EnvironmentBuilder:
         # Source
         self._gym_env_id: Optional[str] = None
         self._gym_kwargs: dict[str, Any] = {}
-        self._custom_factory: Optional[RLIPEnvironmentFactory] = None
+        self._custom_factory: Optional[rlbridgeEnvironmentFactory] = None
         self._source_meta: dict[str, Any] = {}
 
         # Translator
@@ -522,14 +522,14 @@ class EnvironmentBuilder:
 
     def from_factory(
         self,
-        factory: RLIPEnvironmentFactory,
+        factory: rlbridgeEnvironmentFactory,
         *,
         module_path: Optional[str] = None,
         class_name: Optional[str] = None,
         init_kwargs: Optional[dict[str, Any]] = None,
     ) -> "EnvironmentBuilder":
         """
-        Use an existing :class:`~rlbridge.environments.base.RLIPEnvironmentFactory`.
+        Use an existing :class:`~rlbridge.environments.base.rlbridgeEnvironmentFactory`.
 
         For the factory to be reloadable from cache, provide *module_path*
         and *class_name* so it can be reimported on the next session.
@@ -745,7 +745,7 @@ class EnvironmentBuilder:
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
-    def _build_factory(self) -> RLIPEnvironmentFactory:
+    def _build_factory(self) -> rlbridgeEnvironmentFactory:
         if self._custom_factory is not None:
             # Wrap with overridden metadata if the user supplied any
             if any([self._description, self._tags, self._max_episode_steps,
@@ -779,7 +779,7 @@ class EnvironmentBuilder:
 
     def _build_translator(
         self,
-        factory: RLIPEnvironmentFactory,
+        factory: rlbridgeEnvironmentFactory,
         env_dir: Path,
     ) -> tuple[Optional[LanguageTranslator], dict[str, Any]]:
         """Build and (if LLM) save the translator.  Returns (translator, spec)."""
@@ -824,12 +824,12 @@ class EnvironmentBuilder:
 
 # ── Metadata override factory wrapper ─────────────────────────────────────────
 
-class _OverrideMetadataFactory(RLIPEnvironmentFactory):
+class _OverrideMetadataFactory(rlbridgeEnvironmentFactory):
     """Wraps an existing factory, replacing its EnvironmentInfo metadata."""
 
     def __init__(
         self,
-        inner: RLIPEnvironmentFactory,
+        inner: rlbridgeEnvironmentFactory,
         env_id: str,
         description: str,
         tags: list[str],
@@ -855,7 +855,7 @@ class _OverrideMetadataFactory(RLIPEnvironmentFactory):
         self,
         render_mode: Optional[str] = None,
         **kwargs: Any,
-    ) -> RLIPEnvironment:
+    ) -> rlbridgeEnvironment:
         env = self._inner.create(render_mode=render_mode, **kwargs)
         env._env_id = self._env_info.env_id
         return env

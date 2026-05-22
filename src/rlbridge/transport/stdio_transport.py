@@ -24,13 +24,13 @@ import sys
 from typing import TextIO
 
 from ..environments.registry import registry
-from ..server.dispatcher import RLIPDispatcher
+from ..server.dispatcher import rlbridgeDispatcher
 
 log = logging.getLogger(__name__)
 
 
 def run_stdio_server(
-    dispatcher: RLIPDispatcher | None = None,
+    dispatcher: rlbridgeDispatcher | None = None,
     stdin: TextIO = sys.stdin,
     stdout: TextIO = sys.stdout,
 ) -> None:
@@ -39,7 +39,7 @@ def run_stdio_server(
     responses to *stdout*.  Log to stderr.
     """
     logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
-    disp = dispatcher or RLIPDispatcher(registry=registry)
+    disp = dispatcher or rlbridgeDispatcher(registry=registry)
 
     for raw_line in stdin:
         raw_line = raw_line.strip()

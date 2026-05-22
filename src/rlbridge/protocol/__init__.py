@@ -1,6 +1,6 @@
 """rlbridge protocol sub-package."""
 
-from .constants import ErrorCodes, Methods, RLIP_PROTOCOL_VERSION
+from .constants import ErrorCodes, Methods, rlbridge_PROTOCOL_VERSION
 from .messages import (
     RpcRequest,
     RpcResponse,
@@ -29,7 +29,7 @@ from .messages import (
 __all__ = [
     "ErrorCodes",
     "Methods",
-    "RLIP_PROTOCOL_VERSION",
+    "rlbridge_PROTOCOL_VERSION",
     "RpcRequest",
     "RpcResponse",
     "RpcError",

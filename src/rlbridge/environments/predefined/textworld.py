@@ -54,7 +54,7 @@ import threading
 from pathlib import Path
 from typing import Any, Optional
 
-from ..base import RLIPEnvironment, RLIPEnvironmentFactory
+from ..base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 from ...protocol.messages import (
     DiscreteSpace,
     EnvironmentInfo,
@@ -266,7 +266,7 @@ def _get_or_compile_game(env_id: str) -> Path:
 
 # ── Environment wrapper ───────────────────────────────────────────────────────
 
-class TextWorldEnvironment(RLIPEnvironment):
+class TextWorldEnvironment(rlbridgeEnvironment):
     """
     rlbridge wrapper around a compiled TextWorld game file.
 
@@ -535,7 +535,7 @@ _SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
 }
 
 
-class TextWorldFactory(RLIPEnvironmentFactory):
+class TextWorldFactory(rlbridgeEnvironmentFactory):
     """Factory for a single compiled TextWorld game variant."""
 
     def __init__(self, env_id: str) -> None:

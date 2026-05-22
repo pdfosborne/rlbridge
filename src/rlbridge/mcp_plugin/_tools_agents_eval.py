@@ -231,7 +231,7 @@ def rl_create_training_report(
         Agents should be trained on the same environment for fair comparison.
     output_path:
         Path to write the PNG report.  Defaults to
-        ``<cwd>/rlip_results/<env>/reports/<env>_<agent_id>_report.png``.
+        ``<cwd>/rlbridge_results/<env>/reports/<env>_<agent_id>_report.png``.
     rolling_window:
         Number of episodes for the rolling reward average (0 = auto: 5 %
         of total episodes, minimum 10).

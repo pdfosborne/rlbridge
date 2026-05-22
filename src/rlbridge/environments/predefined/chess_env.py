@@ -50,7 +50,7 @@ import re
 import threading
 from typing import Any, Optional
 
-from ..base import RLIPEnvironment, RLIPEnvironmentFactory
+from ..base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 from ...protocol.messages import (
     DiscreteSpace,
     EnvironmentInfo,
@@ -394,7 +394,7 @@ def _build_observation(
 
 # ── Environment ───────────────────────────────────────────────────────────────
 
-class ChessEnvironment(RLIPEnvironment):
+class ChessEnvironment(rlbridgeEnvironment):
     """
     Text-based chess RL environment powered by python-chess.
 
@@ -853,7 +853,7 @@ _SUGGESTED_PARAMS: dict[str, SuggestedHyperparameters] = {
 }
 
 
-class ChessFactory(RLIPEnvironmentFactory):
+class ChessFactory(rlbridgeEnvironmentFactory):
     """Factory for a chess environment variant."""
 
     def __init__(self, env_id: str) -> None:

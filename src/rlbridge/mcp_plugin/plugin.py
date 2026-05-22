@@ -12,7 +12,7 @@ How it works
    ``mcp`` FastMCP instance created in ``_state``.
 2. Claude Code launches it as a subprocess and communicates over stdin/stdout.
 3. The plugin can run environments *in-process* (default) or *proxy* to a
-   running RL Bridge HTTP server (set RLIP_SERVER_URL env var).
+   running RL Bridge HTTP server (set rlbridge_SERVER_URL env var).
 
 Configuration
 -------------

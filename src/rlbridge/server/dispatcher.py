@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 from ..__init__ import __version__
 from ..environments.registry import EnvironmentRegistry
-from ..protocol.constants import ErrorCodes, Methods, RLIP_PROTOCOL_VERSION
+from ..protocol.constants import ErrorCodes, Methods, rlbridge_PROTOCOL_VERSION
 from ..protocol.messages import (
     CloseParams,
     CloseResult,
@@ -36,13 +36,13 @@ from ..protocol.messages import (
     StepParams,
     StepResult,
 )
-from .exceptions import RLIPError
+from .exceptions import rlbridgeError
 from .session import SessionManager
 
 log = logging.getLogger(__name__)
 
 
-class RLIPDispatcher:
+class rlbridgeDispatcher:
     """Stateful JSON-RPC dispatcher for the rlbridge protocol."""
 
     def __init__(
@@ -81,7 +81,7 @@ class RLIPDispatcher:
         try:
             result = self._route(method, params)
             return RpcResponse(id=req_id, result=result).model_dump(exclude_none=False)
-        except RLIPError as exc:
+        except rlbridgeError as exc:
             log.warning("rlbridge application error: %s", exc)
             return self._error_response(req_id, exc.code, exc.message, exc.data)
         except Exception as exc:
@@ -108,7 +108,7 @@ class RLIPDispatcher:
         }
         handler = routes.get(method)
         if handler is None:
-            raise RLIPError(
+            raise rlbridgeError(
                 code=ErrorCodes.INVALID_REQUEST,
                 message=f"Unknown method '{method}'",
                 data={"method": method, "available": list(routes.keys())},
@@ -122,7 +122,7 @@ class RLIPDispatcher:
         result = InitializeResult(
             server_name="RL Bridge Server",
             server_version=__version__,
-            protocol_version=RLIP_PROTOCOL_VERSION,
+            protocol_version=rlbridge_PROTOCOL_VERSION,
             capabilities={
                 "environments": True,
                 "rendering": True,
@@ -148,10 +148,10 @@ class RLIPDispatcher:
                 render_mode=p.render_mode,
                 **p.kwargs,
             )
-        except RLIPError:
+        except rlbridgeError:
             raise
         except Exception as exc:
-            raise RLIPError(
+            raise rlbridgeError(
                 code=ErrorCodes.ENV_CREATION_FAILED,
                 message=f"Failed to create '{p.env_id}': {exc}",
                 data={"env_id": p.env_id},
@@ -198,7 +198,7 @@ class RLIPDispatcher:
         try:
             result: RenderResult = record.environment.render()
         except NotImplementedError as exc:
-            raise RLIPError(
+            raise rlbridgeError(
                 code=ErrorCodes.RENDER_UNAVAILABLE,
                 message=str(exc),
             ) from exc

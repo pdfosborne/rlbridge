@@ -5,9 +5,9 @@ Synchronous and async clients for communicating with a remote rlbridge HTTP serv
 
 Synchronous example
 -------------------
-    from rlbridge.transport.http_client import RLIPClient
+    from rlbridge.transport.http_client import rlbridgeClient
 
-    client = RLIPClient("http://localhost:8765")
+    client = rlbridgeClient("http://localhost:8765")
     client.initialize()
     envs = client.list_environments()
     instance_id = client.create_environment("CartPole-v1")
@@ -18,7 +18,7 @@ Synchronous example
 
 Async example
 -------------
-    async with AsyncRLIPClient("http://localhost:8765") as client:
+    async with AsyncrlbridgeClient("http://localhost:8765") as client:
         await client.initialize()
         envs = await client.list_environments()
         ...
@@ -59,7 +59,7 @@ def _make_request(method: str, params: dict[str, Any]) -> dict[str, Any]:
 def _check_response(response: dict[str, Any]) -> Any:
     if "error" in response and response["error"] is not None:
         err = response["error"]
-        raise RLIPClientError(
+        raise rlbridgeClientError(
             code=err.get("code", -1),
             message=err.get("message", "Unknown error"),
             data=err.get("data"),
@@ -67,7 +67,7 @@ def _check_response(response: dict[str, Any]) -> Any:
     return response.get("result")
 
 
-class RLIPClientError(Exception):
+class rlbridgeClientError(Exception):
     """Raised when the rlbridge server returns an error response."""
 
     def __init__(self, code: int, message: str, data: Any = None) -> None:
@@ -79,7 +79,7 @@ class RLIPClientError(Exception):
 
 # ── Synchronous client ────────────────────────────────────────────────────────
 
-class RLIPClient:
+class rlbridgeClient:
     """
     Blocking rlbridge client backed by ``httpx``.
     """
@@ -173,7 +173,7 @@ class RLIPClient:
     def close(self) -> None:
         self._http.close()
 
-    def __enter__(self) -> "RLIPClient":
+    def __enter__(self) -> "rlbridgeClient":
         return self
 
     def __exit__(self, *_: Any) -> None:
@@ -182,7 +182,7 @@ class RLIPClient:
 
 # ── Async client ──────────────────────────────────────────────────────────────
 
-class AsyncRLIPClient:
+class AsyncrlbridgeClient:
     """
     Async rlbridge client backed by ``httpx.AsyncClient``.
     """
@@ -272,7 +272,7 @@ class AsyncRLIPClient:
     async def close(self) -> None:
         await self._http.aclose()
 
-    async def __aenter__(self) -> "AsyncRLIPClient":
+    async def __aenter__(self) -> "AsyncrlbridgeClient":
         return self
 
     async def __aexit__(self, *_: Any) -> None:

@@ -1,5 +1,5 @@
 """
-Gymnasium adapter - wraps any gymnasium.Env as an RLIPEnvironment.
+Gymnasium adapter - wraps any gymnasium.Env as an rlbridgeEnvironment.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from ..protocol.messages import (
     SpaceDescription,
     StepResult,
 )
-from .base import RLIPEnvironment, RLIPEnvironmentFactory
+from .base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 from .utils import (
     numpy_to_python,
     parse_action,
@@ -26,7 +26,7 @@ from .utils import (
 )
 
 
-class GymnasiumEnvironment(RLIPEnvironment):
+class GymnasiumEnvironment(rlbridgeEnvironment):
     """Thread-safe rlbridge wrapper around a gymnasium.Env instance."""
 
     def __init__(self, env: gym.Env, env_id: Optional[str] = None) -> None:
@@ -65,8 +65,8 @@ class GymnasiumEnvironment(RLIPEnvironment):
         with self._lock:
             if not self._initialized:
                 from ..protocol.constants import ErrorCodes
-                from ..server.exceptions import RLIPError
-                raise RLIPError(
+                from ..server.exceptions import rlbridgeError
+                raise rlbridgeError(
                     code=ErrorCodes.ENV_NOT_INITIALIZED,
                     message="Call reset() before step()",
                 )
@@ -122,7 +122,7 @@ class GymnasiumEnvironment(RLIPEnvironment):
             return numpy_to_python(self._env.action_space.sample())
 
 
-class GymnasiumFactory(RLIPEnvironmentFactory):
+class GymnasiumFactory(rlbridgeEnvironmentFactory):
     """Factory that wraps a registered Gymnasium environment ID."""
 
     def __init__(

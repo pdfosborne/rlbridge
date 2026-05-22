@@ -1,6 +1,6 @@
 """rlbridge protocol constants."""
 
-RLIP_PROTOCOL_VERSION = "0.1"
+rlbridge_PROTOCOL_VERSION = "0.1"
 JSONRPC_VERSION = "2.0"
 
 # ── Method names ────────────────────────────────────────────────────────────

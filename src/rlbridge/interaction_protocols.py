@@ -4,7 +4,7 @@ rlbridge Interaction Protocols
 Defines named, reusable forms of agent–environment interaction.
 
 Each protocol is a callable object (or plain function) that accepts an
-:class:`~rlbridge.environments.base.RLIPEnvironment` instance and drives it
+:class:`~rlbridge.environments.base.rlbridgeEnvironment` instance and drives it
 according to a specific interaction pattern.
 
 Available protocols

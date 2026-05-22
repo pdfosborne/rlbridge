@@ -60,7 +60,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from .environments.base import RLIPEnvironment, RLIPEnvironmentFactory
+from .environments.base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 from .interaction_protocols import (
     EpisodeResult,
     InteractionResult,
@@ -873,7 +873,7 @@ def save_gif(
 
 def render_optimal_policy(
     result: InteractionResult,
-    env_factory: Optional[RLIPEnvironmentFactory] = None,
+    env_factory: Optional[rlbridgeEnvironmentFactory] = None,
     env: Optional[_EnvLike] = None,
     *,
     render_mode: str = "rgb_array",
@@ -905,7 +905,7 @@ def render_optimal_policy(
         A completed :class:`~rlbridge.interaction_protocols.InteractionResult`
         with ``record_history=True``.
     env_factory:
-        :class:`~rlbridge.environments.base.RLIPEnvironmentFactory` used to
+        :class:`~rlbridge.environments.base.rlbridgeEnvironmentFactory` used to
         create a fresh rendering-enabled environment.
     env:
         Pre-existing environment instance.  Ignored if *env_factory* is

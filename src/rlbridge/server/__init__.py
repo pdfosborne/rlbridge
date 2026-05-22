@@ -1,8 +1,8 @@
 """Server sub-package."""
 
-from .dispatcher import RLIPDispatcher
-from .exceptions import RLIPError
-from .rlip_server import create_app
+from .dispatcher import rlbridgeDispatcher
+from .exceptions import rlbridgeError
+from .rlbridge_server import create_app
 from .session import SessionManager
 
-__all__ = ["RLIPDispatcher", "RLIPError", "create_app", "SessionManager"]
+__all__ = ["rlbridgeDispatcher", "rlbridgeError", "create_app", "SessionManager"]

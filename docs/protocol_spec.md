@@ -357,9 +357,9 @@ client                          server
 
 To add a custom environment:
 
-1. Subclass `RLIPEnvironment` and implement `reset`, `step`, `close`, `render`,
+1. Subclass `rlbridgeEnvironment` and implement `reset`, `step`, `close`, `render`,
    `observation_space`, and `action_space`.
-2. Subclass `RLIPEnvironmentFactory`, set `env_info`, implement `create`.
+2. Subclass `rlbridgeEnvironmentFactory`, set `env_info`, implement `create`.
 3. Call `registry.register(MyFactory())` before the server starts.
 
 See `examples/custom_env.py` for a complete walkthrough.

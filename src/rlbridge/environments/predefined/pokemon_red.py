@@ -50,7 +50,7 @@ import threading
 from pathlib import Path
 from typing import Any, Optional
 
-from ..base import RLIPEnvironment, RLIPEnvironmentFactory
+from ..base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 from ...protocol.messages import (
     DiscreteSpace,
     EnvironmentInfo,
@@ -264,7 +264,7 @@ def _normalize_button(text: str) -> Optional[str]:
 
 # ── Environment ───────────────────────────────────────────────────────────────
 
-class PokemonRedEnvironment(RLIPEnvironment):
+class PokemonRedEnvironment(rlbridgeEnvironment):
     """
     rlbridge wrapper for a single Pokemon Red battle episode via PyBoy.
 
@@ -737,7 +737,7 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float]] = {
 }
 
 
-class PokemonRedFactory(RLIPEnvironmentFactory):
+class PokemonRedFactory(rlbridgeEnvironmentFactory):
     """Factory for a Pokemon Red battle-episode environment."""
 
     def __init__(self, variant: str = "gary_battle") -> None:

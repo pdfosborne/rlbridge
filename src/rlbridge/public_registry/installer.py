@@ -191,7 +191,7 @@ def load_engine_class(env_id: str, source: dict[str, Any]) -> type:
         )
 
     # Build a unique module name to avoid collisions across envs
-    qualified = f"rlip_public.{env_id.replace('-', '_')}.{module_name}"
+    qualified = f"rlbridge_public.{env_id.replace('-', '_')}.{module_name}"
 
     if qualified in sys.modules:
         mod = sys.modules[qualified]

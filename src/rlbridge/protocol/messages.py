@@ -12,7 +12,7 @@ from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from .constants import RLIP_PROTOCOL_VERSION, JSONRPC_VERSION
+from .constants import rlbridge_PROTOCOL_VERSION, JSONRPC_VERSION
 
 
 # ── JSON-RPC 2.0 envelopes ───────────────────────────────────────────────────
@@ -142,13 +142,13 @@ class EnvironmentInfo(BaseModel):
 class InitializeParams(BaseModel):
     client_name: str
     client_version: str = "unknown"
-    protocol_version: str = RLIP_PROTOCOL_VERSION
+    protocol_version: str = rlbridge_PROTOCOL_VERSION
 
 
 class InitializeResult(BaseModel):
     server_name: str
     server_version: str
-    protocol_version: str = RLIP_PROTOCOL_VERSION
+    protocol_version: str = rlbridge_PROTOCOL_VERSION
     capabilities: dict[str, Any] = Field(default_factory=dict)
 
 

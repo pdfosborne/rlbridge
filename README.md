@@ -33,17 +33,17 @@ LLMs interact with rlbridge through an **MCP plugin** compatible with Claude Cod
 │   In-process dispatcher                              │
 └──────────┼────────────────────────────┬──────────────┘
            │                            │
-           │     ╌╌ OR ╌╌ (RLIP_SERVER_URL)
+           │     ╌╌ OR ╌╌ (rlbridge_SERVER_URL)
            │                            │
 ┌──────────▼─────────────────┐  ┌──────▼────────────────┐
-│  RL Bridge Server           │  │  Live Training        │
-│  (HTTP/JSON-RPC 2.0)        │  │  Dashboard            │
-│  POST /rpc  ·  GET /docs    │  │  (http://localhost:7860)
+│  RL Bridge Server          │  │  Live Training        │
+│  (HTTP/JSON-RPC 2.0)       │  │  Dashboard            │
+│  POST /rpc  ·  GET /docs   │  │(http://localhost:7860)│
 └──────────┬─────────────────┘  │  WebSocket/HTTP       │
            │                    │  Real-time reward     │
            │                    │  tracking & policy    │
            │                    │  visualization        │
-           │                    └──────────────────────┘
+           │                    └───────────────────────┘
            │
 ┌──────────▼───────────────────────────────────────────┐
 │  Environment Registry + Session Manager              │
@@ -356,7 +356,7 @@ Browse the auto-generated API docs at `http://localhost:8765/docs`.
 
 ```bash
 # Point the plugin at a remote server instead of running envs in-process
-RLIP_SERVER_URL=http://my-gpu-machine:8765 rlbridge mcp
+rlbridge_SERVER_URL=http://my-gpu-machine:8765 rlbridge mcp
 ```
 
 ---
@@ -387,11 +387,11 @@ load_cached_environments()
 For a fully custom (non-Gymnasium) environment, subclass the ABCs directly:
 
 ```python
-from rlbridge.environments.base import RLIPEnvironment, RLIPEnvironmentFactory
+from rlbridge.environments.base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 from rlbridge.environments.registry import registry
 from rlbridge.protocol.messages import DiscreteSpace, EnvironmentInfo, ResetResult, StepResult, RenderResult
 
-class MyEnv(RLIPEnvironment):
+class MyEnv(rlbridgeEnvironment):
     def reset(self, seed=None, options=None) -> ResetResult: ...
     def step(self, action) -> StepResult: ...
     def close(self): ...
@@ -401,7 +401,7 @@ class MyEnv(RLIPEnvironment):
     def action_space(self): return DiscreteSpace(n=4)
     def render(self) -> RenderResult: ...
 
-class MyFactory(RLIPEnvironmentFactory):
+class MyFactory(rlbridgeEnvironmentFactory):
     @property
     def env_info(self) -> EnvironmentInfo:
         return EnvironmentInfo(env_id="MyEnv-v0", description="My custom env", namespace="custom")
@@ -472,7 +472,7 @@ src/rlbridge/
 │   ├── constants.py         # Method names, error codes
 │   └── messages.py          # Pydantic message models
 ├── environments/
-│   ├── base.py              # RLIPEnvironment / RLIPEnvironmentFactory ABCs
+│   ├── base.py              # rlbridgeEnvironment / rlbridgeEnvironmentFactory ABCs
 │   ├── builder.py           # EnvironmentBuilder - fluent API for custom envs
 │   ├── gymnasium_adapter.py # Gymnasium wrapper
 │   ├── registry.py          # EnvironmentRegistry singleton
@@ -489,9 +489,9 @@ src/rlbridge/
 │   └── sailing.py           # Built-in Sailing translator
 ├── server/
 │   ├── dispatcher.py        # Transport-agnostic JSON-RPC dispatcher
-│   ├── rlip_server.py       # FastAPI HTTP server
+│   ├── rlbridge_server.py       # FastAPI HTTP server
 │   ├── session.py           # Session / instance manager
-│   └── exceptions.py        # RLIPError
+│   └── exceptions.py        # rlbridgeError
 ├── transport/
 │   ├── stdio_transport.py   # Stdio (newline-delimited JSON-RPC)
 │   └── http_client.py       # Sync + async HTTP clients

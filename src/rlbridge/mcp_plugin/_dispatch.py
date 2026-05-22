@@ -1,8 +1,8 @@
 """
 Dispatch helpers for the rlbridge MCP plugin.
 
-Routes method calls to either the in-process RLIPDispatcher or the remote
-proxy (RLIPClient) depending on the mode selected in ``_state``.
+Routes method calls to either the in-process rlbridgeDispatcher or the remote
+proxy (rlbridgeClient) depending on the mode selected in ``_state``.
 """
 
 from __future__ import annotations

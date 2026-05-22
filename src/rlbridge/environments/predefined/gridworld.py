@@ -36,7 +36,7 @@ from __future__ import annotations
 import random
 from typing import Any, Optional
 
-from ..base import RLIPEnvironment, RLIPEnvironmentFactory
+from ..base import rlbridgeEnvironment, rlbridgeEnvironmentFactory
 from ...protocol.messages import (
     DiscreteSpace,
     EnvironmentInfo,
@@ -46,7 +46,7 @@ from ...protocol.messages import (
     SuggestedHyperparameters,
 )
 
-class GridWorldEnv(RLIPEnvironment):
+class GridWorldEnv(rlbridgeEnvironment):
     """Simple 1-D Grid World environment."""
 
     SIZE = 10  # positions 0..9
@@ -110,7 +110,7 @@ class GridWorldEnv(RLIPEnvironment):
         return random.randint(0, 1)
 
 
-class GridWorldFactory(RLIPEnvironmentFactory):
+class GridWorldFactory(rlbridgeEnvironmentFactory):
     @property
     def env_info(self) -> EnvironmentInfo:
         return EnvironmentInfo(

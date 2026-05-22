@@ -63,7 +63,7 @@ def rl_render_policy(
     Runs several episodes, picks the best one, replays it with rendering
     enabled, and saves the result as a ``.gif`` file.  The GIF is returned
     as an inline data URL so Claude can display it directly, and also saved
-    to ``./<cwd>/rlip_results/<env>/renders/`` for local access.
+    to ``./<cwd>/rlbridge_results/<env>/renders/`` for local access.
 
     Parameters
     ----------
@@ -215,7 +215,7 @@ def rl_render_policy_image(
 
     The image is returned as an inline data URL (``data:image/png;base64,…``)
     so Claude can display it directly, and is also saved locally to
-    ``<cwd>/rlip_results/<env>/renders/``.
+    ``<cwd>/rlbridge_results/<env>/renders/``.
 
     Parameters
     ----------
@@ -367,7 +367,7 @@ def rl_render_policy_overlay(
 
     The image is returned as an inline data URL (``data:image/png;base64,…``)
     so Claude can display it directly, and is also saved locally to
-    ``<cwd>/rlip_results/<env>/renders/``.
+    ``<cwd>/rlbridge_results/<env>/renders/``.
 
     Parameters
     ----------

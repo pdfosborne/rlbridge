@@ -1,7 +1,7 @@
 """
 Abstract base class for rlbridge environment adapters.
 
-Any RL environment can be wrapped by sub-classing RLIPEnvironment and
+Any RL environment can be wrapped by sub-classing rlbridgeEnvironment and
 implementing the abstract methods.  The Gymnasium adapter in
 `gymnasium_adapter.py` is the reference implementation.
 """
@@ -20,7 +20,7 @@ from ..protocol.messages import (
 )
 
 
-class RLIPEnvironment(abc.ABC):
+class rlbridgeEnvironment(abc.ABC):
     """Protocol-level wrapper around a single RL environment instance."""
 
     # ── Life-cycle ───────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ class RLIPEnvironment(abc.ABC):
         raise NotImplementedError("sample_action is not implemented by this adapter")
 
 
-class RLIPEnvironmentFactory(abc.ABC):
+class rlbridgeEnvironmentFactory(abc.ABC):
     """
     Factory that the registry uses to instantiate environments.
 
@@ -86,5 +86,5 @@ class RLIPEnvironmentFactory(abc.ABC):
         self,
         render_mode: Optional[str] = None,
         **kwargs: Any,
-    ) -> RLIPEnvironment:
-        """Instantiate a new :class:`RLIPEnvironment`."""
+    ) -> rlbridgeEnvironment:
+        """Instantiate a new :class:`rlbridgeEnvironment`."""

@@ -57,7 +57,7 @@ def server_app(
     import uvicorn
 
     from .environments.registry import registry
-    from .server.rlip_server import create_app
+    from .server.rlbridge_server import create_app
 
     if auto_register:
         with console.status("Auto-registering Gymnasium environments…"):
@@ -670,7 +670,7 @@ def agent_command(
         # OpenAI
         rlbridge agent --base-url https://api.openai.com/v1 --model gpt-4o --api-key $OPENAI_API_KEY "Run LunarLander"
     """
-    from .adapters.openai_agent import RLIPAgent
+    from .adapters.openai_agent import rlbridgeAgent
     from .environments.registry import registry
 
     if verbose:
@@ -689,7 +689,7 @@ def agent_command(
 
     with console.status("Thinking…", spinner="dots"):
         try:
-            with RLIPAgent(
+            with rlbridgeAgent(
                 base_url=base_url,
                 model=model,
                 api_key=api_key,

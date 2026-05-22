@@ -340,7 +340,7 @@ def rl_load_agent(artifact_path: str = "", agent_id: str = "") -> str:
     pkg_dir = resolved_path
 
     if resolved_path.suffix.lower() == ".zip":
-        extract_dir = Path(tempfile.mkdtemp(prefix="rlip_agent_"))
+        extract_dir = Path(tempfile.mkdtemp(prefix="rlbridge_agent_"))
         try:
             with zipfile.ZipFile(resolved_path, "r") as zf:
                 zf.extractall(extract_dir)

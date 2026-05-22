@@ -5,7 +5,7 @@ Connects a natural-language instruction to RL environment training via three
 stages:
 
 1. **Exploration** - an interaction protocol (optionally driven by a
-   Claude/OpenAI agent via :class:`~rlbridge.adapters.openai_agent.RLIPAgent`)
+   Claude/OpenAI agent via :class:`~rlbridge.adapters.openai_agent.rlbridgeAgent`)
    runs the environment and collects a trajectory of raw observations.
 
 2. **Language translation** - each raw observation is passed through a
@@ -44,10 +44,10 @@ Pass any protocol instance - including one whose observations come from an
 agent-driven session - as ``exploration_protocol``::
 
     from rlbridge.interaction_protocols import GreedyEpisodeProtocol
-    from rlbridge.adapters.openai_agent import RLIPAgent
+    from rlbridge.adapters.openai_agent import rlbridgeAgent
 
     # Let the Claude agent explore and record a trajectory.
-    agent = RLIPAgent(base_url="http://localhost:11434/v1", model="llama3.1")
+    agent = rlbridgeAgent(base_url="http://localhost:11434/v1", model="llama3.1")
     # (agent drives the env externally; collect observations into a protocol)
 
     greedy = GreedyEpisodeProtocol(

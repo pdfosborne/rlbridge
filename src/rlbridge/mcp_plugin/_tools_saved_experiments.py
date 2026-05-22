@@ -115,7 +115,7 @@ def rl_save_experiment(
         environment properties.
     save_local:
         When True, an additional copy of the experiment JSON is written to
-        ``<cwd>/rlip_results/<env_id>/experiments/`` for easy project-level
+        ``<cwd>/rlbridge_results/<env_id>/experiments/`` for easy project-level
         access alongside rendered policies and training reports.
     prompt_log:
         Optional list of ``{"role": ..., "content": ...}`` dicts capturing

@@ -13,9 +13,9 @@ The agent loop:
 
 Usage
 -----
-    from rlbridge.adapters.openai_agent import RLIPAgent
+    from rlbridge.adapters.openai_agent import rlbridgeAgent
 
-    agent = RLIPAgent(base_url="http://localhost:11434/v1", model="llama3.1")
+    agent = rlbridgeAgent(base_url="http://localhost:11434/v1", model="llama3.1")
     response = agent.run("Run a CartPole episode with a random policy")
     print(response)
 
@@ -34,14 +34,14 @@ from typing import Any
 import httpx
 
 from ..environments.registry import EnvironmentRegistry, registry as default_registry
-from ..server.dispatcher import RLIPDispatcher
+from ..server.dispatcher import rlbridgeDispatcher
 from ..server.session import SessionManager
 
 log = logging.getLogger(__name__)
 
 # ── rlbridge tool definitions in OpenAI function-calling schema ──────────────────
 
-RLIP_TOOLS: list[dict[str, Any]] = [
+rlbridge_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
@@ -259,7 +259,7 @@ RLIP_TOOLS: list[dict[str, Any]] = [
 
 # ── Tool dispatcher (re-uses MCP plugin's tool functions) ────────────────────
 
-def _call_rlip_tool(name: str, arguments: dict[str, Any], dispatcher: RLIPDispatcher) -> str:
+def _call_rlbridge_tool(name: str, arguments: dict[str, Any], dispatcher: rlbridgeDispatcher) -> str:
     """
     Execute one rlbridge tool call by delegating to the same plugin functions
     used by the MCP adapter - no code duplication.
@@ -287,7 +287,7 @@ def _call_rlip_tool(name: str, arguments: dict[str, Any], dispatcher: RLIPDispat
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
 
-class RLIPAgent:
+class rlbridgeAgent:
     """
     OpenAI function-calling agent that connects an Ollama (or any
     OpenAI-compatible) model to rlbridge environments.
@@ -340,7 +340,7 @@ class RLIPAgent:
 
         reg = registry or default_registry
         session = SessionManager(max_instances=max_instances)
-        self._dispatcher = RLIPDispatcher(registry=reg, session=session)
+        self._dispatcher = rlbridgeDispatcher(registry=reg, session=session)
 
         self._http = httpx.Client(
             base_url=self.base_url,
@@ -380,7 +380,7 @@ class RLIPAgent:
                     fn_args = {}
 
                 log.debug("Tool call: %s(%s)", fn_name, fn_args)
-                result = _call_rlip_tool(fn_name, fn_args, self._dispatcher)
+                result = _call_rlbridge_tool(fn_name, fn_args, self._dispatcher)
                 log.debug("Tool result: %s", result[:200])
 
                 messages.append({
@@ -394,7 +394,7 @@ class RLIPAgent:
     def close(self) -> None:
         self._http.close()
 
-    def __enter__(self) -> "RLIPAgent":
+    def __enter__(self) -> "rlbridgeAgent":
         return self
 
     def __exit__(self, *_: Any) -> None:
@@ -406,7 +406,7 @@ class RLIPAgent:
         body = {
             "model": self.model,
             "messages": messages,
-            "tools": RLIP_TOOLS,
+            "tools": rlbridge_TOOLS,
             "tool_choice": "auto",
             "stream": False,
         }

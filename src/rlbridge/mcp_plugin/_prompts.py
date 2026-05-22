@@ -19,7 +19,7 @@ EXPERIMENT_SAVE_GUIDE
 Call-site labels
 ----------------
 SYSTEM: FastMCP(instructions=...)
-    rlip_system_prompt()
+    rlbridge_system_prompt()
 
 TOOL: rl_match_instruction  (also used by rl_match_sequential_instructions)
     decompose_instruction_vocab_prompt()
@@ -35,7 +35,7 @@ from __future__ import annotations
 # SYSTEM: FastMCP(instructions=...) - delivered to the LLM for every session
 # ---------------------------------------------------------------------------
 
-def rlip_system_prompt() -> str:
+def rlbridge_system_prompt() -> str:
     """
     Full system-level context prompt injected into every RL Bridge MCP session.
 
@@ -105,7 +105,7 @@ def rlip_system_prompt() -> str:
         "Storage layout:\n"
         "  • ~/.rlbridge/  (cache) - custom env definitions, catalog, language-"
         "translation source, and instruction data.  Managed automatically.\n"
-        "  • <cwd>/rlip_results/  (local saves) - policy render GIFs, "
+        "  • <cwd>/rlbridge_results/  (local saves) - policy render GIFs, "
         "training-report PNGs, and trained-agent ZIP packages.\n\n"
 
         "Custom environment workflow:\n"
@@ -268,7 +268,7 @@ EXPERIMENT_SAVE_GUIDE: str = (
     "    (a list of {\"role\": ..., \"content\": ...} dicts).\n\n"
     "  OPTIONAL\n"
     "  • name       - short human-readable label (auto-generated if omitted).\n"
-    "  • save_local - True to also write a copy to <cwd>/rlip_results/…\n\n"
+    "  • save_local - True to also write a copy to <cwd>/rlbridge_results/…\n\n"
     "After saving, confirm to the user with the experiment_id so they can\n"
     "recall it in future sessions with rl_load_experiment().\n"
 )
