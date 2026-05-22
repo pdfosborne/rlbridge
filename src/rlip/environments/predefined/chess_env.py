@@ -7,9 +7,9 @@ text-in/text-out chess RL environment.
 
 Actions are given as move strings in any of the following formats:
 
-* **UCI** — ``"e2e4"``, ``"g1f3"``, ``"e7e8q"`` (promotion)
-* **SAN** — ``"e4"``, ``"Nf3"``, ``"O-O"`` (castling), ``"exd5"``
-* **Natural language** — ``"pawn e2 to e4"``, ``"knight to f3"`` — a fuzzy
+* **UCI** - ``"e2e4"``, ``"g1f3"``, ``"e7e8q"`` (promotion)
+* **SAN** - ``"e4"``, ``"Nf3"``, ``"O-O"`` (castling), ``"exd5"``
+* **Natural language** - ``"pawn e2 to e4"``, ``"knight to f3"`` - a fuzzy
   matcher attempts to infer the intended UCI move; the closest legal move is
   chosen.
 
@@ -25,7 +25,7 @@ Environment variants
     ``0`` per intermediate step.
 
 ``Chess-SelfPlay-v0``
-    Full standard chess, **no opponent** — both sides are controlled by the
+    Full standard chess, **no opponent** - both sides are controlled by the
     agent.  Every call to ``step()`` applies one move, alternating between
     White and Black.  Reward is from White's perspective at the end of the
     game.
@@ -323,17 +323,17 @@ def _build_observation(
     # Status line
     if board.is_checkmate():
         winner = "Black" if board.turn == chess.WHITE else "White"
-        status = f"CHECKMATE — {winner} wins!"
+        status = f"CHECKMATE - {winner} wins!"
     elif board.is_stalemate():
-        status = "STALEMATE — draw."
+        status = "STALEMATE - draw."
     elif board.is_insufficient_material():
-        status = "DRAW — insufficient material."
+        status = "DRAW - insufficient material."
     elif board.is_seventyfive_moves() or board.is_fifty_moves():
-        status = "DRAW — 50-move rule."
+        status = "DRAW - 50-move rule."
     elif board.is_fivefold_repetition() or board.is_repetition(3):
-        status = "DRAW — threefold repetition."
+        status = "DRAW - threefold repetition."
     elif board.is_check():
-        status = f"CHECK — {turn} to move."
+        status = f"CHECK - {turn} to move."
     else:
         status = f"{turn} to move."
 
@@ -371,7 +371,7 @@ def _build_observation(
                 san_map.append(f"  {idx:3d}: {san}")
             lines += [
                 "",
-                f"Legal moves — {n_total} total  (action = index, wraps with modulo):",
+                f"Legal moves - {n_total} total  (action = index, wraps with modulo):",
                 *san_map,
                 *([". . ."] if n_total > 32 else []),
                 "",
@@ -401,11 +401,11 @@ class ChessEnvironment(RLIPEnvironment):
     Parameters
     ----------
     opponent:
-        ``"random"`` — opponent plays a uniformly random legal move.
-        ``"none"``   — no autonomous opponent; agent controls both sides
+        ``"random"`` - opponent plays a uniformly random legal move.
+        ``"none"``   - no autonomous opponent; agent controls both sides
                        (self-play mode, alternating turns each step).
     player_color:
-        ``"white"`` or ``"black"`` — the colour controlled by the agent
+        ``"white"`` or ``"black"`` - the colour controlled by the agent
         when ``opponent != "none"``.  Ignored in self-play mode.
     max_episode_steps:
         Episode is truncated after this many half-moves (plies).
@@ -517,7 +517,7 @@ class ChessEnvironment(RLIPEnvironment):
             self._board.push(move)
             self._steps += 1
 
-            # First-capture: agent captured first — win
+            # First-capture: agent captured first - win
             if player_captures:
                 if self._discrete_actions:
                     self._legal_uci = _sorted_legal_uci(self._board)
@@ -558,7 +558,7 @@ class ChessEnvironment(RLIPEnvironment):
                     self._last_move_san = self._board.san(opp_move)
                     self._board.push(opp_move)
 
-                    # First-capture: opponent captured first — loss
+                    # First-capture: opponent captured first - loss
                     if opp_captures:
                         if self._discrete_actions:
                             self._legal_uci = _sorted_legal_uci(self._board)
@@ -635,7 +635,7 @@ class ChessEnvironment(RLIPEnvironment):
             move = legal_moves[ action % n_legal ]
 
         where ``legal_moves`` is the sorted-UCI list captured at the start of
-        the current turn.  This means **every integer is always valid** — no
+        the current turn.  This means **every integer is always valid** - no
         action is ever truly illegal in discrete mode, which avoids the
         −0.01 penalty that confuses gradient-based agents early in training.
 
@@ -760,7 +760,7 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float | None, dict[str, Any]
     "Chess-Discrete-v0": (
         f"Standard chess with a Discrete({_MAX_LEGAL_MOVES}) action space. "
         "Each integer action maps to legal_moves[action % n_legal] "
-        "so every integer is always valid — no illegal-move penalty. "
+        "so every integer is always valid - no illegal-move penalty. "
         "Optimal for DQN/PPO agents; tabular_q also works via hashed text observations. "
         "info dict includes 'legal_moves_uci' and 'n_legal' at each step.",
         ["chess", "board-game", "strategy", "discrete", "two-player", "rl-ready"],
@@ -782,7 +782,7 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float | None, dict[str, Any]
         "Shortened chess: the episode ends as soon as any piece is captured. "
         "Agent plays White against a uniform-random opponent. "
         "Reward +1 if the agent makes the first capture, -1 if the opponent does. "
-        "Episodes are much shorter than standard chess — ideal for quick training. "
+        "Episodes are much shorter than standard chess - ideal for quick training. "
         "Actions: UCI (e.g. 'e2e4') or SAN (e.g. 'e4', 'Nf3', 'O-O').",
         ["chess", "board-game", "strategy", "text", "two-player", "quick"],
         80,

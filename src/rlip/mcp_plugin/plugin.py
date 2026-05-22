@@ -1,6 +1,6 @@
 """
-RLIP MCP Plugin for Claude Code
-=================================
+RL Bridge MCP Plugin for Claude Code
+====================================
 Exposes RL environments as MCP tools so Claude Code can interact with
 Gymnasium environments directly via natural-language agent tasks.
 
@@ -12,7 +12,7 @@ How it works
    ``mcp`` FastMCP instance created in ``_state``.
 2. Claude Code launches it as a subprocess and communicates over stdin/stdout.
 3. The plugin can run environments *in-process* (default) or *proxy* to a
-   running RLIP HTTP server (set RLIP_SERVER_URL env var).
+   running RL Bridge HTTP server (set RLIP_SERVER_URL env var).
 
 Configuration
 -------------

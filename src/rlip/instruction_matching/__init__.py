@@ -5,9 +5,9 @@ Text encoders for instruction-to-state matching in RLIP.
 
 All encoders share the :class:`~base.BaseEncoder` interface:
 
-* :meth:`~base.BaseEncoder.fit` — build internal state from a text corpus
-* :meth:`~base.BaseEncoder.encode` — convert a string to an L2-normalised vector
-* :meth:`~base.BaseEncoder.cosine_similarity` — dot product of two L2-normed vectors
+* :meth:`~base.BaseEncoder.fit` - build internal state from a text corpus
+* :meth:`~base.BaseEncoder.encode` - convert a string to an L2-normalised vector
+* :meth:`~base.BaseEncoder.cosine_similarity` - dot product of two L2-normed vectors
 
 Available encoders
 ------------------
@@ -100,10 +100,10 @@ def get_encoder(
     name:
         Encoder identifier.  Case-insensitive.  Supported values:
 
-        * ``"tfidf"`` (default) — :class:`TFIDFEncoder`
-        * ``"bm25"`` — :class:`BM25Encoder`
-        * ``"sentence-transformers"`` / ``"sentence"`` — :class:`SentenceEncoder`
-        * ``"sentence:<huggingface-model-id>"`` — :class:`SentenceEncoder`
+        * ``"tfidf"`` (default) - :class:`TFIDFEncoder`
+        * ``"bm25"`` - :class:`BM25Encoder`
+        * ``"sentence-transformers"`` / ``"sentence"`` - :class:`SentenceEncoder`
+        * ``"sentence:<huggingface-model-id>"`` - :class:`SentenceEncoder`
           with a custom model, e.g. ``"sentence:BAAI/bge-small-en-v1.5"``.
     sentence_model:
         Optional explicit Hugging Face model ID for SentenceEncoder.

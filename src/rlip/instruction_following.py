@@ -40,8 +40,8 @@ Quick start
 
 Using a Claude/OpenAI agent for exploration
 -------------------------------------------
-Pass any protocol instance — including one whose observations come from an
-agent-driven session — as ``exploration_protocol``::
+Pass any protocol instance - including one whose observations come from an
+agent-driven session - as ``exploration_protocol``::
 
     from rlip.interaction_protocols import GreedyEpisodeProtocol
     from rlip.adapters.openai_agent import RLIPAgent
@@ -103,7 +103,7 @@ def infer_max_reward(env: Any) -> float:
     Infer the maximum achievable per-step reward for *env*.
 
     Walks the wrapper chain (up to 5 levels) looking for a ``reward_range``
-    attribute — the Gymnasium convention is a ``(min, max)`` tuple.  Returns
+    attribute - the Gymnasium convention is a ``(min, max)`` tuple.  Returns
     the upper bound when it is finite and positive.
 
     Falls back to ``1.0`` for native RLIP environments (e.g. Sailing-v0,
@@ -435,7 +435,7 @@ def match_instruction(
         captures near-identical states.  Use ``0.0`` to restrict to the
         single best state only.
     use_raw_observations:
-        When *False* (default) a language translator is **required** — the
+        When *False* (default) a language translator is **required** - the
         system always converts raw observations to natural-language strings
         before encoding and comparing them to the instruction.  Pass
         *True* only when the environment's observations are already
@@ -503,7 +503,7 @@ def match_instruction(
     cached_seen: dict[str, Any] = _OBS_CACHE.get(env_id, {})
 
     if cached_seen and exploration_protocol is None:
-        # Cache hit for the default exploration path — skip re-exploration.
+        # Cache hit for the default exploration path - skip re-exploration.
         seen: dict[str, Any] = dict(cached_seen)
     else:
         # ── Exploration ───────────────────────────────────────────────────────
@@ -898,7 +898,7 @@ class SequentialInstructionFollowingProtocol(_BaseProtocol):
                     info["total_instructions"] = len(self.instructions)
 
                     if sim >= self.sub_goal_threshold and not instr_reached_flags[current_instr_idx]:
-                        # Reached current instruction — give bonus and advance
+                        # Reached current instruction - give bonus and advance
                         reward += self.sub_goal_bonus
                         instr_reached_flags[current_instr_idx] = True
                         info["sub_goal_reached"] = True

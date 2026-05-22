@@ -5,11 +5,11 @@ Fluent API for defining, caching, and registering new RLIP environments.
 
 The builder handles three concerns in one place:
 
-* **Metadata** — description, tags, namespace, episode limits.
-* **Local cache** — persists everything to ``~/.rlip/environments/<env_id>/`` so the
+* **Metadata** - description, tags, namespace, episode limits.
+* **Local cache** - persists everything to ``~/.rlip/environments/<env_id>/`` so the
   environment can be reloaded in future sessions without repeating the build
   steps.
-* **Language translation** — attach a named, custom, or LLM-generated
+* **Language translation** - attach a named, custom, or LLM-generated
   :class:`~rlip.language_translation.base.LanguageTranslator`.  Generated
   translators are saved as a standalone Python module inside the cache.
 
@@ -233,7 +233,7 @@ def _load_translator_from_spec(
         return None
 
     if lt_type == "inline_instance":
-        # Cannot deserialise arbitrary objects — return None
+        # Cannot deserialise arbitrary objects - return None
         return None
 
     return None
@@ -387,8 +387,8 @@ class BuiltEnvironment:
         The cache directory layout::
 
             ~/.rlip/environments/<env_id>/
-                spec.json         — environment metadata
-                translator.py     — generated translator module (if present)
+                spec.json         - environment metadata
+                translator.py     - generated translator module (if present)
 
         Returns
         -------
@@ -632,7 +632,7 @@ class EnvironmentBuilder:
                     "class_name": cls.__name__,
                 }
             else:
-                # Inline instance — not reloadable from cache
+                # Inline instance - not reloadable from cache
                 self._translator_spec = {"type": "inline_instance"}
         return self
 
@@ -783,7 +783,7 @@ class EnvironmentBuilder:
         env_dir: Path,
     ) -> tuple[Optional[LanguageTranslator], dict[str, Any]]:
         """Build and (if LLM) save the translator.  Returns (translator, spec)."""
-        # Non-LLM path — translator already set
+        # Non-LLM path - translator already set
         if self._llm_fn is None:
             return self._translator, self._translator_spec
 

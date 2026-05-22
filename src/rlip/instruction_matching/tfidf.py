@@ -1,5 +1,5 @@
 """
-TFIDFEncoder — bag-of-words TF-IDF instruction matcher.
+TFIDFEncoder - bag-of-words TF-IDF instruction matcher.
 
 This is the original encoder used in RLIP, now exposed as a first-class
 encoder type.  ``TextEncoder`` is kept as a backward-compatible alias.
@@ -125,5 +125,5 @@ class TFIDFEncoder(BaseEncoder):
         return tfidf / norm if norm > 0.0 else tfidf
 
 
-# Backward-compatibility alias — existing code that imports TextEncoder keeps working.
+# Backward-compatibility alias - existing code that imports TextEncoder keeps working.
 TextEncoder = TFIDFEncoder

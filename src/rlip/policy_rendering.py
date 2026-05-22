@@ -40,7 +40,7 @@ Quick start
 Instruction-following
 ---------------------
 Works with :class:`~rlip.interaction_protocols.InstructionFollowingProtocol`
-results too — sub-goal steps are annotated in the frame metadata::
+results too - sub-goal steps are annotated in the frame metadata::
 
     from rlip.instruction_following import build_sequential_instruction_following_protocol
 
@@ -248,7 +248,7 @@ class PolicyRenderer:
     ----------
     env:
         An RLIP environment that supports ``render()`` (may be the same
-        instance used for training — it will be ``reset()`` first).
+        instance used for training - it will be ``reset()`` first).
     policy:
         Observation-to-action lookup table, typically from
         :func:`extract_optimal_policy`.
@@ -894,7 +894,7 @@ def render_optimal_policy(
     Full pipeline: extract optimal policy → replay on a rendered env →
     optionally save PNG frames and/or animated GIF.
 
-    You must supply either *env_factory* (preferred — creates a fresh
+    You must supply either *env_factory* (preferred - creates a fresh
     instance with the requested *render_mode*) or *env* (an already-
     instantiated environment; rendering must have been enabled when it
     was created).

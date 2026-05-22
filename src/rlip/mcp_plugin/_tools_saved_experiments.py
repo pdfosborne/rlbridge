@@ -311,7 +311,7 @@ def rl_load_experiment(experiment_id: str) -> str:
         )
     elif artifact:
         artifact_msg = (
-            f"\n\n(Artifact path on record: {artifact} — file not found at "
+            f"\n\n(Artifact path on record: {artifact} - file not found at "
             "current working directory; may need rl_train_agent() to recreate.)"
         )
 

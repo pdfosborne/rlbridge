@@ -1,7 +1,7 @@
-# RLIP — Reinforcement Learning Interaction Protocol
+# Reinforcement Learning Bridge (RL Bridge)
 
-**RLIP** is a custom protocol for connecting AI agents to reinforcement learning environments.
-It ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM Studio, Cursor, Windsurf, Codex CLI, and OpenCode, letting any of these agents interact with Reinforcement Learning environments directly via natural language.
+**Reinforcement Learning Bridge** connects LLMs to reinforcement learning environments.
+It ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM Studio, Cursor, Windsurf, Codex CLI, and OpenCode, and uniquely automates how LLMs construct RL problems in language - building environments, translating observations, matching goals to sub-goals, and training agents to complete instructions without user supervision.
 
 ---
 
@@ -17,15 +17,15 @@ It ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM St
 └──────────┼───────────────────────────────────────────┘
            │
 ┌──────────▼───────────────────────────────────────────┐
-│  RLIP MCP Plugin  (rlip.mcp_plugin)                  │
+│  RL Bridge MCP Plugin  (rlip.mcp_plugin)             │
 │  FastMCP tools:  rl_create · rl_reset · rl_step      │
 │                 rl_render · rl_close · rl_run_episode│
 │         │                                            │
-│   In-process RLIP Dispatcher                         │
+│   In-process dispatcher                              │
 └──────────┼───────────────────────────────────────────┘
            │           ╌╌ OR ╌╌ (RLIP_SERVER_URL)
 ┌──────────▼───────────────────────────────────────────┐
-│  RLIP Server (HTTP/JSON-RPC 2.0)                     │
+│  RL Bridge Server (HTTP/JSON-RPC 2.0)                │
 │  POST /rpc  ·  GET /environments  ·  GET /health     │
 └──────────┬───────────────────────────────────────────┘
            │
@@ -47,19 +47,19 @@ It ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM St
 From PyPI (recommended):
 
 ```bash
-pip install rlip
+pip install rlbridge
 
 # Classic Gymnasium envs for examples (CartPole, etc.)
-pip install "rlip[examples]"
+pip install "rlbridge[examples]"
 ```
 
 With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv pip install rlip
+uv pip install rlbridge
 # or, in a uv-managed project:
-uv add rlip
-uv add "rlip[examples]"
+uv add rlbridge
+uv add "rlbridge[examples]"
 ```
 
 From source (development):
@@ -228,7 +228,7 @@ rl_match_instruction(
 
 ### Local LLM policy agent (Python API)
 
-RLIP also includes a direct `local_llm` policy agent for action selection
+RL Bridge also includes a direct `local_llm` policy agent for action selection
 without gradient training.
 
 ```python
@@ -274,7 +274,7 @@ rl_set_translator_code("FrozenLake-Custom-v0", python_code="""
 def translate(state, *, legal_moves=None, action_history=None):
     row, col = divmod(int(state), 4)
     cell = {0: "start (S)", 5: "hole (H)", 10: "hole (H)", 15: "goal (G)"}.get(state, "frozen (F)")
-    return f"Agent is at row {row}, column {col} — {cell}."
+    return f"Agent is at row {row}, column {col} - {cell}."
 """)
 
 # 4. Match an instruction to a goal state
@@ -293,7 +293,7 @@ rl_render_policy("FrozenLake-Custom-v0", agent_id="def456")
 
 ## Standalone HTTP Server
 
-Run RLIP as a standalone service (useful for multi-process workflows or
+Run RL Bridge as a standalone service (useful for multi-process workflows or
 connecting non-Python agents):
 
 ```bash
@@ -317,7 +317,7 @@ Browse the auto-generated API docs at `http://localhost:8765/docs`.
 
 ---
 
-## Remote RLIP Server from the MCP Plugin
+## Remote RL Bridge Server from the MCP Plugin
 
 ```bash
 # Point the plugin at a remote server instead of running envs in-process
@@ -380,16 +380,16 @@ registry.register(MyFactory())
 
 ## Third-Party Environment Plugins
 
-RLIP can load additional environments from separately installed pip packages.
+RL Bridge can load additional environments from separately installed pip packages.
 Packages register factories via the ``rlip.environments`` entry-point group and
 optional MCP tools via ``rlip.environment_mcp_tools``.
 
 Example: [Flesh and Blood](https://fabtcg.com/) TCG environments live in the
-[`flesh-and-blood-rlip`](https://github.com/pdfosborne/flesh-and-blood-rlip) package (not bundled with RLIP):
+[`flesh-and-blood-rlip`](https://github.com/pdfosborne/flesh-and-blood-rlip) package (not bundled with RL Bridge):
 
 ```bash
-# Install RLIP from PyPI
-pip install rlip
+# Install RL Bridge from PyPI
+pip install rlbridge
 
 # Then install the FaB plugin from GitHub
 pip install git+https://github.com/pdfosborne/flesh-and-blood-rlip.git
@@ -454,12 +454,12 @@ grows past `refine_threshold`.
 
 ---
 
-## Proxy Mode (MCP ↔ Remote RLIP)
+## Proxy Mode (MCP ↔ Remote RL Bridge)
 
 ```
 ┌─────────────┐   stdio/MCP   ┌───────────────────┐   HTTP/JSON-RPC   ┌──────────────┐
-│ Claude Code │ ────────────► │  RLIP MCP Plugin  │ ────────────────► │ RLIP Server  │
-│             │               │ (thin proxy)      │                   │ (GPU box)    │
+│ Claude Code │ ────────────► │  RL Bridge Plugin │ ────────────────► │ RL Bridge    │
+│             │               │ (thin proxy)      │                   │ Server       │
 └─────────────┘               └───────────────────┘                   └──────────────┘
 ```
 
@@ -469,9 +469,9 @@ Set `RLIP_SERVER_URL` to enable proxy mode.
 
 ## Protocol
 
-See [docs/protocol_spec.md](docs/protocol_spec.md) for the full RLIP specification,
-including all method signatures, space encodings, error codes, and the session
-lifecycle diagram.
+See [docs/protocol_spec.md](docs/protocol_spec.md) for the full JSON-RPC protocol
+specification, including all method signatures, space encodings, error codes,
+and the session lifecycle diagram.
 
 ---
 
@@ -486,7 +486,7 @@ src/rlip/
 │   └── messages.py          # Pydantic message models
 ├── environments/
 │   ├── base.py              # RLIPEnvironment / RLIPEnvironmentFactory ABCs
-│   ├── builder.py           # EnvironmentBuilder — fluent API for custom envs
+│   ├── builder.py           # EnvironmentBuilder - fluent API for custom envs
 │   ├── gymnasium_adapter.py # Gymnasium wrapper
 │   ├── registry.py          # EnvironmentRegistry singleton
 │   └── utils.py             # NumPy ↔ JSON helpers, space serialisation
@@ -513,9 +513,9 @@ src/rlip/
 examples/
 ├── cartpole_http.py         # HTTP client episode example
 ├── custom_env.py            # Registering a custom environment
-└── in_process_usage.py      # Using RLIP without a server
+└── in_process_usage.py      # Using RL Bridge without a server
 docs/
-└── protocol_spec.md         # Full RLIP specification
+└── protocol_spec.md         # Full JSON-RPC protocol specification
 ```
 
 ### Console scripts
@@ -530,15 +530,15 @@ docs/
 
 | Extra | Install | Use case |
 |-------|---------|----------|
-| `examples` / `envs-classic` | `pip install "rlip[examples]"` | CartPole and other classic-control envs |
-| `envs-box2d` | `pip install "rlip[envs-box2d]"` | LunarLander, etc. |
-| `envs-atari` | `pip install "rlip[envs-atari]"` | Atari games |
-| `envs-mujoco` | `pip install "rlip[envs-mujoco]"` | MuJoCo envs |
-| `envs-all` | `pip install "rlip[envs-all]"` | All Gymnasium env groups |
-| `torch` | `pip install "rlip[torch]"` | DQN / PPO training agents |
-| `sentence-transformers` | `pip install "rlip[sentence-transformers]"` | Semantic instruction matching |
-| `openai-sdk` | `pip install "rlip[openai-sdk]"` | Official OpenAI client (optional) |
-| `dev` | `pip install "rlip[dev]"` | pytest, ruff, mypy, build, twine |
+| `examples` / `envs-classic` | `pip install "rlbridge[examples]"` | CartPole and other classic-control envs |
+| `envs-box2d` | `pip install "rlbridge[envs-box2d]"` | LunarLander, etc. |
+| `envs-atari` | `pip install "rlbridge[envs-atari]"` | Atari games |
+| `envs-mujoco` | `pip install "rlbridge[envs-mujoco]"` | MuJoCo envs |
+| `envs-all` | `pip install "rlbridge[envs-all]"` | All Gymnasium env groups |
+| `torch` | `pip install "rlbridge[torch]"` | DQN / PPO training agents |
+| `sentence-transformers` | `pip install "rlbridge[sentence-transformers]"` | Semantic instruction matching |
+| `openai-sdk` | `pip install "rlbridge[openai-sdk]"` | Official OpenAI client (optional) |
+| `dev` | `pip install "rlbridge[dev]"` | pytest, ruff, mypy, build, twine |
 
 ---
 
@@ -548,7 +548,7 @@ Build and upload to PyPI (test first on [TestPyPI](https://test.pypi.org/)):
 
 ```bash
 # Install build tools
-pip install "rlip[dev]"
+pip install "rlbridge[dev]"
 # or: uv sync --extra dev
 
 # Bump version in pyproject.toml (single source of truth; __version__ reads it at runtime)
@@ -565,17 +565,19 @@ twine upload dist/*
 User install after release:
 
 ```bash
-pip install rlip
-uv add rlip
+pip install rlbridge
+uv add rlbridge
 ```
 
-**Manual steps before first release:** create a PyPI account, generate an API token, confirm the `rlip` project name is available (currently unclaimed on PyPI), and tag releases on GitHub.
+**Note:** The PyPI distribution name is `rlbridge`. The Python import package is `rlip`. Console commands remain `rlip`, `rlip-mcp`, and `rlip-server` after install.
+
+**Manual steps before first release:** create a PyPI account, generate an API token, and tag releases on GitHub.
 
 ---
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0 - see [LICENSE](LICENSE).
 
 The framework used in this work is currently patent pending with the US Patent and Trademark Office (18/955718). 
 

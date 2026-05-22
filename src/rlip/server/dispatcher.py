@@ -120,7 +120,7 @@ class RLIPDispatcher:
     def _handle_initialize(self, params: dict[str, Any]) -> dict[str, Any]:
         p = InitializeParams.model_validate(params)
         result = InitializeResult(
-            server_name="RLIP Server",
+            server_name="RL Bridge Server",
             server_version=__version__,
             protocol_version=RLIP_PROTOCOL_VERSION,
             capabilities={

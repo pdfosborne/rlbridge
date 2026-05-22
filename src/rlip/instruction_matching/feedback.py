@@ -80,15 +80,15 @@ class FeedbackLayer:
     -----------
     For each candidate pair with instruction vector *q* and state vector *s*:
 
-    1. **Baseline** — standard TF-IDF cosine similarity::
+    1. **Baseline** - standard TF-IDF cosine similarity::
 
            base = dot(q, s)
 
-    2. **Pair direction** — unit vector pointing from instruction to state::
+    2. **Pair direction** - unit vector pointing from instruction to state::
 
            d = normalize(s - q)
 
-    3. **Layer vectors** — running sums of *d* over validated pairs::
+    3. **Layer vectors** - running sums of *d* over validated pairs::
 
            P = Σ d_i   (correct pairs)
            N = Σ d_j   (incorrect pairs)
@@ -97,7 +97,7 @@ class FeedbackLayer:
 
            layer_adj = boost_w * dot(d, P/||P||) - penalty_w * dot(d, N/||N||)
 
-    4. **Entry adjustment** — for each stored feedback record, compute pair
+    4. **Entry adjustment** - for each stored feedback record, compute pair
        overlap with the current candidate::
 
            pair_sim = 0.5 * (dot(q, q') + dot(s, s'))

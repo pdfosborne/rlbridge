@@ -1,5 +1,5 @@
 """
-Instruction matching — two-stage TF-IDF filter + semantic re-rank.
+Instruction matching - two-stage TF-IDF filter + semantic re-rank.
 
 Stage 1 uses TF-IDF cosine similarity to shortlist top candidates from the
 full corpus.  Stage 2 re-scores that subset with a dense encoder (sentence
@@ -113,7 +113,7 @@ def score_instruction_against_corpus(
     their TF-IDF scores and are ranked below the refined set.
 
     When *encoder* is a :class:`TFIDFEncoder` (or legacy :class:`TextEncoder`),
-    only TF-IDF scoring is used — useful for fast tests and backward
+    only TF-IDF scoring is used - useful for fast tests and backward
     compatibility.
 
     Parameters

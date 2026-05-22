@@ -77,7 +77,7 @@ class _ProgressEnv:
 
     def reset(self, seed: Any = None, options: Any = None) -> Any:
         if self._reset_calls > 0:
-            # A previous episode just ended — commit its reward and advance.
+            # A previous episode just ended - commit its reward and advance.
             if self._ep_reward > self._best_reward:
                 self._best_reward = self._ep_reward
             self._bar.set_postfix(
@@ -252,7 +252,7 @@ def rl_train_agent(
     alpha:
         (tabular_q) Q-learning rate.
     gamma:
-        Discount factor — shared by all agents.
+        Discount factor - shared by all agents.
     epsilon:
         (tabular_q, dqn) Initial exploration rate.
     epsilon_min:
@@ -442,7 +442,7 @@ def rl_train_agent(
                 if not _par_langs and getattr(_par_m, "matched_language", None):
                     _par_langs = [_par_m.matched_language]
                 if _par_langs:
-                    # Same cap as stage_languages above — avoids O(N) per step.
+                    # Same cap as stage_languages above - avoids O(N) per step.
                     _par_stage_languages.append(_par_langs[:_MAX_STAGE_LANGS])
         else:
             _par_shaping_mode = "single"
@@ -968,7 +968,7 @@ def rl_train_agent(
             )
 
         summary = (
-            f"Training complete — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}"
+            f"Training complete - {agent_type} on {env_id}{shaping_summary}{lang_state_summary}"
             f"{_parallel_summary}\n\n"
             f"  {result}\n\n"
             f"  Mean reward (last 10 %): {result.last_n_mean:.4f}\n"
@@ -988,7 +988,7 @@ def rl_train_agent(
 
     _envs_line = f"  Envs:      {n_envs} parallel\n" if n_envs > 1 else ""
     return (
-        f"Training started — {agent_type} on {env_id}{shaping_summary}{lang_state_summary}\n\n"
+        f"Training started - {agent_type} on {env_id}{shaping_summary}{lang_state_summary}\n\n"
         f"  Agent ID:  {agent_id}\n"
         f"  Job ID:    {job_id}\n"
         f"  Episodes:  {n_episodes}  max_steps={max_steps}\n"
@@ -1052,7 +1052,7 @@ def rl_get_training_result(job_id: str) -> str:
             f"{stages_line}"
             f"{agent_line}"
             f"  Env:      {job.get('env_id', '?')}\n\n"
-            f"** NOT DONE — call rl_get_training_result(job_id='{job_id}') again in ~30s. **\n"
+            f"** NOT DONE - call rl_get_training_result(job_id='{job_id}') again in ~30s. **\n"
             f"Do NOT report results or consider the experiment finished until status is 'done'."
         )
     return job.get("result", "No result available.")

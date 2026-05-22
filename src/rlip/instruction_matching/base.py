@@ -1,5 +1,5 @@
 """
-BaseEncoder — abstract interface for instruction-matching text encoders.
+BaseEncoder - abstract interface for instruction-matching text encoders.
 """
 
 from __future__ import annotations

@@ -1,14 +1,16 @@
 """
-RLIP - Reinforcement Learning Interaction Protocol
-====================================================
-A JSON-RPC 2.0-based protocol for connecting AI agents to RL environments.
-Surfaces as a Claude Code MCP plugin, and as an optional standalone HTTP server.
+Reinforcement Learning Bridge (RL Bridge)
+=========================================
+Connects LLMs to reinforcement learning environments via MCP and an optional
+HTTP server. Automates language-based environment construction, state
+translation, instruction matching, and sub-goal shaping so agents can pursue
+long-term goals - deriving and completing instructions without user supervision.
 """
 
 from importlib.metadata import version, PackageNotFoundError
 
 try:
-    __version__ = version("rlip")
+    __version__ = version("rlbridge")
 except PackageNotFoundError:
     __version__ = "0.1.0-dev"
 

@@ -28,7 +28,7 @@ Render
 
 Variants
 --------
-    ``GridWorld-1D-v0``  — default 10-cell grid, max 100 steps
+    ``GridWorld-1D-v0``  - default 10-cell grid, max 100 steps
 """
 
 from __future__ import annotations

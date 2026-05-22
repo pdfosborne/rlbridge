@@ -3,8 +3,8 @@ LLM direct-play MCP tool for the RLIP plugin.
 
 Tool: rl_llm_play_episode
 
-Lets the connected LLM act as the policy for one full episode — optionally
-on both the raw environment and the language-translated form — and reports
+Lets the connected LLM act as the policy for one full episode - optionally
+on both the raw environment and the language-translated form - and reports
 whether it completed the episode successfully.
 """
 
@@ -177,7 +177,7 @@ async def rl_llm_play_episode(
         }
 
     # ── Run each requested mode and collect results ───────────────────────────
-    sections: list[str] = [f"rl_llm_play_episode — {env_id}\n"]
+    sections: list[str] = [f"rl_llm_play_episode - {env_id}\n"]
 
     for mode in mode_list:
         use_lang = mode == "language"
@@ -186,7 +186,7 @@ async def rl_llm_play_episode(
         if use_lang and translator is None:
             sections.append(
                 f"Mode: {mode_label}\n"
-                "  Skipped — no language translator registered for this environment.\n"
+                "  Skipped - no language translator registered for this environment.\n"
                 "  Register one via rl_set_language_translator() first.\n"
             )
             continue
@@ -201,9 +201,9 @@ async def rl_llm_play_episode(
             continue
 
         if r["terminated"]:
-            outcome = "terminated \u2714 (episode end reached — task solved)"
+            outcome = "terminated \u2714 (episode end reached - task solved)"
         elif r["truncated"]:
-            outcome = "truncated (hit max_steps limit — did not naturally terminate)"
+            outcome = "truncated (hit max_steps limit - did not naturally terminate)"
         else:
             outcome = f"incomplete (stopped after {r['steps']} steps)"
 

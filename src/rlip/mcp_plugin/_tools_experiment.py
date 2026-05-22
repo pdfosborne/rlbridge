@@ -145,7 +145,7 @@ def _ensure_translator(env_id: str) -> tuple[Any, str]:
     _custom_translators[env_id] = translator
     TRANSLATORS[env_id] = translator
     note = (
-        f"  Note: no translator for '{env_id}' — installed str() fallback.\n"
+        f"  Note: no translator for '{env_id}' - installed str() fallback.\n"
         f"  Call rl_set_translator_code() for richer matching.\n\n"
     )
     return translator, note
@@ -199,7 +199,7 @@ def _fail_experiment(
 ) -> None:
     """Mark experiment failed with stage, error details, and traceback."""
     _training_jobs[job_id]["status"] = "failed"
-    _training_jobs[job_id]["phase"] = f"[{stage}/{STAGES_TOTAL}] {label} — FAILED"
+    _training_jobs[job_id]["phase"] = f"[{stage}/{STAGES_TOTAL}] {label} - FAILED"
     _training_jobs[job_id]["stages_done"] = max(0, stage - 1)
 
     if isinstance(exc, BaseException):
@@ -497,7 +497,7 @@ def rl_experiment_process(
     auto_save_experiment: bool = True,
 ) -> str:
     """
-    **Default experiment process** — one call runs the full pipeline in the background.
+    **Default experiment process** - one call runs the full pipeline in the background.
 
     Poll ``rl_get_training_result(job_id)`` until ``status == "done"`` or
     ``status == "failed"``.  On failure the result includes the failing stage,
@@ -505,16 +505,16 @@ def rl_experiment_process(
 
     Pipeline (8 stages):
 
-    1. **Dashboard** — start live reward tracking UI
-    2. **Baseline** — train on raw observations; ``LanguageTrackingWrapper`` records
+    1. **Dashboard** - start live reward tracking UI
+    2. **Baseline** - train on raw observations; ``LanguageTrackingWrapper`` records
        translated state visits
-    3. **Language** — train on translated observations (translator auto-created if needed)
-    4. **Derive** — ``derive_instructions_from_training`` from combined visit logs
-    5. **Match** — match instructions to observed states (obs cache from stages 2–3;
+    3. **Language** - train on translated observations (translator auto-created if needed)
+    4. **Derive** - ``derive_instructions_from_training`` from combined visit logs
+    5. **Match** - match instructions to observed states (obs cache from stages 2–3;
        no fresh exploration)
-    6. **Instruction** — train with sub-goal shaping (``rl_train_agent`` + ``match_id``)
-    7. **Instruction + language** — same shaping with language-state observations
-    8. **Evaluate & render** — clean eval, compare agents, render policies, pick best
+    6. **Instruction** - train with sub-goal shaping (``rl_train_agent`` + ``match_id``)
+    7. **Instruction + language** - same shaping with language-state observations
+    8. **Evaluate & render** - clean eval, compare agents, render policies, pick best
 
     Use ``rl_train_agent()`` only for manual single-phase training.
     """
@@ -611,7 +611,7 @@ def rl_experiment_process(
                 max_steps=max_steps,
                 seed=seed,
                 use_language_state=False,
-                desc=f"Baseline — {agent_type} on {env_id}",
+                desc=f"Baseline - {agent_type} on {env_id}",
                 parent_job_id=job_id,
                 instructions_used=[],
             )
@@ -632,7 +632,7 @@ def rl_experiment_process(
                 max_steps=max_steps,
                 seed=seed,
                 use_language_state=True,
-                desc=f"Language — {agent_type} on {env_id}",
+                desc=f"Language - {agent_type} on {env_id}",
                 parent_job_id=job_id,
                 instructions_used=[],
             )
@@ -651,7 +651,7 @@ def rl_experiment_process(
             )
             completed["stage_4_instruction_source"] = instruction_source
             completed["stage_4_instructions"] = " | ".join(instructions_to_use)
-            log.info("experiment: instructions — %s", instruction_source)
+            log.info("experiment: instructions - %s", instruction_source)
 
             # ── 5. Match using observed states (no new exploration) ───────────
             _set_phase(5, "matching instructions to observed states")
@@ -837,28 +837,28 @@ def rl_experiment_process(
                             f"  Recall: rl_load_experiment(experiment_id='{m.group(1)}')\n"
                         )
                 except Exception as exc:
-                    log.warning("experiment: auto-save failed — %s", exc)
+                    log.warning("experiment: auto-save failed - %s", exc)
 
             compare_ids = list(all_ids)
             li_entry = _trained_agents.get(lang_instr_id, {})
             result_text = (
-                f"Default experiment complete — {agent_type} on {env_id}\n\n"
+                f"Default experiment complete - {agent_type} on {env_id}\n\n"
                 f"Dashboard: {_dashboard_url() or dash_url}\n"
                 f"Instruction ({instruction_source}):\n"
                 + "".join(f"  {i + 1}. {s}\n" for i, s in enumerate(instructions_to_use))
-                + f"\nStage 2 — Baseline ({n_episodes} ep, language tracking):\n"
+                + f"\nStage 2 - Baseline ({n_episodes} ep, language tracking):\n"
                 + _format_reward_line(result_baseline)
                 + _format_eval_line(_trained_agents.get(baseline_id, {}))
                 + f"  agent_id: {baseline_id}\n"
-                + f"\nStage 3 — Language observations ({n_episodes} ep):\n"
+                + f"\nStage 3 - Language observations ({n_episodes} ep):\n"
                 + _format_reward_line(result_lang)
                 + _format_eval_line(_trained_agents.get(lang_id, {}))
                 + f"  agent_id: {lang_id}\n"
-                + f"\nStage 6 — Instruction-shaped ({n_episodes} ep):\n"
+                + f"\nStage 6 - Instruction-shaped ({n_episodes} ep):\n"
                 + _format_reward_line(instr_entry.get("train_result"))
                 + _format_eval_line(instr_entry)
                 + f"  agent_id: {instr_id}\n"
-                + f"\nStage 7 — Instruction + language ({n_episodes} ep):\n"
+                + f"\nStage 7 - Instruction + language ({n_episodes} ep):\n"
                 + _format_reward_line(li_entry.get("train_result"))
                 + _format_eval_line(li_entry)
                 + f"  agent_id: {lang_instr_id}\n"
@@ -880,7 +880,7 @@ def rl_experiment_process(
             if m:
                 stage_num = int(m.group(1))
             label = re.sub(r"^\[\d+/\d+\]\s*", "", str(stage_label))
-            label = label.replace(" — FAILED", "").strip() or "unknown"
+            label = label.replace(" - FAILED", "").strip() or "unknown"
             _fail_experiment(
                 job_id,
                 stage_num,
@@ -897,7 +897,7 @@ def rl_experiment_process(
         else "  Instruction: (derived from training)\n"
     )
     return (
-        f"Default experiment started — {agent_type} on {env_id}\n\n"
+        f"Default experiment started - {agent_type} on {env_id}\n\n"
         f"  Job ID: {job_id}\n"
         f"{instr_note}"
         f"  Episodes/phase: {n_episodes}  max_steps: {max_steps}\n"

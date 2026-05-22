@@ -190,7 +190,7 @@ def rl_sample_states_for_translation(
         f"Sampled {collected} unique states from '{env_id}'."
         if collected >= n_samples
         else f"Sampled {collected}/{n_samples} unique states from '{env_id}' "
-             f"(episode/step budget exhausted — this is normal for large or "
+             f"(episode/step budget exhausted - this is normal for large or "
              f"complex environments)."
     )
     lines = [

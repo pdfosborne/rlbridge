@@ -224,7 +224,7 @@ def rl_list_trained_agents(env_id: str = "") -> str:
         key=lambda x: (x.get("eval_reward") is None, -(x.get("eval_reward") or 0.0))
     )
 
-    lines = [f"Saved trained agents — {len(all_agents)} total\n"]
+    lines = [f"Saved trained agents - {len(all_agents)} total\n"]
     for e in all_agents:
         if e.get("eval_reward") is not None:
             eval_str = f"{e['eval_reward']:+.4f}"
@@ -271,10 +271,10 @@ def rl_load_agent(artifact_path: str = "", agent_id: str = "") -> str:
 
     Accepts either:
     • An artifact ZIP path (as returned by rl_train_agent or shown in
-      rl_list_trained_agents) — the path to a ``<agent_type>_<id>_<ts>.zip``
+      rl_list_trained_agents) - the path to a ``<agent_type>_<id>_<ts>.zip``
       file or the unzipped package directory containing weights/ and
       metadata.json.
-    • An agent_id from the persistent agents registry — the registry entry
+    • An agent_id from the persistent agents registry - the registry entry
       holds the artifact_path, so you only need to pass the agent_id you saw
       in rl_list_trained_agents.
 

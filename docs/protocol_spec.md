@@ -1,6 +1,6 @@
 # RLIP Protocol Specification v0.1
 
-**Reinforcement Learning Interaction Protocol** — a JSON-RPC 2.0-based protocol
+**Reinforcement Learning Interaction Protocol** - a JSON-RPC 2.0-based protocol
 for connecting AI agents to reinforcement learning environments.
 
 ---

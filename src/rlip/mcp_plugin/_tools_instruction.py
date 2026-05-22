@@ -35,8 +35,8 @@ def _extract_vocab_clauses(observed_langs: list[str]) -> list[str]:
     Extract the recurring semantic phrases from a list of environment language
     descriptions using only general clause boundaries.
 
-    Splits on commas, semicolons, and sentence terminals — no environment-
-    specific keywords — so this works for any RLIP environment.  Returns only
+    Splits on commas, semicolons, and sentence terminals - no environment-
+    specific keywords - so this works for any RLIP environment.  Returns only
     clauses that appear in at least two distinct descriptions (i.e. genuine
     vocabulary atoms, not one-off noise), sorted and deduplicated.
     """
@@ -138,7 +138,7 @@ def _fallback_decompose_instruction(instruction: str) -> list[str]:
         unique_parts.append(p)
     if len(unique_parts) >= 2:
         return unique_parts[:5]
-    # Cannot split further — return the instruction as a single atomic step.
+    # Cannot split further - return the instruction as a single atomic step.
     return [instruction.strip().rstrip(".")]
 
 
@@ -1044,7 +1044,7 @@ async def rl_validate_instruction_match_llm(
             path=_feedback_path_for_env(env_id),
         )
         recorded = (
-            "\nFeedback recorded — future matches will "
+            "\nFeedback recorded - future matches will "
             + ("boost" if verdict else "penalise")
             + " similar pairs and update the supervised predictor."
         )

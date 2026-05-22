@@ -1,7 +1,7 @@
 """
 OpenAI Function-Calling Agent for RLIP
 ========================================
-Works with any OpenAI-compatible endpoint — Ollama, OpenAI, LM Studio, etc.
+Works with any OpenAI-compatible endpoint - Ollama, OpenAI, LM Studio, etc.
 
 The agent loop:
   1. User sends a natural-language task.
@@ -262,7 +262,7 @@ RLIP_TOOLS: list[dict[str, Any]] = [
 def _call_rlip_tool(name: str, arguments: dict[str, Any], dispatcher: RLIPDispatcher) -> str:
     """
     Execute one RLIP tool call by delegating to the same plugin functions
-    used by the MCP adapter — no code duplication.
+    used by the MCP adapter - no code duplication.
     """
     # Import the actual tool implementations from the MCP plugin
     import rlip.mcp_plugin.plugin as _plugin

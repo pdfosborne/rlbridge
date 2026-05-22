@@ -50,7 +50,7 @@ else:
 # ── FastMCP server ────────────────────────────────────────────────────────────
 
 mcp = FastMCP(
-    "RLIP",
+    "RL Bridge",
     instructions=rlip_system_prompt(),
 )
 
@@ -74,11 +74,11 @@ _training_jobs: dict[str, Any] = {}
 # Shared between _tools_builder (writes) and _tools_agents/_tools_render (reads).
 _custom_translators: dict[str, Any] = {}
 
-# Sampled states cache — helps rl_set_translator_code show test translations
+# Sampled states cache - helps rl_set_translator_code show test translations
 # without requiring the caller to pass the states back.
 _sampled_states: dict[str, list[Any]] = {}
 
-# Persisted hyperparameter overrides — LLM can update these via
+# Persisted hyperparameter overrides - LLM can update these via
 # rl_update_suggested_hyperparameters().  Stored per-env under
 # ~/.rlip/environments/<env_id>/suggested_hyperparameters.json
 # and loaded back at import time so they survive session restarts.
@@ -91,7 +91,7 @@ def _safe_env_name(env_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Path resolution — two distinct roots
+# Path resolution - two distinct roots
 # ---------------------------------------------------------------------------
 #
 # CACHE ROOT  (~/.rlip  or  RLIP_CACHE_ROOT)

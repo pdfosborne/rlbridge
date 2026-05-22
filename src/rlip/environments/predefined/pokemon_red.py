@@ -1,5 +1,5 @@
 """
-RLIP Pokemon Red Environment — Gary's First Battle
+RLIP Pokemon Red Environment - Gary's First Battle
 ====================================================
 
 Wraps *Pokemon Red* (Game Boy, 1996) via the `PyBoy
@@ -7,13 +7,13 @@ Wraps *Pokemon Red* (Game Boy, 1996) via the `PyBoy
 
 Requirements
 ------------
-1. **ROM** — Place your *Pokemon Red (International)* ROM at::
+1. **ROM** - Place your *Pokemon Red (International)* ROM at::
 
        ~/.rlip/pokemon_red/rom.gb
 
    or point the ``POKEMON_RED_ROM`` environment variable at the file.
 
-2. **Save state** — A PyBoy ``.state`` file capturing the emulator
+2. **Save state** - A PyBoy ``.state`` file capturing the emulator
    state at the exact frame Gary's first trainer battle begins
    (D057 == 2).  The expected path is::
 
@@ -33,14 +33,14 @@ Environment variants
     Single episode = one battle against Gary (Blue) in Oak's Lab.
     The player's starter (Lv 5) fights Gary's counter-type starter (Lv 5).
 
-    * **Actions** — button string: ``"a"``, ``"b"``, ``"up"``,
+    * **Actions** - button string: ``"a"``, ``"b"``, ``"up"``,
       ``"down"``, ``"left"``, ``"right"``, ``"start"``, ``"select"``
-    * **Observations** — rich text description of the battle state
+    * **Observations** - rich text description of the battle state
       (HP, moves, turn indicator, battle status)
-    * **Rewards** — ``+1.0`` on victory, ``-1.0`` on defeat, ``0``
+    * **Rewards** - ``+1.0`` on victory, ``-1.0`` on defeat, ``0``
       per step
-    * **Terminal** — when the battle ends (win **or** lose)
-    * **Max steps** — 300 button presses (generous for text-heavy dialogue)
+    * **Terminal** - when the battle ends (win **or** lose)
+    * **Max steps** - 300 button presses (generous for text-heavy dialogue)
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ _ADDR_BATTLE_TYPE     = 0xD057  # 0=none, 1=wild, 2=trainer
 _ADDR_OPTIONS         = 0xD355  # bit7=anim off, low nibble=text speed
 _ADDR_TEXT_SPEED_2    = 0xD358  # text delay override flags
 
-# Player's party slot 1 (in-party data — reliable after battle starts)
+# Player's party slot 1 (in-party data - reliable after battle starts)
 _ADDR_P_SPECIES       = 0xD16B  # species ID (duplicate field)
 _ADDR_P_HP_HI         = 0xD16C  # current HP high byte
 _ADDR_P_HP_LO         = 0xD16D  # current HP low byte
@@ -90,7 +90,7 @@ _ADDR_P_PP2           = 0xD189
 _ADDR_P_PP3           = 0xD18A
 _ADDR_P_PP4           = 0xD18B
 
-# Enemy's in-battle data (battle-mon scratch RAM — valid only mid-battle)
+# Enemy's in-battle data (battle-mon scratch RAM - valid only mid-battle)
 _ADDR_E_SPECIES       = 0xCFE5  # enemy species ID (in battle)
 _ADDR_E_HP_HI         = 0xCFE6  # enemy current HP high byte
 _ADDR_E_HP_LO         = 0xCFE7  # enemy current HP low byte
@@ -577,7 +577,7 @@ class PokemonRedEnvironment(RLIPEnvironment):
         battle_type = self._u8(_ADDR_BATTLE_TYPE)
 
         if battle_type == 0:
-            # Battle has ended — determine winner by player HP
+            # Battle has ended - determine winner by player HP
             player_hp = self._u16(_ADDR_P_HP_HI)
             reward = 1.0 if player_hp > 0 else -1.0
             return reward, True
@@ -821,7 +821,7 @@ def setup_save_state(
     pyboy.set_emulation_speed(1)  # real-time so the user can play
 
     print("=" * 60)
-    print("Pokemon Red — Gary Battle State Setup")
+    print("Pokemon Red - Gary Battle State Setup")
     print("=" * 60)
     print("Play until Gary says 'I'll take you on!' and the")
     print("battle screen appears.  The state is saved automatically.")
@@ -831,7 +831,7 @@ def setup_save_state(
     try:
         while True:
             if not pyboy.tick():
-                print("Window closed — aborting setup.")
+                print("Window closed - aborting setup.")
                 return out
 
             battle_type = pyboy.memory[_ADDR_BATTLE_TYPE]
@@ -842,7 +842,7 @@ def setup_save_state(
                 out.parent.mkdir(parents=True, exist_ok=True)
                 with open(out, "wb") as fh:
                     pyboy.save_state(fh)
-                print(f"\nTrainer battle detected — state saved to:\n  {out}")
+                print(f"\nTrainer battle detected - state saved to:\n  {out}")
                 break
     finally:
         pyboy.stop()

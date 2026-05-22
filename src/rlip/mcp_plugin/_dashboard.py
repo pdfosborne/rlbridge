@@ -2,7 +2,7 @@
 Live Training Dashboard
 ========================
 A lightweight localhost web server that displays RL training progress
-in real time.  No external dependencies — uses Python's built-in
+in real time.  No external dependencies - uses Python's built-in
 ``http.server``.
 
 The dashboard page auto-refreshes every 2 seconds and shows:
@@ -18,7 +18,7 @@ the Python process exits.
 Usage (internal)
 ----------------
     from rlip.mcp_plugin._dashboard import dashboard, start_dashboard
-    url = start_dashboard()           # idempotent — returns URL if already running
+    url = start_dashboard()           # idempotent - returns URL if already running
     dashboard.update(agent_id, ...)   # called by _ProgressEnv each episode
 """
 
@@ -170,7 +170,7 @@ class TrainingDashboard:
             return self._version
 
 
-# Global singleton — imported by _tools_agents and the HTTP handler
+# Global singleton - imported by _tools_agents and the HTTP handler
 dashboard = TrainingDashboard()
 
 
@@ -530,7 +530,7 @@ def _render_agent_card(state: _AgentState) -> str:
                     'margin-top:6px;display:block" alt="policy replay gif">'
                 )
         elif state.policy_frames:
-            # ANSI / text frames — show as a cycling JS slideshow.
+            # ANSI / text frames - show as a cycling JS slideshow.
             # policy_frame_meta (parallel list) carries sub_goal_reached,
             # sub_goal_similarity, language_obs, reward, step per frame.
             frames_json = html.escape(json.dumps(state.policy_frames))
@@ -540,7 +540,7 @@ def _render_agent_card(state: _AgentState) -> str:
             inst_prefix = f"inst_{state.agent_id}"
             instruction_panel = _instruction_panel(dynamic_prefix=inst_prefix)
 
-            # Banner div — hidden by default; shown by the global slideshow timer
+            # Banner div - hidden by default; shown by the global slideshow timer
             sg_banner = (
                 f'<div id="{banner_id}" style="'
                 f'display:none;margin-bottom:6px;padding:6px 10px;'
@@ -690,11 +690,11 @@ def _build_html(version: int, states: list[_AgentState]) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RLIP Training Dashboard</title>
+<title>RL Bridge Training Dashboard</title>
 <style>{_CSS}</style>
 </head>
 <body>
-<h1>RLIP Training Dashboard <span id="refresh-dot"></span></h1>
+<h1>RL Bridge Training Dashboard <span id="refresh-dot"></span></h1>
 <div class="subtitle">Auto-refreshes every 1.5 s &nbsp;·&nbsp; <span id="ts">v{version}</span></div>
 <div id="main">{body}</div>
 <script>{_JS}</script>
@@ -705,7 +705,7 @@ def _build_html(version: int, states: list[_AgentState]) -> str:
 # ── HTTP server ───────────────────────────────────────────────────────────────
 
 class _Handler(BaseHTTPRequestHandler):
-    """Minimal HTTP handler — serves the dashboard page and a version endpoint."""
+    """Minimal HTTP handler - serves the dashboard page and a version endpoint."""
 
     def log_message(self, fmt: str, *args: Any) -> None:
         pass  # silence request logging

@@ -8,7 +8,7 @@ Each cached environment directory contains:
   engine.py          - the downloaded environment source file(s)
   meta.json          - copy of the catalog entry at install time
 
-No file is executed at install time — the engine module is only imported
+No file is executed at install time - the engine module is only imported
 when the environment is first instantiated.
 """
 
@@ -78,7 +78,7 @@ def install(entry: dict[str, Any], force: bool = False) -> Path:
     meta_path = target / "meta.json"
 
     if meta_path.exists() and not force:
-        log.debug("'%s' already installed at %s — skipping.", env_id, target)
+        log.debug("'%s' already installed at %s - skipping.", env_id, target)
         return target
 
     source: dict[str, Any] = entry["source"]

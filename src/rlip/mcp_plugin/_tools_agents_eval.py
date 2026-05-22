@@ -44,7 +44,7 @@ def rl_run_agent_episode(
     seed:
         Optional seed for the environment reset.
     stochastic:
-        If True, use stochastic (sampled) action selection — meaningful for
+        If True, use stochastic (sampled) action selection - meaningful for
         PPO; equivalent to greedy for tabular_q and dqn.
     use_language_state:
         When True, observations are translated to natural-language strings
@@ -130,7 +130,7 @@ def rl_run_agent_episode(
     lang_mode  = "language" if effective_lang_state else "raw"
 
     return (
-        f"Evaluation episode — {agent_type} on {env_id}\n"
+        f"Evaluation episode - {agent_type} on {env_id}\n"
         f"  Agent ID:     {agent_id}\n"
         f"  Action mode:  {mode_str}\n"
         f"  Obs mode:     {lang_mode}\n"
@@ -329,7 +329,7 @@ def rl_create_training_report(
         out_stem = output_path or str(
             env_reports_dir / f"{safe_id}_{primary_agent_type}_{agent_id}_report"
         )
-    # Strip .png suffix if caller passed a full path — we derive per-file suffixes
+    # Strip .png suffix if caller passed a full path - we derive per-file suffixes
     if out_stem.endswith(".png"):
         out_stem = out_stem[:-4]
 
@@ -453,7 +453,7 @@ def rl_evaluate_agent(
     Run a clean evaluation of a trained agent and return standard metrics.
 
     Evaluation procedure:
-    - Load the trained agent's weights (fixed — no further learning).
+    - Load the trained agent's weights (fixed - no further learning).
     - Create a fresh environment instance with **no** instruction rewards or
       shaping wrappers; only the plain environment reward signal is used.
     - If the agent was trained with language-state observations the same
@@ -557,7 +557,7 @@ def rl_evaluate_agent(
         source = f"fresh run ({n_episodes} episodes requested, {len(rewards)} completed)"
 
     if not rewards:
-        return "Evaluation produced no completed episodes — check environment and agent compatibility."
+        return "Evaluation produced no completed episodes - check environment and agent compatibility."
 
     n = len(rewards)
     mean = sum(rewards) / n
@@ -588,7 +588,7 @@ def rl_evaluate_agent(
     instruction_line = f"    instruction      : {instruction[:80]}\n" if instruction else ""
 
     return (
-        f"Clean evaluation — {agent_type} on {env_id}\n"
+        f"Clean evaluation - {agent_type} on {env_id}\n"
         f"  agent_id : {agent_id}\n"
         f"  source   : {source}\n"
         f"{instruction_line}"

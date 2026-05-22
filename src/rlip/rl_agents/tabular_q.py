@@ -3,7 +3,7 @@ Tabular Q-Learning Agent
 =========================
 Classic lookup-table Q-learning with ε-greedy exploration and optional
 ε decay.  Works on any RLIP environment whose observations are hashable
-(strings, ints, tuples) — ideal for text-observation envs like
+(strings, ints, tuples) - ideal for text-observation envs like
 ``Sailing-v0``.
 
 Algorithm

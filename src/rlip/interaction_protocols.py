@@ -208,7 +208,7 @@ class _BaseProtocol:
             return None
         if isinstance(translate, LanguageTranslator):
             return translate
-        # translate=True — auto-lookup
+        # translate=True - auto-lookup
         from .language_translation import get_translator
         return get_translator(env_id)
 
@@ -402,7 +402,7 @@ class GreedyEpisodeProtocol(_BaseProtocol):
     Parameters
     ----------
     policy_fn:
-        ``Callable[[obs], action]`` — any function mapping an observation to
+        ``Callable[[obs], action]`` - any function mapping an observation to
         an action.  The observation format matches what ``env.step()`` returns.
     max_steps:
         Hard cap on episode length.

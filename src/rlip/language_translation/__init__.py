@@ -51,10 +51,10 @@ TRANSLATORS: dict[str, LanguageTranslator] = {
     "TextWorld-CoinCollector-Medium-v0":   TextWorldTranslator(),
     "TextWorld-Cooking-Easy-v0":           TextWorldTranslator(),
     "TextWorld-Cooking-Medium-v0":         TextWorldTranslator(),
-    # Chess — observation is already descriptive text (board + legal moves)
+    # Chess - observation is already descriptive text (board + legal moves)
     "Chess-v0":                            None,  # passthrough
     "Chess-SelfPlay-v0":                   None,  # passthrough
-    # Pokemon Red — observation is already descriptive text from memory
+    # Pokemon Red - observation is already descriptive text from memory
     "PokemonRed-Gary-Battle-v0":           None,  # passthrough: obs is already text
 }
 
@@ -75,7 +75,7 @@ def translate(
     action_history: list | None = None,
 ) -> str | None:
     """
-    Convenience wrapper — translate *state* for *env_id*.
+    Convenience wrapper - translate *state* for *env_id*.
 
     Returns ``None`` if no translator is registered for that environment.
     """

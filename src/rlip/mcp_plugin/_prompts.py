@@ -1,5 +1,5 @@
 """
-LLM prompt templates and agent descriptions for RLIP MCP plugin tools.
+LLM prompt templates and agent descriptions for the RL Bridge MCP plugin.
 
 Each function builds the full prompt string for a specific tool/call-site.
 Dynamic values (env_id, instruction text, pre-formatted observation blocks,
@@ -32,43 +32,46 @@ from __future__ import annotations
 
 
 # ---------------------------------------------------------------------------
-# SYSTEM: FastMCP(instructions=...) — delivered to the LLM for every session
+# SYSTEM: FastMCP(instructions=...) - delivered to the LLM for every session
 # ---------------------------------------------------------------------------
 
 def rlip_system_prompt() -> str:
     """
-    Full system-level context prompt injected into every RLIP MCP session.
+    Full system-level context prompt injected into every RL Bridge MCP session.
 
-    This is the single authoritative description of what RLIP is, how to
+    This is the single authoritative description of what RL Bridge is, how to
     think with it, and the canonical tool workflows.  It is returned as a
     plain string so it can be read, tested, and edited independently of the
     FastMCP construction in ``_state.py``.
     """
     return (
-        # ── What RLIP is ──────────────────────────────────────────────────
-        "RLIP is a platform for automating sequential decision-making tasks "
-        "through reinforcement learning.  You — the LLM — are the architect: "
-        "you design environments, define how states translate into language, "
+        # ── What RL Bridge is ─────────────────────────────────────────────
+        "Reinforcement Learning Bridge (RL Bridge) connects LLMs to "
+        "reinforcement learning environments and automates sequential "
+        "decision-making through language.  You - the LLM - are the architect: "
+        "you construct environments, define how states translate into language, "
         "specify goals as natural-language instructions, and direct RL agents "
-        "that learn to pursue those goals through trial and error.  The result "
+        "that learn to pursue those goals through trial and error.  RL Bridge "
+        "derives instructions that help agents reach long-term objectives more "
+        "efficiently and completes them without user supervision.  The result "
         "is a self-contained, reproducible RL pipeline that runs entirely "
         "inside this tool layer.\n\n"
 
         # ── How to think about environment design ─────────────────────────
         "ENVIRONMENT DESIGN PRINCIPLES\n"
-        "A good RLIP environment is self-contained: its observation space, "
+        "A good RL Bridge environment is self-contained: its observation space, "
         "action space, transition dynamics, and reward signal are fully "
-        "determined by the environment's own code — no external process or "
+        "determined by the environment's own code - no external process or "
         "human interaction is required at runtime.  When wrapping a task:\n"
-        "  1. OBSERVATIONS must capture everything an agent needs to decide — "
+        "  1. OBSERVATIONS must capture everything an agent needs to decide - "
         "state variables that distinguish meaningfully different situations.\n"
-        "  2. ACTIONS must be the atomic decisions the agent can take — "
+        "  2. ACTIONS must be the atomic decisions the agent can take - "
         "discrete choices or continuous controls, kept as small as the task "
         "allows.\n"
         "  3. REWARD must be dense enough for learning but aligned with the "
-        "true objective — sparse terminal rewards are hard to learn from; "
+        "true objective - sparse terminal rewards are hard to learn from; "
         "add shaped intermediate rewards only where semantically justified.\n"
-        "  4. EPISODE BOUNDS must be finite — every episode must eventually "
+        "  4. EPISODE BOUNDS must be finite - every episode must eventually "
         "terminate or truncate so the agent can accumulate experience.\n"
         "  5. LANGUAGE TRANSLATION is the bridge between raw observations "
         "and goals expressed in natural language.  Write a translate(obs) "
@@ -76,14 +79,14 @@ def rlip_system_prompt() -> str:
         "English sentence.  Good translations mention the task-relevant "
         "entities, their positions or states, and the current objective "
         "status (e.g. 'boat heading north, wind from east, target 3 cells '). "
-        "Translations should be distinct — two observations that call for "
+        "Translations should be distinct - two observations that call for "
         "different actions should produce different strings.\n\n"
 
         # ── Automation philosophy ─────────────────────────────────────────
-        "AUTOMATING SEQUENTIAL TASKS WITH RLIP\n"
-        "Any process that can be described as a loop — observe a state, "
-        "choose an action, observe the outcome, repeat — can be automated "
-        "with RLIP.  Useful patterns:\n"
+        "AUTOMATING SEQUENTIAL TASKS WITH RL BRIDGE\n"
+        "Any process that can be described as a loop - observe a state, "
+        "choose an action, observe the outcome, repeat - can be automated "
+        "with RL Bridge.  Useful patterns:\n"
         "  • GOAL-DIRECTED NAVIGATION: encode position/orientation as obs, "
         "movement primitives as actions, distance-to-goal as reward.  "
         "A language translator lets you specify the goal as plain text.\n"
@@ -96,7 +99,7 @@ def rlip_system_prompt() -> str:
         "reward reflects objective improvement.  PPO handles continuous "
         "action spaces well here.\n"
         "  • GAME / SIMULATION CONTROL: wrap any Gymnasium-compatible "
-        "simulation — rl_build_environment registers it in one call.\n\n"
+        "simulation - rl_build_environment registers it in one call.\n\n"
 
         # ── Tool workflows (unchanged from previous system prompt) ─────────
         "Storage layout:\n"
@@ -133,14 +136,14 @@ def rlip_system_prompt() -> str:
         "7. rl_create_training_report(agent_id, compare_agent_ids=[...]) - "
         "comparative PNG: reward convergence, eval bar chart, metadata.\n\n"
 
-        "IMPORTANT — training is asynchronous: rl_experiment_process(), "
+        "IMPORTANT - training is asynchronous: rl_experiment_process(), "
         "rl_train_agent(), and rl_train_and_derive_instructions() all return "
         "immediately with a job_id.  ALWAYS call rl_get_training_result(job_id) "
-        "repeatedly until status is 'done' — the pipeline has multiple stages "
+        "repeatedly until status is 'done' - the pipeline has multiple stages "
         "and a single poll is never sufficient.  Do NOT present results, "
         "summarise progress, or stop polling until status == 'done'.\n\n"
 
-        "IMPORTANT — comparing agents: use identical n_episodes, max_steps, "
+        "IMPORTANT - comparing agents: use identical n_episodes, max_steps, "
         "seed, gamma, and other shared hyper-parameters across every training "
         "call so differences reflect the agent/configuration, not budget.\n\n"
 
@@ -154,12 +157,12 @@ def rlip_system_prompt() -> str:
         "likely to produce a trainable sub-goal:\n"
         "  • Prefer instructions whose BestEval reward in the plan DB is "
         "clearly above the random-policy baseline.\n"
-        "  • Prefer instructions with a high similarity score (≥ 0.4) — a "
+        "  • Prefer instructions with a high similarity score (≥ 0.4) - a "
         "low score means the instruction text does not match any observed "
         "environment state well and the shaped reward signal will be weak.\n"
         "  • If rl_get_instruction_plan() shows an instruction that was tried "
         "before and produced poor eval rewards (close to or below random), do "
-        "NOT repeat it — choose or derive a different instruction instead.\n"
+        "NOT repeat it - choose or derive a different instruction instead.\n"
         "  • After training, if rl_evaluate_agent() shows the agent is still "
         "weak, check whether the instruction itself is the bottleneck: call "
         "rl_get_instruction_plan() again and switch to the next-best "
@@ -168,7 +171,7 @@ def rlip_system_prompt() -> str:
         "Only conclude the task is hard after at least two distinct "
         "instructions have been attempted and both failed evaluation.\n\n"
 
-        "Also call rl_list_trained_agents(env_id) early in any session — if a "
+        "Also call rl_list_trained_agents(env_id) early in any session - if a "
         "saved agent matches the goal AND has a strong eval reward (clearly "
         "above the random-policy baseline), it is worth reusing or continuing "
         "training from.  Do NOT reuse a weak or unvalidated agent; start fresh "
@@ -179,9 +182,9 @@ def rlip_system_prompt() -> str:
 
         "CONVERGENCE AND VALIDATION REQUIREMENT: after any training run, "
         "verify the agent actually works before reporting success:\n"
-        "  1. rl_evaluate_agent(agent_id) — check mean reward is meaningfully "
+        "  1. rl_evaluate_agent(agent_id) - check mean reward is meaningfully "
         "above random and that the success/completion fraction is satisfactory.\n"
-        "  2. rl_run_agent_episode(agent_id) — confirm at least one test episode "
+        "  2. rl_run_agent_episode(agent_id) - confirm at least one test episode "
         "reaches the goal / completes the task successfully.\n"
         "  3. If the agent fails both checks, first try continuing training "
         "(rl_train_agent with the same agent_id).  If a second training run "
@@ -311,7 +314,7 @@ def decompose_instruction_vocab_prompt(
         f"in the environment \"{env_id}\".\n\n"
         f"The user's instruction is:\n  \"{instruction}\"\n\n"
         f"These are a representative sample of translated language strings the environment's "
-        f"language translator can produce — use these as vocabulary examples (the full set may be larger):\n"
+        f"language translator can produce - use these as vocabulary examples (the full set may be larger):\n"
         f"{lang_block}\n\n"
         f"Recurring vocabulary clauses extracted from the descriptions above "
         f"(state, position, orientation, and condition phrases you MUST reuse verbatim):\n"
@@ -319,7 +322,7 @@ def decompose_instruction_vocab_prompt(
         f"Break the instruction into 2-5 concrete, ordered sub-steps the agent "
         f"must achieve in sequence. STRICT REQUIREMENTS:\n"
         f"1. Every sub-step MUST use EXACT phrases copied from the vocabulary "
-        f"clauses above — do not paraphrase or invent new terms.\n"
+        f"clauses above - do not paraphrase or invent new terms.\n"
         f"2. Do NOT use abstract domain jargon. If the instruction uses shorthand "
         f"(e.g. a named maneuver or game action), rewrite it as one or more "
         f"observable states drawn directly from the vocabulary above.\n"
@@ -362,16 +365,16 @@ def decompose_instruction_simple_prompt(
         f"Observed environment language states:\n{lang_block}\n\n"
         "Your task is to decide whether this instruction describes a SINGLE goal or a "
         "SEQUENCE of genuinely distinct goals, then output accordingly.\n\n"
-        "RULES — read carefully before responding:\n"
+        "RULES - read carefully before responding:\n"
         "1. A sub-step must represent a COMPLETE, INDEPENDENTLY MEANINGFUL environment state "
-        "that the agent must physically reach — e.g. 'the boat is heading north', "
+        "that the agent must physically reach - e.g. 'the boat is heading north', "
         "'the agent is adjacent to the target', 'the pole is nearly vertical'.\n"
         "2. Do NOT split the instruction text at commas, conjunctions, or phrase "
         "boundaries. Grammatical fragments of an instruction ('in between the edge', "
         "'the center') are NOT valid sub-steps.\n"
         "3. Only output MULTIPLE steps when the instruction describes an unambiguous "
         "sequence of physically distinct intermediate states the agent must pass "
-        "through in order — e.g. 'tack then reach the far buoy' would become two steps. "
+        "through in order - e.g. 'tack then reach the far buoy' would become two steps. "
         "If in doubt, output a SINGLE step.\n"
         "4. The first step must describe an observable state reachable early in an episode.\n"
         "5. Every step must use vocabulary drawn from the observed language states above.\n"

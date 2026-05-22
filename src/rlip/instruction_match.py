@@ -6,7 +6,7 @@ against an instruction using two-stage scoring (TF-IDF + semantic re-rank),
 with optional validated-feedback and supervised-predictor adjustments.
 
 Unlike :func:`rlip.instruction_following.match_instruction`, this module
-operates on a pre-built candidate list — no environment exploration.
+operates on a pre-built candidate list - no environment exploration.
 """
 
 from __future__ import annotations

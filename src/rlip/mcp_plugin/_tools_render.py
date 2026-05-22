@@ -352,7 +352,7 @@ def rl_render_policy_overlay(
     agent_id: str = "",
 ) -> str:
     """
-    STANDARD RENDER METHOD — use this by default for all policy visualisation.
+    STANDARD RENDER METHOD - use this by default for all policy visualisation.
 
     Renders the optimal policy as a single composite PNG where every frame is
     overlaid at equal opacity, showing all visited states simultaneously in
@@ -362,7 +362,7 @@ def rl_render_policy_overlay(
     equally visible.  A subtle blue-to-red tint gradient encodes trajectory
     direction (early steps are cooler, later steps warmer).
 
-    This is the standard single-image render method — use it for a compact,
+    This is the standard single-image render method - use it for a compact,
     animation-free view of where the policy travels across the full episode.
 
     The image is returned as an inline data URL (``data:image/png;base64,…``)

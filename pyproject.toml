@@ -3,9 +3,9 @@ requires = ["hatchling>=1.24.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rlip"
-version = "0.1.0"
-description = "Reinforcement Learning Interaction Protocol - connect AI agents to RL environments via MCP"
+name = "rlbridge"
+version = "0.1.1"
+description = "Reinforcement Learning Bridge - connects LLMs to RL environments, automates language-based problem construction, and derives instructions for long-term goals without user supervision"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -17,14 +17,15 @@ keywords = [
     "claude",
     "gymnasium",
     "ai-agent",
-    "protocol",
+    "llm",
+    "instruction-following",
     "rl",
+    "rlbridge",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

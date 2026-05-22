@@ -28,7 +28,7 @@ from ._state import (
 
 _TEMPLATE = '''\
 """
-{env_id} — Custom RLIP Environment
+{env_id} - Custom RLIP Environment
 ====================================
 Describe your environment here.
 """
@@ -296,7 +296,7 @@ def rl_get_environment_template(
         max_episode_steps=max_episode_steps,
     )
     return (
-        f"# Template for '{env_id}'  —  edit then pass to rl_create_environment_from_code()\n"
+        f"# Template for '{env_id}'  -  edit then pass to rl_create_environment_from_code()\n"
         f"# env_id='{env_id}'  class_prefix='{class_name}'\n\n"
         + code
     )
@@ -548,7 +548,7 @@ def rl_create_environment_from_code(
             }
             translator_msg = f"\n  Translator:       saved to {t_path}"
         except Exception as exc:
-            translator_msg = f"\n  Translator:       FAILED — {exc}"
+            translator_msg = f"\n  Translator:       FAILED - {exc}"
 
     (env_dir / "spec.json").write_text(json.dumps(spec, indent=2), encoding="utf-8")
 
@@ -591,10 +591,10 @@ def rl_create_environment_from_code(
         + translator_msg
         + f"\n  Cache path:       {env_dir}\n\n"
         f"Next steps:\n"
-        f"  • rl_sample_states_for_translation(env_id='{env_id}') — inspect raw states\n"
-        f"  • rl_set_translator_code(env_id='{env_id}', ...) — add a language translator\n"
-        f"  • rl_experiment_process(agent_type='tabular_q', env_id='{env_id}') — train an agent\n"
-        f"  • rl_load_cached_environments() — restore this env in a future session"
+        f"  • rl_sample_states_for_translation(env_id='{env_id}') - inspect raw states\n"
+        f"  • rl_set_translator_code(env_id='{env_id}', ...) - add a language translator\n"
+        f"  • rl_experiment_process(agent_type='tabular_q', env_id='{env_id}') - train an agent\n"
+        f"  • rl_load_cached_environments() - restore this env in a future session"
     )
 
 

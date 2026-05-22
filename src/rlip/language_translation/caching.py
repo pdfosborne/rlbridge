@@ -1,5 +1,5 @@
 """
-CachingTranslator — memoised wrapper around any LanguageTranslator.
+CachingTranslator - memoised wrapper around any LanguageTranslator.
 
 Observations are often visited many times across training episodes.  This
 module provides a transparent cache layer: the first ``translate()`` call for

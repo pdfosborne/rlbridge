@@ -428,7 +428,7 @@ def rl_get_suggested_hyperparameters(env_id: str) -> str:
 
     ``rl_experiment_process()`` automatically applies these suggestions when you
     do not override individual parameters, so calling this tool first is optional
-    — it is mainly useful for inspection or when building a custom training call.
+    - it is mainly useful for inspection or when building a custom training call.
 
     Call ``rl_update_suggested_hyperparameters()`` after training runs to persist
     better values once convergence is observed.
@@ -512,7 +512,7 @@ def rl_update_suggested_hyperparameters(
     Update and persist the suggested training hyperparameters for an environment.
 
     Use this after completing training runs to record better hyperparameter values
-    — in particular the **minimum number of episodes needed for convergence**.
+    - in particular the **minimum number of episodes needed for convergence**.
     Only pass the fields you want to change; all others are left at their current
     suggested values.
 
@@ -521,7 +521,7 @@ def rl_update_suggested_hyperparameters(
     be loaded automatically in future sessions.  ``rl_experiment_process()``
     picks them up immediately.
 
-    **Convergence guidance** — set ``n_episodes`` to the *lowest* episode
+    **Convergence guidance** - set ``n_episodes`` to the *lowest* episode
     count at which training reliably converges on this environment, not a
     conservative upper bound.
     This keeps experiment runs fast and avoids wasted compute on subsequent calls.
@@ -586,7 +586,7 @@ def rl_update_suggested_hyperparameters(
 
     if not updates:
         return (
-            f"No fields were provided — nothing to update for '{env_id}'.\n"
+            f"No fields were provided - nothing to update for '{env_id}'.\n"
             "Pass at least one parameter to change."
         )
 

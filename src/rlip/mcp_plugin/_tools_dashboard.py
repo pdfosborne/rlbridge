@@ -22,7 +22,7 @@ def rl_start_dashboard(port: int = 7432) -> str:
     runs in a background daemon thread and stops automatically when the
     Python process exits.
 
-    Calling this tool again while the server is already running is safe — it
+    Calling this tool again while the server is already running is safe - it
     returns the existing URL without restarting.
 
     Features visible in the browser

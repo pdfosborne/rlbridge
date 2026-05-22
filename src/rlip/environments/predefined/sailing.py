@@ -31,7 +31,7 @@ Termination & reward:
 
 Observation
 -----------
-A text string ``"{x:.{precision}f}_{angle:.1f}"`` — e.g. ``"0.0300_0.2"``.
+A text string ``"{x:.{precision}f}_{angle:.1f}"`` - e.g. ``"0.0300_0.2"``.
 
 Action space
 ------------
@@ -41,8 +41,8 @@ Variants
 --------
 Two pre-configured variants are registered at import time:
 
-  ``Sailing-v0``   — y_limit=25, obs_precision=4, supervised_rewards=False
-  ``Sailing-Hard-v0`` — y_limit=50, obs_precision=4, supervised_rewards=True,
+  ``Sailing-v0``   - y_limit=25, obs_precision=4, supervised_rewards=False
+  ``Sailing-Hard-v0`` - y_limit=50, obs_precision=4, supervised_rewards=True,
                         tighter x_limit=8
 
 Usage
@@ -95,9 +95,9 @@ class SailingEnvironment(RLIPEnvironment):
     Parameters
     ----------
     y_limit:
-        Goal y-position — reaching y > y_limit gives reward +1.
+        Goal y-position - reaching y > y_limit gives reward +1.
     x_limit:
-        Pier position — |x| > x_limit gives reward −1.
+        Pier position - |x| > x_limit gives reward −1.
     obs_precision:
         Decimal places used when formatting the x part of the observation.
     supervised_rewards:
@@ -123,7 +123,7 @@ class SailingEnvironment(RLIPEnvironment):
         self._supervised_rewards = supervised_rewards
         self._render_mode = render_mode
 
-        # Internal state — initialised by reset()
+        # Internal state - initialised by reset()
         self._x: float = 0.0
         self._y: float = 0.0
         self._angle: float = 0.0
@@ -312,7 +312,7 @@ class SailingFactory(RLIPEnvironmentFactory):
         self._tags = tags or ["sailing", "navigation", "discrete"]
         self._max_episode_steps = max_episode_steps
         self._description = description or (
-            f"Sailing simulator — steer a sailboat upwind to y>{y_limit:.0f} "
+            f"Sailing simulator - steer a sailboat upwind to y>{y_limit:.0f} "
             f"within |x|<{x_limit:.0f}."
         )
         self._reward_threshold = reward_threshold

@@ -63,7 +63,7 @@ def rl_list_cached_environments() -> str:
     """
     List all custom environments stored in the RLIP cache (``~/.rlip/environments/``).
 
-    Does not register them — call rl_load_cached_environments() to register.
+    Does not register them - call rl_load_cached_environments() to register.
 
     Returns summary metadata for each cached environment.
     """

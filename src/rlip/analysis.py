@@ -345,7 +345,7 @@ _PALETTE = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
 
 
 def _draw_convergence_panel(ax: Any, runs: list[AgentReportRun], window: int) -> None:
-    """Rolling-average training reward only — no raw scatter."""
+    """Rolling-average training reward only - no raw scatter."""
     ax.set_facecolor("#ffffff")
 
     for i, run in enumerate(runs):
@@ -367,7 +367,7 @@ def _draw_convergence_panel(ax: Any, runs: list[AgentReportRun], window: int) ->
             ax.text(conv_ep, conv_y, f"  conv@{conv_ep}", fontsize=8.5, color=color, va="bottom")
 
     ax.set_title(
-        f"Training Reward — Rolling Average  (window={window} episodes)",
+        f"Training Reward - Rolling Average  (window={window} episodes)",
         fontsize=12.5, fontweight="bold",
     )
     ax.set_xlabel("Episode", fontsize=10.5)
@@ -508,7 +508,7 @@ def _build_instruction_figure(
             lines.append((f"                 {extra}", 1))
 
         if run.sub_steps_matches:
-            # Per-sub-step section — hides the legacy "Matched obs" row
+            # Per-sub-step section - hides the legacy "Matched obs" row
             lines.append((f"  Sub-steps   :  {len(run.sub_steps_matches)} matched", 1))
             for si, sm in enumerate(run.sub_steps_matches, start=1):
                 step_instr   = str(sm.get("instruction", ""))

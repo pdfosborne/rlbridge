@@ -377,7 +377,7 @@ class InstructionPlanDatabase:
             return f"No instructions recorded yet for '{self.env_id}'."
 
         lines = [
-            f"Instruction Planning Database — {self.env_id}",
+            f"Instruction Planning Database - {self.env_id}",
             f"  {len(self._entries)} instruction(s) recorded\n",
             f"  {'#':<3}  {'Source':<8}  {'Used':<5}  {'BestEval':>9}  "
             f"{'DrvScore':>9}  {'Sim%':>6}  Instruction  →  Matched State",

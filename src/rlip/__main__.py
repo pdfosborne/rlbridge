@@ -1,17 +1,17 @@
 """
-RLIP CLI  (``rlip`` command)
-==============================
+RL Bridge CLI  (``rlip`` command)
+================================
 Provides these commands:
 
     rlip server              - start the HTTP JSON-RPC server
     rlip mcp                 - start the MCP stdio plugin
-    rlip install-claude          - configure RLIP in ~/.claude.json  (Claude Code)
-    rlip install-claude-desktop  - configure RLIP in Claude Desktop GUI
-    rlip install-codex           - configure RLIP in ~/.codex/config.toml  (Codex CLI)
-    rlip install-opencode        - configure RLIP in ~/.config/opencode/config.json  (OpenCode)
-    rlip install-lmstudio        - configure RLIP in LM Studio (~/.lmstudio/mcp.json)
-    rlip install-cursor          - configure RLIP in ~/.cursor/mcp.json  (Cursor)
-    rlip install-windsurf        - configure RLIP in Windsurf (~/.codeium/windsurf/mcp_config.json)
+    rlip install-claude          - configure RL Bridge in ~/.claude.json  (Claude Code)
+    rlip install-claude-desktop  - configure RL Bridge in Claude Desktop GUI
+    rlip install-codex           - configure RL Bridge in ~/.codex/config.toml  (Codex CLI)
+    rlip install-opencode        - configure RL Bridge in ~/.config/opencode/config.json  (OpenCode)
+    rlip install-lmstudio        - configure RL Bridge in LM Studio (~/.lmstudio/mcp.json)
+    rlip install-cursor          - configure RL Bridge in ~/.cursor/mcp.json  (Cursor)
+    rlip install-windsurf        - configure RL Bridge in Windsurf (~/.codeium/windsurf/mcp_config.json)
     rlip agent               - run an Ollama / OpenAI-compatible agent loop
     rlip catalog             - list the public environment catalog
     rlip install             - download a public environment from GitHub
@@ -33,7 +33,7 @@ from rich.table import Table
 
 app = typer.Typer(
     name="rlip",
-    help="Reinforcement Learning Interaction Protocol CLI",
+    help="Reinforcement Learning Bridge CLI",
     pretty_exceptions_enable=False,
 )
 console = Console()
@@ -53,7 +53,7 @@ def server_app(
     log_level: str = typer.Option("info", help="Uvicorn log level"),
     max_instances: int = typer.Option(64, help="Maximum concurrent environment instances"),
 ) -> None:
-    """Start the RLIP HTTP server (JSON-RPC 2.0 over HTTP)."""
+    """Start the RL Bridge HTTP server (JSON-RPC 2.0 over HTTP)."""
     import uvicorn
 
     from .environments.registry import registry
@@ -67,7 +67,7 @@ def server_app(
     app_instance = create_app(env_registry=registry, max_instances=max_instances)
 
     console.print(
-        f"[bold green]RLIP Server[/bold green] listening on "
+        f"[bold green]RL Bridge Server[/bold green] listening on "
         f"[bold]http://{host}:{port}[/bold]"
     )
     console.print(f"  Docs:       http://{host}:{port}/docs")
@@ -81,7 +81,7 @@ def server_app(
 
 @app.command("mcp")
 def mcp_command() -> None:
-    """Start the RLIP MCP stdio plugin (used by Claude Code)."""
+    """Start the RL Bridge MCP stdio plugin (used by Claude Code)."""
     from .mcp_plugin.plugin import main
     main()
 
@@ -105,9 +105,9 @@ def install_claude(
     ),
 ) -> None:
     """
-    Add RLIP to your Claude Code MCP configuration (~/.claude.json).
+    Add RL Bridge to your Claude Code MCP configuration (~/.claude.json).
 
-    After running this command, restart Claude Code and RLIP tools will be
+    After running this command, restart Claude Code and RL Bridge tools will be
     available in your Claude sessions.
     """
     target = config_path or Path.home() / ".claude.json"
@@ -138,7 +138,7 @@ def install_claude(
     config["mcpServers"]["rlip"] = entry
 
     target.write_text(json.dumps(config, indent=2))
-    console.print(f"[green]✓ RLIP MCP server added to {target}[/green]")
+    console.print(f"[green]✓ RL Bridge MCP server added to {target}[/green]")
     console.print("\nConfiguration written:")
     console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
     console.print(
@@ -168,9 +168,9 @@ def install_codex(
     ),
 ) -> None:
     """
-    Add RLIP to your Codex CLI MCP configuration (~/.codex/config.toml).
+    Add RL Bridge to your Codex CLI MCP configuration (~/.codex/config.toml).
 
-    After running this command, restart Codex and RLIP tools will be
+    After running this command, restart Codex and RL Bridge tools will be
     available in your Codex sessions.
     """
     target = config_path or Path.home() / ".codex" / "config.toml"
@@ -198,7 +198,7 @@ def install_codex(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(updated)
-    console.print(f"[green]✓ RLIP MCP server added to {target}[/green]")
+    console.print(f"[green]✓ RL Bridge MCP server added to {target}[/green]")
     console.print("\nConfiguration written:")
     console.print(toml_block)
     console.print(
@@ -228,9 +228,9 @@ def install_opencode(
     ),
 ) -> None:
     """
-    Add RLIP to your OpenCode MCP configuration (~/.config/opencode/config.json).
+    Add RL Bridge to your OpenCode MCP configuration (~/.config/opencode/config.json).
 
-    After running this command, restart OpenCode and RLIP tools will be
+    After running this command, restart OpenCode and RL Bridge tools will be
     available in your OpenCode sessions.
     """
     target = config_path or Path.home() / ".config" / "opencode" / "config.json"
@@ -256,7 +256,7 @@ def install_opencode(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(config, indent=2))
-    console.print(f"[green]✓ RLIP MCP server added to {target}[/green]")
+    console.print(f"[green]✓ RL Bridge MCP server added to {target}[/green]")
     console.print("\nConfiguration written:")
     console.print(json.dumps({"mcp": {"rlip": entry}}, indent=2))
     console.print(
@@ -327,14 +327,14 @@ def install_claude_desktop(
     ),
 ) -> None:
     """
-    Add RLIP to your Claude Desktop MCP configuration (GUI app, not Claude Code).
+    Add RL Bridge to your Claude Desktop MCP configuration (GUI app, not Claude Code).
 
     The config path is chosen automatically:
       macOS   - ~/Library/Application Support/Claude/claude_desktop_config.json
       Windows - %APPDATA%\\Claude\\  OR  Microsoft Store sandbox path (auto-detected)
       Linux   - ~/.config/Claude/claude_desktop_config.json
 
-    After running this command, restart Claude Desktop and RLIP tools will be
+    After running this command, restart Claude Desktop and RL Bridge tools will be
     available in your conversations.
     """
     import platform
@@ -350,7 +350,7 @@ def install_claude_desktop(
     # On Windows, resolve the rlip-mcp script to its full absolute path so
     # Claude Desktop can find it without needing PATH.
     # Always set cwd to the user home dir so .rlip/ writes land somewhere
-    # writable — Claude Desktop otherwise defaults to C:\Windows\System32.
+    # writable - Claude Desktop otherwise defaults to C:\Windows\System32.
     cwd = str(Path.home())
 
     if use_script:
@@ -386,7 +386,7 @@ def install_claude_desktop(
         cp.parent.mkdir(parents=True, exist_ok=True)
         cp.write_text(json.dumps(config, indent=2))
         written.append(cp)
-        console.print(f"[green]✓ RLIP MCP server added to {cp}[/green]")
+        console.print(f"[green]✓ RL Bridge MCP server added to {cp}[/green]")
 
     console.print("\nConfiguration written:")
     console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
@@ -420,7 +420,7 @@ def install_lmstudio(
     ),
 ) -> None:
     """
-    Add RLIP to your LM Studio MCP configuration (mcp.json).
+    Add RL Bridge to your LM Studio MCP configuration (mcp.json).
 
     LM Studio follows Cursor's mcp.json notation.  The config path is chosen
     automatically:
@@ -428,7 +428,7 @@ def install_lmstudio(
       Windows - %APPDATA%\\LM Studio\\mcp.json
       Linux   - ~/.lmstudio/mcp.json
 
-    After running this command, restart LM Studio and RLIP tools will be
+    After running this command, restart LM Studio and RL Bridge tools will be
     available in your chat sessions.
     """
     import platform
@@ -460,7 +460,7 @@ def install_lmstudio(
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, indent=2))
-    console.print(f"[green]✓ RLIP MCP server added to {config_path}[/green]")
+    console.print(f"[green]✓ RL Bridge MCP server added to {config_path}[/green]")
     console.print("\nConfiguration written:")
     console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
     console.print(
@@ -490,9 +490,9 @@ def install_cursor(
     ),
 ) -> None:
     """
-    Add RLIP to your Cursor MCP configuration (~/.cursor/mcp.json).
+    Add RL Bridge to your Cursor MCP configuration (~/.cursor/mcp.json).
 
-    After running this command, restart Cursor and RLIP tools will be
+    After running this command, restart Cursor and RL Bridge tools will be
     available in Agent mode.
     """
     target = config_path or Path.home() / ".cursor" / "mcp.json"
@@ -514,7 +514,7 @@ def install_cursor(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(config, indent=2))
-    console.print(f"[green]✓ RLIP MCP server added to {target}[/green]")
+    console.print(f"[green]✓ RL Bridge MCP server added to {target}[/green]")
     console.print("\nConfiguration written:")
     console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
     console.print(
@@ -544,9 +544,9 @@ def install_windsurf(
     ),
 ) -> None:
     """
-    Add RLIP to your Windsurf MCP configuration (~/.codeium/windsurf/mcp_config.json).
+    Add RL Bridge to your Windsurf MCP configuration (~/.codeium/windsurf/mcp_config.json).
 
-    After running this command, restart Windsurf and RLIP tools will be
+    After running this command, restart Windsurf and RL Bridge tools will be
     available in Cascade agent sessions.
     """
     target = config_path or Path.home() / ".codeium" / "windsurf" / "mcp_config.json"
@@ -568,7 +568,7 @@ def install_windsurf(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(config, indent=2))
-    console.print(f"[green]✓ RLIP MCP server added to {target}[/green]")
+    console.print(f"[green]✓ RL Bridge MCP server added to {target}[/green]")
     console.print("\nConfiguration written:")
     console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
     console.print(
@@ -598,7 +598,7 @@ def list_environments(
 
     envs = registry.list_environments()
 
-    table = Table(title=f"RLIP Environments ({len(envs)} total)")
+    table = Table(title=f"RL Bridge Environments ({len(envs)} total)")
     table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("Render modes")
     table.add_column("Max steps")
@@ -656,9 +656,9 @@ def agent_command(
     ),
 ) -> None:
     """
-    Run an Ollama (or any OpenAI-compatible) model as an RLIP agent.
+    Run an Ollama (or any OpenAI-compatible) model as an RL Bridge agent.
 
-    The model receives all RLIP tools as OpenAI function definitions and can
+    The model receives all RL Bridge tools as OpenAI function definitions and can
     interact with RL environments through function-calling.
 
     Examples
@@ -684,7 +684,7 @@ def agent_command(
             except Exception as exc:
                 console.print(f"[yellow]auto_register_gymnasium: {exc}[/yellow]")
 
-    console.print(f"[bold]RLIP Agent[/bold]  model=[cyan]{model}[/cyan]  endpoint=[dim]{base_url}[/dim]")
+    console.print(f"[bold]RL Bridge Agent[/bold]  model=[cyan]{model}[/cyan]  endpoint=[dim]{base_url}[/dim]")
     console.print(f"[bold]Task:[/bold] {task}\n")
 
     with console.status("Thinking…", spinner="dots"):
@@ -715,7 +715,7 @@ def catalog_command(
     tags: str = typer.Option("", help="Comma-separated tags to filter by"),
     installed_only: bool = typer.Option(False, "--installed", help="Only show installed envs"),
 ) -> None:
-    """List public environments available in the RLIP catalog."""
+    """List public environments available in the RL Bridge catalog."""
     from .public_registry import public_registry
 
     tag_filter = [t.strip() for t in tags.split(",") if t.strip()]
@@ -725,7 +725,7 @@ def catalog_command(
         console.print("No entries match the given filters.")
         return
 
-    table = Table(title=f"RLIP Public Catalog ({len(entries)} environments)")
+    table = Table(title=f"RL Bridge Public Catalog ({len(entries)} environments)")
     table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("Installed", justify="center")
     table.add_column("Tags")
@@ -757,8 +757,8 @@ def install_command(
     """
     Download a public RL environment from GitHub and cache it locally.
 
-    After installing, the environment is available to any RLIP agent or server
-    via its env_id (no extra configuration needed — it auto-loads from cache).
+    After installing, the environment is available to any RL Bridge agent or server
+    via its env_id (no extra configuration needed - it auto-loads from cache).
 
     Examples
     --------

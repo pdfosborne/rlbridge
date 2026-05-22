@@ -1,4 +1,4 @@
-"""Interactive RLIP training CLI.
+"""Interactive RL Bridge training CLI.
 
 Features:
 - Select a registered environment.
@@ -558,7 +558,7 @@ class DeckBuildMetaRewardEnv:
 
 
 def main() -> int:
-    print("RLIP Interactive Trainer")
+    print("RL Bridge Interactive Trainer")
     print("=" * 80)
 
     env_infos = sorted(registry.list_environments(), key=lambda e: e.env_id.lower())

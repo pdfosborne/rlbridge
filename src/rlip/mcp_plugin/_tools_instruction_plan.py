@@ -75,8 +75,8 @@ def rl_list_cached_instructions(env_id: str = "") -> str:
     score, and accumulated episode success statistics.
 
     Instructions are populated by:
-      • rl_match_instruction() — one entry per explicit user instruction
-      • rl_train_and_derive_instructions() — auto-derived entries
+      • rl_match_instruction() - one entry per explicit user instruction
+      • rl_train_and_derive_instructions() - auto-derived entries
 
     Parameters
     ----------

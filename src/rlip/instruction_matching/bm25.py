@@ -1,17 +1,17 @@
 """
-BM25Encoder — Okapi BM25 instruction matcher.
+BM25Encoder - Okapi BM25 instruction matcher.
 
 Okapi BM25 is a probabilistic ranking function that improves on TF-IDF in
 two important ways:
 
-* **TF saturation** — Repeatedly mentioning a word has diminishing returns,
+* **TF saturation** - Repeatedly mentioning a word has diminishing returns,
   preventing long documents from unfairly dominating.
-* **Length normalisation** — Scores are adjusted for document length relative
+* **Length normalisation** - Scores are adjusted for document length relative
   to the corpus average, so short and long descriptions are compared fairly.
 
 This encoder represents each document as a BM25-weighted term vector (one
 dimension per vocabulary term), then L2-normalises it so that standard cosine
-similarity can be used — the same interface as :class:`~tfidf.TFIDFEncoder`.
+similarity can be used - the same interface as :class:`~tfidf.TFIDFEncoder`.
 
 Robertson's smoothed IDF formula is used::
 
@@ -24,8 +24,8 @@ BM25 TF saturation::
                    tf(t,d) + k1 * (1 - b + b * len(d) / avgdl)
 
 Default hyperparameters follow the commonly recommended values:
-* ``k1 = 1.5`` — TF saturation ceiling
-* ``b  = 0.75`` — length normalisation strength (0 = off, 1 = full)
+* ``k1 = 1.5`` - TF saturation ceiling
+* ``b  = 0.75`` - length normalisation strength (0 = off, 1 = full)
 """
 
 from __future__ import annotations

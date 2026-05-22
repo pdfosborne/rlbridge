@@ -90,7 +90,7 @@ async def _decompose_instruction_with_llm(
 
 def _fallback_decompose_instruction(instruction: str) -> list[str]:
     """Deterministic decomposition when LLM output is unavailable."""
-    # Only split on explicit sequential connectors — never on commas, which
+    # Only split on explicit sequential connectors - never on commas, which
     # would fragment instruction text into meaningless phrase fragments.
     parts = [
         p.strip(" .")
@@ -107,7 +107,7 @@ def _fallback_decompose_instruction(instruction: str) -> list[str]:
         uniq.append(p)
     if len(uniq) >= 2:
         return uniq[:5]
-    # Single instruction — return it as-is rather than inventing sub-steps.
+    # Single instruction - return it as-is rather than inventing sub-steps.
     return [instruction.strip().rstrip(".")]
 
 
@@ -443,7 +443,7 @@ def rl_train_and_derive_instructions(
     _threading.Thread(target=_job, daemon=True).start()
 
     return (
-        f"Training started — {agent_type} on {env_id}\n\n"
+        f"Training started - {agent_type} on {env_id}\n\n"
         f"  Job ID:    {job_id}\n"
         f"  Episodes:  {n_episodes}  max_steps={max_steps}\n\n"
         f"Training runs in the background with no time limits.\n"

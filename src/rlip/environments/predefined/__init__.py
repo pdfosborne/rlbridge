@@ -1,4 +1,4 @@
-"""Predefined RLIP environments — bundled, ready-to-use without extra installs."""
+"""Predefined RLIP environments - bundled, ready-to-use without extra installs."""
 
 from .sailing import (
     SailingEnvironment,
@@ -79,7 +79,7 @@ __all__ = [
     "GridWorldFactory",
     "GRIDWORLD_V0",
     "ALL_GRIDWORLD_FACTORIES",
-    # Chess (optional — requires python-chess)
+    # Chess (optional - requires python-chess)
     "ChessEnvironment",
     "ChessFactory",
     "CHESS_V0",
@@ -88,7 +88,7 @@ __all__ = [
     "CHESS_FIRST_CAPTURE_V0",
     "CHESS_FIRST_CAPTURE_DISCRETE_V0",
     "ALL_CHESS_FACTORIES",
-    # Pokemon Red (optional — requires PyBoy + ROM)
+    # Pokemon Red (optional - requires PyBoy + ROM)
     "PokemonRedEnvironment",
     "PokemonRedFactory",
     "POKEMON_RED_GARY_BATTLE_V0",

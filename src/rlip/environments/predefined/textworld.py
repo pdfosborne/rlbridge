@@ -14,7 +14,7 @@ Game variants shipped with RLIP
 ---------------------------------
 ``TextWorld-Take-v0``
     Single room.  One object on the floor.  Quest: *take <object>*.
-    The simplest possible TextWorld game — good for smoke-testing pipelines.
+    The simplest possible TextWorld game - good for smoke-testing pipelines.
 
 ``TextWorld-Navigate-v0``
     Two rooms connected by a door (locked or open).  One object in the
@@ -436,7 +436,7 @@ _VARIANT_META: dict[str, tuple[str, list[str], int, float | None, int]] = {
     ),
     "TextWorld-CoinCollector-Easy-v0": (
         "TextWorld Coin Collector level 1: single room, find and take the coin.  "
-        "Official TextWorld challenge — the simplest coin collector variant.",
+        "Official TextWorld challenge - the simplest coin collector variant.",
         ["textworld", "text-adventure", "coin-collector", "simple", "discrete"],
         30, 1.0, 1,
     ),

@@ -1,5 +1,5 @@
 """
-SentenceEncoder — semantic instruction matcher via sentence-transformers.
+SentenceEncoder - semantic instruction matcher via sentence-transformers.
 
 Unlike the bag-of-words methods (TF-IDF, BM25), ``SentenceEncoder`` uses a
 pre-trained deep neural network to produce dense *semantic* embeddings.  This
@@ -15,8 +15,8 @@ Requirements
 The default model (``all-MiniLM-L6-v2``) is small (80 MB), fast on CPU, and
 performs well on general-purpose semantic similarity tasks.  Other options:
 
-* ``all-mpnet-base-v2`` — higher accuracy, larger (420 MB)
-* ``paraphrase-MiniLM-L3-v2`` — fastest, slightly lower accuracy
+* ``all-mpnet-base-v2`` - higher accuracy, larger (420 MB)
+* ``paraphrase-MiniLM-L3-v2`` - fastest, slightly lower accuracy
 * any model from https://huggingface.co/models?library=sentence-transformers
 
 The model is downloaded automatically on first use and cached in the
@@ -54,7 +54,7 @@ class SentenceEncoder(BaseEncoder):
     :meth:`~base.BaseEncoder.cosine_similarity` works correctly without any
     additional normalisation step.
 
-    :meth:`fit` is a no-op — the model is pre-trained and does not need to
+    :meth:`fit` is a no-op - the model is pre-trained and does not need to
     learn from the RLIP corpus.  It is provided to satisfy the
     :class:`~base.BaseEncoder` interface.
 
@@ -62,7 +62,7 @@ class SentenceEncoder(BaseEncoder):
     ----------
     model_name:
         Any model identifier accepted by ``sentence_transformers.SentenceTransformer``.
-        Defaults to ``"all-MiniLM-L6-v2"`` — a compact, general-purpose model
+        Defaults to ``"all-MiniLM-L6-v2"`` - a compact, general-purpose model
         well suited for semantic similarity.
     device:
         Inference device string passed to SentenceTransformer (e.g. ``"cpu"``,
@@ -105,7 +105,7 @@ class SentenceEncoder(BaseEncoder):
 
     def fit(self, corpus: list[str]) -> "SentenceEncoder":
         """
-        No-op — the sentence-transformer model is pre-trained.
+        No-op - the sentence-transformer model is pre-trained.
 
         Calling this method ensures the model is loaded (triggering a one-time
         download if needed) so subsequent :meth:`encode` calls are fast.
