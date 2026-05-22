@@ -51,6 +51,15 @@ Quick start
 
 from .base import BaseEncoder
 from .bm25 import BM25Encoder
+from .feedback import (
+    FeedbackLayer,
+    FeedbackRecord,
+    default_feedback_path,
+    get_feedback_layer,
+    record_match_feedback,
+    save_feedback_layer,
+)
+from .matcher import CorpusMatchResult, ScoredCandidate, score_instruction_against_corpus
 from .sentence_transformer import SentenceEncoder
 from .tfidf import TextEncoder, TFIDFEncoder
 
@@ -140,4 +149,13 @@ __all__ = [
     "BM25Encoder",
     "SentenceEncoder",
     "get_encoder",
+    "CorpusMatchResult",
+    "ScoredCandidate",
+    "score_instruction_against_corpus",
+    "FeedbackLayer",
+    "FeedbackRecord",
+    "default_feedback_path",
+    "get_feedback_layer",
+    "record_match_feedback",
+    "save_feedback_layer",
 ]

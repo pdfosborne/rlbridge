@@ -71,6 +71,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from .instruction_matching import BaseEncoder, TextEncoder, TFIDFEncoder
+from .instruction_matching.feedback import FeedbackLayer, get_feedback_layer
+from .instruction_matching.matcher import score_instruction_against_corpus
 from .interaction_protocols import (
     EpisodeResult,
     InstructionFollowingProtocol,
@@ -374,6 +376,8 @@ def match_instruction(
     seed: Optional[int] = None,
     similarity_band: float = 0.05,
     use_raw_observations: bool = False,
+    feedback_layer: Optional[FeedbackLayer] = None,
+    use_feedback: bool = True,
 ) -> InstructionMatch:
     """
     Explore *env* and find the observed state whose language description
@@ -435,6 +439,13 @@ def match_instruction(
         the LLM/user explicitly requests raw-observation matching.  In
         that case, if no translator is provided, ``str(obs)`` is used as
         the language representation.
+    feedback_layer:
+        Optional :class:`~rlip.instruction_matching.FeedbackLayer` used to
+        adjust cosine scores from validated match feedback.  When *None*
+        and *use_feedback* is True, loads the persisted layer for *env_id*.
+    use_feedback:
+        When True (default), apply validated feedback adjustments during
+        scoring.  Set False to force raw TF-IDF cosine similarity only.
 
     Returns
     -------
@@ -534,36 +545,28 @@ def match_instruction(
         # Persist combined set back to the obs cache for future calls.
         _OBS_CACHE[env_id] = seen
 
-    unique_langs = list(seen.keys())
-    unique_obs = [seen[lg] for lg in unique_langs]
+    candidates = list(seen.items())
 
     # ── Text encoding + similarity scoring ────────────────────────────────────
-    corpus = [instruction] + unique_langs
-    _encoder: BaseEncoder = encoder if encoder is not None else TFIDFEncoder()
-    _encoder.fit(corpus)
-    instruction_vec = _encoder.encode(instruction)
+    _layer: FeedbackLayer | None = None
+    if use_feedback:
+        _layer = feedback_layer if feedback_layer is not None else get_feedback_layer(env_id)
 
-    scored: list[tuple[str, Any, float]] = []
-    for lang, obs in zip(unique_langs, unique_obs):
-        obs_vec = _encoder.encode(lang)
-        sim = _encoder.cosine_similarity(instruction_vec, obs_vec)
-        scored.append((lang, obs, sim))
-
-    scored.sort(key=lambda x: x[2], reverse=True)
-    best_lang, best_obs, best_score = scored[0]
-    all_scores = [(lg, sc) for lg, _, sc in scored]
-
-    # Collect states within similarity_band of the best score as co-equal sub-goals.
-    cutoff = best_score - similarity_band
-    matched_states = [(lg, obs, sc) for lg, obs, sc in scored if sc >= cutoff]
+    match_result = score_instruction_against_corpus(
+        instruction,
+        candidates,
+        encoder=encoder,
+        feedback_layer=_layer,
+        similarity_band=similarity_band,
+    )
 
     result_match = InstructionMatch(
         instruction=instruction,
-        matched_language=best_lang,
-        matched_observation=best_obs,
-        similarity_score=best_score,
-        matched_states=matched_states,
-        all_scores=all_scores,
+        matched_language=match_result.best_language,
+        matched_observation=match_result.best_observation,
+        similarity_score=match_result.similarity_score,
+        matched_states=match_result.matched_states,
+        all_scores=match_result.all_scores,
     )
 
     # ── Update instruction cache ───────────────────────────────────────────────

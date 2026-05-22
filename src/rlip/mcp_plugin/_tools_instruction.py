@@ -6,6 +6,8 @@ Tools:
 - rl_instruction_run_episode
 - rl_match_sequential_instructions
 - rl_sequential_instruction_run_episode
+- rl_validate_instruction_match
+- rl_validate_instruction_match_llm
 
 Instruction plan/cache tools (rl_get_instruction_plan, rl_list_cached_instructions,
 rl_clear_instruction_cache) live in _tools_instruction_plan.py.
@@ -171,6 +173,7 @@ class _ExplorationProgressEnv:
     def __init__(self, env: Any, total_steps: int, env_id: str) -> None:
         import tqdm
         self._env = env
+        self._env_id = env_id
         self._unique_langs: set[str] = set()
         self._steps = 0
         self._bar = tqdm.tqdm(
@@ -201,7 +204,7 @@ class _ExplorationProgressEnv:
 
     @property
     def env_id(self) -> str:
-        return getattr(self._env, "env_id", "")
+        return self._env_id or getattr(self._env, "env_id", "")
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._env, name)
@@ -426,7 +429,9 @@ async def rl_match_instruction(
         f"  Similarity:    {match.similarity_score:.4f}\n"
         f"  Match ID:      {match_id}\n\n"
         + steps_block
-        + f"Top {top_k} candidates:\n" + "\n".join(top_lines) + "\n\n"
+        +         f"Top {top_k} candidates:\n" + "\n".join(top_lines) + "\n\n"
+        f"Validate this match with rl_validate_instruction_match(match_id, correct=True/False)\n"
+        f"or rl_validate_instruction_match_llm(match_id) for LLM review.\n\n"
         f"Use rl_instruction_run_episode(match_id='{match_id}') to run a "
         f"training episode with sequential instruction shaping."
     )
@@ -836,6 +841,224 @@ def rl_sequential_instruction_run_episode(
         f"Instructions:\n" + "\n".join(completion_lines) +
         f"\n\nTrajectory excerpt:\n" + "\n".join(excerpt_lines)
     )
+
+
+def _feedback_path_for_env(env_id: str) -> str:
+    from ..instruction_matching import default_feedback_path
+
+    return str(default_feedback_path(env_id))
+
+
+def _resolve_match_validation_context(match_id: str) -> tuple[dict[str, Any], str, str, str] | str:
+    """Return (entry, env_id, instruction, state_language) or an error string."""
+    entry = _instruction_protocols.get(match_id)
+    if entry is None:
+        return (
+            f"Match ID '{match_id}' not found.  "
+            "Run rl_match_instruction() first to obtain a valid match_id."
+        )
+
+    env_id = entry.get("env_id", "")
+    summary = entry.get("match_summary") or {}
+    instruction = summary.get("instruction") or entry.get("original_instruction", "")
+    state_language = summary.get("best_match_language", "")
+
+    match_obj = entry.get("match")
+    if match_obj is not None:
+        instruction = instruction or getattr(match_obj, "instruction", "")
+        state_language = state_language or getattr(match_obj, "matched_language", "")
+
+    if not instruction or not state_language:
+        return (
+            f"Match ID '{match_id}' has no stored match to validate.  "
+            "Re-run rl_match_instruction() and try again."
+        )
+
+    return entry, env_id, instruction, state_language
+
+
+@mcp.tool()
+def rl_validate_instruction_match(
+    match_id: str,
+    correct: bool,
+    state_language: str = "",
+) -> str:
+    """
+    Confirm or reject an instruction match using explicit user/LLM feedback.
+
+    Records the validation in the per-environment feedback layer so future
+    ``rl_match_instruction`` calls boost similar correct pairs and penalise
+    incorrect ones during TF-IDF cosine scoring.
+
+    Parameters
+    ----------
+    match_id:
+        The match_id returned by rl_match_instruction().
+    correct:
+        True if the matched state is correct for the instruction; False to
+        discourage that pairing in future matching attempts.
+    state_language:
+        Optional override of the matched language description being validated.
+        Defaults to the best match stored for *match_id*.
+
+    Returns
+    -------
+    A short confirmation describing the recorded feedback.
+    """
+    from ..instruction_matching import record_match_feedback
+
+    ctx = _resolve_match_validation_context(match_id)
+    if isinstance(ctx, str):
+        return ctx
+    _entry, env_id, instruction, default_state = ctx
+    validated_state = state_language.strip() or default_state
+
+    record_match_feedback(
+        env_id,
+        instruction,
+        validated_state,
+        correct=correct,
+        source="user",
+        path=_feedback_path_for_env(env_id),
+    )
+
+    verdict = "correct" if correct else "incorrect"
+    action = "boost similar pairs" if correct else "penalise similar pairs"
+    return (
+        f"Recorded {verdict} validation for match_id={match_id!r}.\n"
+        f"  Environment:  {env_id}\n"
+        f"  Instruction:  {instruction!r}\n"
+        f"  State:        {validated_state!r}\n"
+        f"Future matches will {action} for similar instruction/state pairs."
+    )
+
+
+async def _validate_match_with_llm(
+    ctx: Context,
+    instruction: str,
+    state_language: str,
+    env_id: str,
+    similarity: float,
+) -> tuple[bool | None, str]:
+    """Ask the host LLM whether *state_language* satisfies *instruction*."""
+    import mcp.types as _t
+
+    prompt = (
+        f"You are validating an instruction-to-state match for RL environment '{env_id}'.\n\n"
+        f"Instruction:\n  {instruction}\n\n"
+        f"Matched environment state description:\n  {state_language}\n\n"
+        f"TF-IDF cosine similarity: {similarity:.4f}\n\n"
+        "Does this state description correctly satisfy the instruction?\n"
+        "Reply with exactly one word: YES or NO."
+    )
+
+    try:
+        result = await ctx.session.create_message(
+            messages=[_t.SamplingMessage(
+                role="user",
+                content=_t.TextContent(type="text", text=prompt),
+            )],
+            max_tokens=16,
+        )
+    except Exception as exc:
+        return None, f"LLM validation unavailable: {exc}"
+
+    content = result.content
+    if hasattr(content, "text"):
+        raw = content.text
+    elif isinstance(content, list) and content:
+        raw = getattr(content[0], "text", "") or ""
+    else:
+        raw = str(content)
+
+    answer = raw.strip().upper()
+    if answer.startswith("YES"):
+        return True, raw.strip()
+    if answer.startswith("NO"):
+        return False, raw.strip()
+    return None, raw.strip()
+
+
+@mcp.tool()
+async def rl_validate_instruction_match_llm(
+    ctx: Context,
+    match_id: str,
+    state_language: str = "",
+    auto_record: bool = True,
+) -> str:
+    """
+    Ask the host LLM to validate whether a stored instruction match is correct.
+
+    When *auto_record* is True (default), the LLM verdict is persisted to the
+    feedback layer (same effect as rl_validate_instruction_match).
+
+    Parameters
+    ----------
+    match_id:
+        The match_id returned by rl_match_instruction().
+    state_language:
+        Optional override of the matched language description to validate.
+    auto_record:
+        When True, automatically record YES/NO feedback for future matching.
+
+    Returns
+    -------
+    LLM verdict text and whether feedback was recorded.
+    """
+    from ..instruction_matching import record_match_feedback
+
+    resolved = _resolve_match_validation_context(match_id)
+    if isinstance(resolved, str):
+        return resolved
+    entry, env_id, instruction, default_state = resolved
+    validated_state = state_language.strip() or default_state
+    similarity = float(entry.get("match_summary", {}).get("best_match_similarity", 0.0))
+    match_obj = entry.get("match")
+    if match_obj is not None and hasattr(match_obj, "similarity_score"):
+        similarity = float(match_obj.similarity_score)
+
+    verdict, raw = await _validate_match_with_llm(
+        ctx,
+        instruction,
+        validated_state,
+        env_id,
+        similarity,
+    )
+
+    if verdict is None:
+        return (
+            f"Could not parse LLM validation for match_id={match_id!r}.\n"
+            f"Raw response: {raw!r}\n"
+            "Use rl_validate_instruction_match() to record feedback manually."
+        )
+
+    recorded = ""
+    if auto_record:
+        record_match_feedback(
+            env_id,
+            instruction,
+            validated_state,
+            correct=verdict,
+            source="llm",
+            path=_feedback_path_for_env(env_id),
+        )
+        recorded = (
+            "\nFeedback recorded — future matches will "
+            + ("boost" if verdict else "penalise")
+            + " similar pairs."
+        )
+
+    label = "CORRECT" if verdict else "INCORRECT"
+    return (
+        f"LLM validation for match_id={match_id!r}: {label}\n"
+        f"  Environment:  {env_id}\n"
+        f"  Instruction:  {instruction!r}\n"
+        f"  State:        {validated_state!r}\n"
+        f"  Similarity:   {similarity:.4f}\n"
+        f"  LLM reply:    {raw!r}"
+        + recorded
+    )
+
 
 # rl_get_instruction_plan, rl_list_cached_instructions, and
 # rl_clear_instruction_cache live in _tools_instruction_plan.py.
