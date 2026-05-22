@@ -10,7 +10,7 @@ rlbridge automates how LLMs construct RL problems in language, including: buildi
  
 LLMs interact with rlbridge through an **MCP plugin** compatible with Claude Code, Claude Desktop, Cursor, Windsurf, Codex CLI and local models through LM Studio and OpenCode.
 
-![interface_example](https://github.com/pdfosborne/rlbridge/docs/_images/interface_example.png)
+![interface_example](https://raw.githubusercontent.com/pdfosborne/rlbridge/refs/heads/main/docs/_images/interface_example.png)
 
 ---
 
