@@ -243,8 +243,8 @@ def create_training_report(
     Returns
     -------
     dict with keys:
-        ``"rewards"``       – Figure 1: rolling training reward + clean evaluation
-                              distributions.
+        ``"rewards"``       – Figure 1: rolling training reward + summary metrics
+                             table (training + clean evaluation).
         ``"instructions"``  – Figure 2: instruction match summary (no text overlap).
         ``"config"``        – Figure 3: metadata and hyper-parameters.
 
@@ -290,18 +290,21 @@ def create_training_report(
         dpi=dpi,
         gridspec_kw={"hspace": 0.45, "height_ratios": [1, 1]},
     )
+    # Reduce left outer padding and add more right-side breathing room.
+    fig_rewards.subplots_adjust(left=0.06, right=0.86)
     fig_rewards.patch.set_facecolor("#f7f7f4")
     _draw_convergence_panel(ax_conv, runs, window)
-    _draw_evaluation_distribution_panel(ax_eval, runs)
+    _draw_metrics_summary_panel(ax_eval, runs, window)
     fig_rewards.suptitle(
         f"RLIP Reward Report ({n_agents} agent(s)){env_label}",
-        fontsize=13, fontweight="bold", color="#1b1f24", y=0.99,
+        fontsize=15, fontweight="bold", color="#1b1f24", y=0.99,
     )
     fig_rewards.text(
         0.01, 0.005,
-        "Training: rolling average only.  "
-        "Evaluation: 100 episodes, fixed weights, plain environment (no instruction rewards).",
-        fontsize=7.5, color="#555555",
+        "Top panel: rolling average reward during training.  "
+        "Bottom panel: summary training/evaluation metrics "
+        "(evaluation uses fixed weights on plain environment; no instruction rewards).",
+        fontsize=9, color="#555555",
     )
 
     # ── Figure 2: Instructions ────────────────────────────────────────────────
@@ -361,145 +364,91 @@ def _draw_convergence_panel(ax: Any, runs: list[AgentReportRun], window: int) ->
             conv_y = rolling[conv_ep - 1]
             ax.scatter([conv_ep], [conv_y], color=color, s=40, zorder=5)
             ax.axvline(conv_ep, color=color, linestyle=":", linewidth=1.0, alpha=0.5)
-            ax.text(conv_ep, conv_y, f"  conv@{conv_ep}", fontsize=7, color=color, va="bottom")
+            ax.text(conv_ep, conv_y, f"  conv@{conv_ep}", fontsize=8.5, color=color, va="bottom")
 
     ax.set_title(
         f"Training Reward — Rolling Average  (window={window} episodes)",
-        fontsize=11, fontweight="bold",
+        fontsize=12.5, fontweight="bold",
     )
-    ax.set_xlabel("Episode", fontsize=9)
-    ax.set_ylabel("Reward", fontsize=9)
+    ax.set_xlabel("Episode", fontsize=10.5)
+    ax.set_ylabel("Reward", fontsize=10.5)
     ax.grid(True, linestyle=":", alpha=0.4)
-    ax.legend(fontsize=8, loc="upper left")
+    ax.legend(fontsize=11, loc="upper left")
     ax.spines[["top", "right"]].set_visible(False)
 
 
-def _draw_evaluation_distribution_panel(ax: Any, runs: list[AgentReportRun]) -> None:
-    """
-    Overlaid episode-reward distributions from clean evaluation.
-
-    Uses actual per-episode rewards (histogram + Gaussian overlay) when available;
-    falls back to a Gaussian curve from mean/std alone.  Mean shown as a vertical
-    line with a floating annotation box.
-    """
+def _draw_metrics_summary_panel(ax: Any, runs: list[AgentReportRun], window: int) -> None:
+    """Render a compact table of training and clean-evaluation metrics."""
     ax.set_facecolor("#ffffff")
+    ax.axis("off")
 
-    # ── Pass 1: draw histograms and Gaussian curves ───────────────────────────
-    y_max_global = 0.0
-    run_stats: list[tuple[float, float]] = []  # (mean, std) per run for annotations
+    col_labels = [
+        "Agent",
+        "Episodes",
+        "Train mean",
+        "Train best",
+        "Train last 10%",
+        f"Conv ep (w={window})",
+        "Eval mean",
+        "Eval std",
+        "Eval n",
+    ]
 
-    has_any = False
-    for i, run in enumerate(runs):
-        color = _PALETTE[i % len(_PALETTE)]
-        label = _legend_label(run)
-        rewards = list(run.eval_rewards)
-        mean = run.eval_mean
-        std = run.eval_std
+    cell_text: list[list[str]] = []
+    for run in runs:
+        train_rewards = run.train_result.episode_rewards
+        rolling = _rolling_mean(train_rewards, window)
+        conv_ep = _estimate_convergence_episode(rolling, stable_window=max(8, window // 2))
+        eval_n = len(run.eval_rewards)
 
-        if not rewards and mean is None:
-            run_stats.append((float("nan"), float("nan")))
-            continue
+        row = [
+            _legend_label(run),
+            str(len(train_rewards)),
+            f"{run.train_result.mean_reward:.3f}",
+            f"{run.train_result.best_reward:.3f}",
+            f"{run.train_result.last_n_mean:.3f}",
+            str(conv_ep) if conv_ep is not None else "n/a",
+            f"{run.eval_mean:.3f}" if run.eval_mean is not None else "n/a",
+            f"{run.eval_std:.3f}" if run.eval_std is not None else "n/a",
+            str(eval_n) if eval_n else "n/a",
+        ]
+        cell_text.append(row)
 
-        has_any = True
-
-        # Derive mean/std from rewards if not pre-computed
-        if rewards:
-            if mean is None:
-                mean = sum(rewards) / len(rewards)
-            if std is None:
-                var = sum((r - mean) ** 2 for r in rewards) / len(rewards)
-                std = var ** 0.5
-
-        std_plot = max(abs(mean) * 0.05, 0.01) if (std is None or std < 1e-9) else std
-        run_stats.append((mean, std if std is not None else std_plot))  # type: ignore[arg-type]
-
-        # Histogram
-        if rewards:
-            n_bins = max(10, min(30, len(rewards) // 4))
-            _, _, patches = ax.hist(
-                rewards,
-                bins=n_bins,
-                density=True,
-                alpha=0.38,
-                color=color,
-                edgecolor="none",
-                label=f"{label}  (n={len(rewards)})",
-                zorder=2,
-            )
-            y_local = max((p.get_height() for p in patches), default=0.0)
-            y_max_global = max(y_max_global, y_local)
-
-        # Gaussian overlay (dashed when histogram is present, solid when only stats)
-        lo = mean - 4.0 * std_plot
-        hi = mean + 4.0 * std_plot
-        xs_g = [lo + j * (hi - lo) / 300 for j in range(301)]
-        coeff = 1.0 / (std_plot * math.sqrt(2.0 * math.pi))
-        ys_g = [coeff * math.exp(-0.5 * ((x - mean) / std_plot) ** 2) for x in xs_g]
-        peak = max(ys_g)
-        y_max_global = max(y_max_global, peak)
-
-        linestyle = "--" if rewards else "-"
-        lw = 1.4 if rewards else 2.0
-        alpha = 0.65 if rewards else 0.9
-        gauss_label = None if rewards else f"{label}  (approx.)"
-        ax.plot(xs_g, ys_g, color=color, linewidth=lw, linestyle=linestyle,
-                alpha=alpha, label=gauss_label, zorder=3)
-
-        # Mean vertical line
-        ax.axvline(mean, color=color, linewidth=2.0, linestyle="-", alpha=0.9, zorder=5)
-
-    # ── Pass 2: floating annotation boxes (staggered to avoid overlap) ────────
-    if y_max_global == 0.0:
-        y_max_global = 1.0
-
-    for i, (run, (mean, std)) in enumerate(zip(runs, run_stats)):
-        if math.isnan(mean):
-            continue
-        color = _PALETTE[i % len(_PALETTE)]
-        rewards = list(run.eval_rewards)
-        std_str = f"σ={std:.3f}" if not math.isnan(std) else ""
-        n_str = f"n={len(rewards)}" if rewards else ""
-        parts = [f"μ={mean:.3f}", std_str, n_str]
-        ann_text = "\n".join(p for p in parts if p)
-
-        # Stagger boxes vertically
-        y_frac = 0.92 - i * 0.18
-        y_ann = max(y_max_global * 0.08, y_max_global * y_frac)
-        # Alternate left/right of mean line
-        ha = "left" if i % 2 == 0 else "right"
-        x_off = mean + (std * 0.1 if ha == "left" else -std * 0.1) if not math.isnan(std) else mean
-        ax.text(
-            x_off, y_ann,
-            ann_text,
-            ha=ha, va="top",
-            fontsize=8.5, fontweight="bold",
-            color=color,
-            bbox=dict(
-                facecolor="white", alpha=0.80,
-                edgecolor=color, linewidth=1.0,
-                boxstyle="round,pad=0.35",
-            ),
-            zorder=6,
-        )
-
-    if not has_any:
+    if not cell_text:
         ax.text(
             0.5, 0.5,
-            "No evaluation data available",
+            "No training/evaluation metrics available",
             ha="center", va="center",
-            transform=ax.transAxes, fontsize=11, color="#999999",
+            transform=ax.transAxes, fontsize=12, color="#999999",
         )
+        return
+
+    table = ax.table(
+        cellText=cell_text,
+        colLabels=col_labels,
+        loc="center",
+        cellLoc="center",
+        colLoc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1.0, 1.65)
+
+    for (row_idx, col_idx), cell in table.get_celld().items():
+        if row_idx == 0:
+            cell.set_facecolor("#e8edf3")
+            cell.set_text_props(weight="bold", color="#1b1f24")
+        else:
+            cell.set_facecolor("#ffffff" if row_idx % 2 else "#f8fafc")
+        if col_idx == 0:
+            cell.set_text_props(ha="left")
+        cell.set_edgecolor("#d1d9e0")
+        cell.set_linewidth(0.6)
 
     ax.set_title(
-        "Clean Evaluation — Episode Reward Distribution  "
-        "(fixed weights, no instruction rewards)",
-        fontsize=11, fontweight="bold",
+        "Training + Clean Evaluation Summary Metrics",
+        fontsize=12.5, fontweight="bold",
     )
-    ax.set_xlabel("Episode reward", fontsize=9)
-    ax.set_ylabel("Density", fontsize=9)
-    ax.grid(True, linestyle=":", alpha=0.4)
-    ax.legend(fontsize=8, loc="upper right")
-    ax.spines[["top", "right"]].set_visible(False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -525,7 +474,7 @@ def _build_instruction_figure(
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
 
-    FONT_PT = 8.5
+    FONT_PT = 10.0
     LINE_H_IN = FONT_PT * _PT_TO_IN * 1.55   # vertical space per text line
     GAP_H_IN = 0.30                           # gap between agent blocks
     STEP_INDENT_H_IN = 0.10                   # extra gap before each sub-step block
@@ -629,7 +578,7 @@ def _build_instruction_figure(
 
     fig.suptitle(
         f"RLIP Instruction Match Summary ({len(runs)} agent(s)){env_label}",
-        fontsize=13, fontweight="bold", color="#1b1f24", y=0.995,
+        fontsize=15, fontweight="bold", color="#1b1f24", y=0.995,
     )
 
     # Available height in figure-fraction units for the axes region
@@ -747,7 +696,7 @@ def _build_config_figure(
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
 
-    FONT_PT = 8.0
+    FONT_PT = 9.5
     LINE_H_IN = FONT_PT * _PT_TO_IN * 1.6
     GAP_H_IN = 0.35
     TITLE_H_IN = 0.60
@@ -820,7 +769,7 @@ def _build_config_figure(
 
     fig.suptitle(
         f"RLIP Metadata & Hyper-parameters ({len(runs)} agent(s)){env_label}",
-        fontsize=13, fontweight="bold", color="#1b1f24", y=0.995,
+        fontsize=15, fontweight="bold", color="#1b1f24", y=0.995,
     )
 
     avail_h_in = fig_h - TITLE_H_IN - FOOTER_H_IN

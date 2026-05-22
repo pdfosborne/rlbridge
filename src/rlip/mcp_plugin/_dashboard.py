@@ -278,6 +278,14 @@ h1   { font-size: 1.4rem; font-weight: 700; color: #f8fafc;
 .inst-status.done { background:#14532d; border-color:#22c55e; color:#dcfce7; }
 .inst-step   { font-size: 0.68rem; color: #93c5fd; margin-left: 2px; white-space: nowrap; }
 .idle        { color: #475569; font-size: 0.9rem; padding: 24px 0; text-align: center; }
+.tabs        { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.tab-btn     { background: #0f172a; color: #94a3b8; border: 1px solid #334155;
+              border-radius: 6px; padding: 6px 10px; font-size: 0.72rem; cursor: pointer; }
+.tab-btn.active { background: #1d4ed8; border-color: #3b82f6; color: #eff6ff; }
+.tab-panel   { display: none; }
+.tab-panel.active { display: block; }
+.report-meta { font-size: 0.72rem; color: #94a3b8; margin-bottom: 10px; }
+.report-img  { width: 100%; border-radius: 6px; border: 1px solid #1e3a5f; display: block; }
 #refresh-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
                background: #22c55e; margin-left: 6px; vertical-align: middle; }
 #ts          { font-size: 0.7rem; color: #475569; }
@@ -305,6 +313,35 @@ function _initSlideshows() {
   // Prune entries whose elements have been removed from the DOM
   Object.keys(_slideshows).forEach(function(id) {
     if (!document.getElementById(id)) delete _slideshows[id];
+  });
+}
+
+function _initReportTabs() {
+  document.querySelectorAll('[data-tab-group]').forEach(function(group) {
+    var tabs = group.querySelectorAll('[data-tab-btn]');
+    var panels = group.querySelectorAll('[data-tab-panel]');
+    if (!tabs.length || !panels.length) return;
+
+    function activate(name) {
+      tabs.forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.tabBtn === name);
+      });
+      panels.forEach(function(panel) {
+        panel.classList.toggle('active', panel.dataset.tabPanel === name);
+      });
+    }
+
+    tabs.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        activate(btn.dataset.tabBtn || '');
+      });
+    });
+
+    var current = null;
+    tabs.forEach(function(btn) {
+      if (btn.classList.contains('active')) current = btn.dataset.tabBtn;
+    });
+    activate(current || tabs[0].dataset.tabBtn || '');
   });
 }
 
@@ -368,6 +405,7 @@ setInterval(function() {
 }, 600);
 
 _initSlideshows();
+_initReportTabs();
 
 // ── Polling ───────────────────────────────────────────────────────────────────
 let _ver = -1;
@@ -386,6 +424,7 @@ async function poll() {
       document.getElementById('ts').textContent =
           'Updated ' + new Date().toLocaleTimeString();
       _initSlideshows();
+      _initReportTabs();
       // Flash refresh dot
       const dot = document.getElementById('refresh-dot');
       if (dot) {
@@ -591,10 +630,60 @@ def _render_agent_card(state: _AgentState) -> str:
 
 
 def _build_html(version: int, states: list[_AgentState]) -> str:
+    _, reports = report_snapshot()
+
+    report_html = ""
+    if reports:
+        latest = reports[-1]
+        report_id = html.escape(str(latest.get("id", "latest")))
+        env_id = html.escape(str(latest.get("env_id", "?")))
+        agents = ", ".join(str(a) for a in (latest.get("agent_ids") or []))
+        agents_txt = html.escape(agents if agents else "n/a")
+        generated = html.escape(str(latest.get("generated_at", "")))
+        images = latest.get("images") or {}
+
+        tab_order = [("rewards", "Rewards"), ("instructions", "Instructions"), ("config", "Config")]
+        tabs = []
+        panels = []
+        first = True
+        for key, label in tab_order:
+            b64 = images.get(key)
+            if not b64:
+                continue
+            active_cls = " active" if first else ""
+            tabs.append(
+                f'<button class="tab-btn{active_cls}" data-tab-btn="{key}" type="button">{label}</button>'
+            )
+            panels.append(
+                f'<div class="tab-panel{active_cls}" data-tab-panel="{key}">'
+                f'<img class="report-img" src="data:image/png;base64,{b64}" alt="{label} report panel">'
+                f'</div>'
+            )
+            first = False
+
+        if tabs and panels:
+            report_html = (
+                '<div class="card">'
+                '<div class="card-header">'
+                '<span style="font-size:1rem;font-weight:700;color:#f1f5f9">Latest Training Report</span>'
+                f'<span class="env-badge">{env_id}</span>'
+                '</div>'
+                f'<div class="report-meta">Report ID: <code>{report_id}</code> &nbsp;·&nbsp; '
+                f'Agents: {agents_txt} &nbsp;·&nbsp; Generated: {generated}</div>'
+                f'<div data-tab-group="report_{report_id}">'
+                f'<div class="tabs">{"".join(tabs)}</div>'
+                f'{"".join(panels)}'
+                f'</div>'
+                '</div>'
+            )
+
     if not states:
         body = '<div class="idle">No training runs yet. Start one with <code>rl_train_agent()</code>.</div>'
     else:
         body = "\n".join(_render_agent_card(s) for s in reversed(states))
+
+    if report_html:
+        body = report_html + body
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -695,3 +784,38 @@ def dashboard_url() -> Optional[str]:
         if _server_thread is not None and _server_thread.is_alive():
             return f"http://localhost:{_server_port}"
         return None
+
+
+_reports_lock = threading.Lock()
+_reports: list[dict[str, Any]] = []
+
+
+def publish_report_result(
+    report_id: str,
+    *,
+    env_id: str,
+    agent_ids: list[str],
+    generated_at: str,
+    images: dict[str, str],
+) -> None:
+    """Store a generated training report for display in the dashboard."""
+    with _reports_lock:
+        _reports.append(
+            {
+                "id": report_id,
+                "env_id": env_id,
+                "agent_ids": list(agent_ids),
+                "generated_at": generated_at,
+                "images": dict(images),
+            }
+        )
+        if len(_reports) > 10:
+            del _reports[:-10]
+    with dashboard._lock:
+        dashboard._version += 1
+
+
+def report_snapshot() -> tuple[int, list[dict[str, Any]]]:
+    """Return a copy of stored training report summaries."""
+    with _reports_lock:
+        return len(_reports), [dict(r) for r in _reports]

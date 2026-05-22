@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from typing import Any, Optional
 
+from ._dashboard import publish_report_result as _publish_report_result
 from ._env_wrappers import _LangStateEnv
 from ._state import (
     _env_reports_dir,
@@ -402,6 +404,7 @@ def rl_create_training_report(
     import io as _io  # noqa: PLC0415
 
     encoded: list[str] = []
+    encoded_by_key: dict[str, str] = {}
     saved_paths: list[str] = []
     for key, suffix in [("rewards", "_rewards.png"), ("instructions", "_instructions.png"), ("config", "_config.png")]:
         fig = figs.get(key)
@@ -413,9 +416,22 @@ def rl_create_training_report(
             fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
             buf.seek(0)
             b64 = base64.b64encode(buf.read()).decode("ascii")
+            encoded_by_key[key] = b64
             encoded.append(f"### {key.capitalize()} chart\ndata:image/png;base64,{b64}")
         except Exception as exc:
             encoded.append(f"### {key.capitalize()} chart\n[encoding failed: {exc}]")
+
+    if encoded_by_key:
+        try:
+            _publish_report_result(
+                out_stem,
+                env_id=env_id,
+                agent_ids=requested_ids,
+                generated_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+                images=encoded_by_key,
+            )
+        except Exception:
+            pass
 
     header = (
         f"Training report generated for {len(entries)} agent(s) on {env_id}.\n"
