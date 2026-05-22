@@ -1065,6 +1065,8 @@ def derive_instructions_from_training(
     top_k: int = 5,
     min_episode_visits: int = 2,
     baseline_success_rate: Optional[float] = None,
+    long_term_goal: Optional[str] = None,
+    llm_state_planner: Optional[Callable[[str, str, list[str]], list[str]]] = None,
 ) -> list[InstructionCacheEntry]:
     """
     Analyse the language state visit log collected by *wrapper* during RL
@@ -1107,6 +1109,16 @@ def derive_instructions_from_training(
         States visited in fewer than this many distinct episodes are ignored.
     baseline_success_rate:
         Optional lower-bound filter on conditional success rate.
+    long_term_goal:
+        Optional high-level RL objective string.  When provided alongside
+        *llm_state_planner*, this goal is used to ask the LLM for an ordered
+        state progression toward the objective.
+    llm_state_planner:
+        Optional callback used to produce a milestone instruction sequence from
+        observed successful states.  Signature:
+        ``(env_id, long_term_goal, candidate_states) -> list[str]``.
+        Each returned instruction is matched against cached observed states and
+        registered in the instruction cache.
 
     Returns
     -------
@@ -1139,35 +1151,108 @@ def derive_instructions_from_training(
     scored.sort(key=lambda x: x[1], reverse=True)
     top = scored[:top_k]
 
+    # Optional LLM-guided state progression planning:
+    # turn the strongest successful-state candidates into an ordered milestone set.
+    fallback_instructions: list[str] = [lang for lang, *_rest in top]
+    selected_instructions: list[str] = list(fallback_instructions)
+    if llm_state_planner is not None and top:
+        goal_text = (long_term_goal or "").strip()
+        if goal_text:
+            candidate_states = [lang for lang, *_rest in scored[: max(top_k * 3, top_k)]]
+            try:
+                llm_steps = llm_state_planner(env_id, goal_text, candidate_states)
+            except Exception:
+                llm_steps = []
+
+            normalized_steps: list[str] = []
+            seen_steps: set[str] = set()
+            for step in llm_steps:
+                cleaned = " ".join(str(step).split()).strip(" .")
+                key = cleaned.lower()
+                if not cleaned or len(cleaned) < 3 or key in seen_steps:
+                    continue
+                seen_steps.add(key)
+                normalized_steps.append(cleaned)
+                if len(normalized_steps) >= top_k:
+                    break
+
+            if normalized_steps:
+                selected_instructions = normalized_steps
+
     instr_cache = _INSTRUCTION_CACHE.setdefault(env_id, {})
     state_map   = _STATE_INSTRUCTIONS.setdefault(env_id, {})
     entries: list[InstructionCacheEntry] = []
 
-    for lang, _score, _csr, _n_eps, _n_success in top:
-        raw_obs = wrapper._lang_obs_sample.get(lang)
-        im = InstructionMatch(
-            instruction=lang,
-            matched_language=lang,
-            matched_observation=raw_obs,
-            similarity_score=1.0,
-            matched_states=[(lang, raw_obs, 1.0)],
-            all_scores=[(lang, 1.0)],
-        )
+    for instruction in selected_instructions:
+        # Fast path for exact observed language states.
+        if instruction in wrapper._lang_obs_sample:
+            raw_obs = wrapper._lang_obs_sample.get(instruction)
+            im = InstructionMatch(
+                instruction=instruction,
+                matched_language=instruction,
+                matched_observation=raw_obs,
+                similarity_score=1.0,
+                matched_states=[(instruction, raw_obs, 1.0)],
+                all_scores=[(instruction, 1.0)],
+            )
 
-        if lang in instr_cache:
-            # Preserve existing episode stats; refresh the match.
-            instr_cache[lang].match = im
-            entry = instr_cache[lang]
-        else:
-            entry = InstructionCacheEntry(env_id=env_id, instruction=lang, match=im)
-            instr_cache[lang] = entry
+            if instruction in instr_cache:
+                # Preserve existing episode stats; refresh the match.
+                instr_cache[instruction].match = im
+                entry = instr_cache[instruction]
+            else:
+                entry = InstructionCacheEntry(env_id=env_id, instruction=instruction, match=im)
+                instr_cache[instruction] = entry
 
-        # Attach to the state→instruction map.
-        instr_list = state_map.setdefault(lang, [])
-        if lang not in instr_list:
-            instr_list.append(lang)
+            instr_list = state_map.setdefault(instruction, [])
+            if instruction not in instr_list:
+                instr_list.append(instruction)
+            entries.append(entry)
+            continue
 
-        entries.append(entry)
+        # LLM-proposed milestones are mapped back to concrete observed states.
+        # Always prefer translated language-state matching when a translator is
+        # available on the wrapper.
+        translator_available = wrapper._translator is not None
+        try:
+            mapped = match_instruction(
+                instruction,
+                wrapper,
+                translator=wrapper._translator,
+                exploration_protocol=None,
+                use_raw_observations=not translator_available,
+            )
+            entry = instr_cache[instruction]
+            entry.match = mapped
+            entries.append(entry)
+        except Exception:
+            # Skip unmatched LLM output; deterministic fallback is applied below.
+            continue
+
+    # If all LLM-proposed milestones failed to map, fall back to top scored states.
+    if not entries and selected_instructions != fallback_instructions:
+        for lang in fallback_instructions:
+            raw_obs = wrapper._lang_obs_sample.get(lang)
+            if raw_obs is None:
+                continue
+            im = InstructionMatch(
+                instruction=lang,
+                matched_language=lang,
+                matched_observation=raw_obs,
+                similarity_score=1.0,
+                matched_states=[(lang, raw_obs, 1.0)],
+                all_scores=[(lang, 1.0)],
+            )
+            if lang in instr_cache:
+                instr_cache[lang].match = im
+                entry = instr_cache[lang]
+            else:
+                entry = InstructionCacheEntry(env_id=env_id, instruction=lang, match=im)
+                instr_cache[lang] = entry
+            instr_list = state_map.setdefault(lang, [])
+            if lang not in instr_list:
+                instr_list.append(lang)
+            entries.append(entry)
 
     return entries
 
@@ -1182,6 +1267,8 @@ def train_and_derive_instructions(
     top_k: int = 5,
     min_episode_visits: int = 2,
     baseline_success_rate: Optional[float] = None,
+    long_term_goal: Optional[str] = None,
+    llm_state_planner: Optional[Callable[[str, str, list[str]], list[str]]] = None,
     **train_kwargs: Any,
 ) -> tuple[Any, list[InstructionCacheEntry]]:
     """
@@ -1215,6 +1302,12 @@ def train_and_derive_instructions(
     baseline_success_rate:
         Optional filter: only states with a conditional success rate above
         this value will be included.
+    long_term_goal:
+        Optional high-level RL objective.  Used only when
+        *llm_state_planner* is provided.
+    llm_state_planner:
+        Optional callback that asks an LLM to produce an ordered sequence of
+        milestone instructions from successful observed states.
     **train_kwargs:
         Extra keyword arguments forwarded verbatim to ``agent.train()``.
 
@@ -1259,6 +1352,8 @@ def train_and_derive_instructions(
         top_k=top_k,
         min_episode_visits=min_episode_visits,
         baseline_success_rate=baseline_success_rate,
+        long_term_goal=long_term_goal,
+        llm_state_planner=llm_state_planner,
     )
     return train_result, derived
 

@@ -34,6 +34,9 @@ from ._state import (
     mcp,
 )
 
+# Cache LLM decompositions so repeated apply calls avoid re-sampling.
+_DERIVED_DECOMP_CACHE: dict[tuple[str, str], list[str]] = {}
+
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -46,10 +49,10 @@ async def _decompose_instruction_with_llm(
     """Decompose one instruction into ordered, distinct, observable sub-steps."""
     import mcp.types as _t
 
-    n_sample = min(20, len(observed_langs))
+    n_sample = min(8, len(observed_langs))
     step = max(1, len(observed_langs) // n_sample)
     sample = observed_langs[::step][:n_sample]
-    lang_block = "\n".join(f"  - {lg}" for lg in sample)
+    lang_block = "\n".join(f"  - {lg[:140]}" for lg in sample)
     if len(observed_langs) > n_sample:
         lang_block += f"\n  ... ({len(observed_langs) - n_sample} more not shown)"
 
@@ -61,7 +64,7 @@ async def _decompose_instruction_with_llm(
                 role="user",
                 content=_t.TextContent(type="text", text=prompt),
             )],
-            max_tokens=256,
+            max_tokens=128,
         )
     except Exception:
         return []
@@ -462,6 +465,7 @@ async def rl_apply_derived_instruction(
     sub_goal_repeatable: bool = False,
     max_steps: int = 200,
     seed: Optional[int] = None,
+    use_llm_decomposition: bool = False,
 ) -> str:
     """
     Look up a cached instruction (from rl_list_cached_instructions), decompose
@@ -491,6 +495,11 @@ async def rl_apply_derived_instruction(
         Episode step cap stored on the protocol.
     seed:
         Optional seed for subsequent episode resets.
+    use_llm_decomposition:
+        Whether to ask the host LLM to decompose this derived instruction into
+        sequential sub-steps.  Defaults to ``False`` to keep derived-instruction
+        application fast and token-efficient.  When ``False``, deterministic
+        decomposition is used.
 
     Returns
     -------
@@ -503,6 +512,7 @@ async def rl_apply_derived_instruction(
         obs_cache_langs,
     )
     from ..environments.registry import registry as _env_registry
+    from ..language_translation import get_translator
 
     env_entries = _INSTRUCTION_CACHE.get(env_id, {})
     del sub_goal_repeatable
@@ -529,9 +539,22 @@ async def rl_apply_derived_instruction(
         )
 
     observed_langs = obs_cache_langs(env_id)
-    llm_steps = await _decompose_instruction_with_llm(
-        ctx, instruction, env_id, observed_langs
-    )
+    translator = _custom_translators.get(env_id) or get_translator(env_id)
+    llm_steps: list[str] = []
+    decomp_mode = "deterministic"
+    cache_key = (env_id, instruction)
+    if use_llm_decomposition:
+        cached_steps = _DERIVED_DECOMP_CACHE.get(cache_key)
+        if cached_steps:
+            llm_steps = list(cached_steps)
+            decomp_mode = "llm (cached)"
+        else:
+            llm_steps = await _decompose_instruction_with_llm(
+                ctx, instruction, env_id, observed_langs
+            )
+            if llm_steps:
+                _DERIVED_DECOMP_CACHE[cache_key] = list(llm_steps)
+                decomp_mode = "llm"
     steps = _normalize_steps(instruction, llm_steps)
 
     # build_sequential_instruction_following_protocol skips re-exploration
@@ -540,10 +563,12 @@ async def rl_apply_derived_instruction(
         protocol = build_sequential_instruction_following_protocol(
             steps,
             env,
+            translator=translator,
             sub_goal_bonus=None if sub_goal_bonus == 0.0 else sub_goal_bonus,
             sub_goal_threshold=sub_goal_threshold,
             max_steps=max_steps,
             seed=seed,
+            use_raw_observations=(translator is None),
         )
     except Exception as exc:
         env.close()
@@ -567,6 +592,7 @@ async def rl_apply_derived_instruction(
         f"Instruction applied for '{env_id}':\n\n"
         f"  Instruction:    {instruction!r}\n"
         f"  Similarity:     {entry.match.similarity_score:.4f}\n"
+        f"  Decomposition:  {decomp_mode}\n"
         f"  Sequential steps: {len(steps)}\n"
         + "\n".join(f"    {i+1}. {s}" for i, s in enumerate(steps))
         + "\n"
