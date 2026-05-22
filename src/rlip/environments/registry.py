@@ -163,10 +163,10 @@ from .predefined.gridworld import ALL_GRIDWORLD_FACTORIES  # noqa: E402
 for _factory in ALL_GRIDWORLD_FACTORIES:
     registry.register(_factory)
 
-# Register Flesh and Blood environments
-from .predefined.flesh_and_blood import ALL_FAB_FACTORIES  # noqa: E402
-for _factory in ALL_FAB_FACTORIES:
-    registry.register(_factory)
+# Register third-party environment plugins (pip-installed packages)
+from .plugins import load_plugin_environments  # noqa: E402
+
+load_plugin_environments(registry)
 
 # Register TextWorld environments (optional dependency)
 from .predefined import ALL_TEXTWORLD_FACTORIES as _tw_factories  # noqa: E402

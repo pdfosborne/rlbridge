@@ -159,35 +159,52 @@ from . import (  # noqa: F401, E402
 def _register_environment_custom_tools() -> int:
     """Discover and register custom tools exported by environment modules.
 
-    Environment modules can define ``register_mcp_tools(mcp=..., registry=..., log=...)``.
-    If present, the plugin calls it and aggregates how many tools were added.
+    Built-in predefined modules may define
+    ``register_mcp_tools(mcp=..., registry=..., log=...)``.  Installed
+    third-party packages register the same hook via the
+    ``rlip.environment_mcp_tools`` entry-point group.
     """
     total_registered = 0
     try:
         from ..environments import predefined as predefined_pkg
     except Exception as exc:
         log.warning("Unable to import predefined environments package: %s", exc)
-        return 0
+        predefined_pkg = None
 
-    module_prefix = predefined_pkg.__name__ + "."
-    for mod in pkgutil.iter_modules(predefined_pkg.__path__, prefix=module_prefix):
+    if predefined_pkg is not None:
+        module_prefix = predefined_pkg.__name__ + "."
+        for mod in pkgutil.iter_modules(predefined_pkg.__path__, prefix=module_prefix):
+            try:
+                module = importlib.import_module(mod.name)
+            except Exception as exc:
+                log.debug("Skipping env module %s (import failed): %s", mod.name, exc)
+                continue
+
+            register = getattr(module, "register_mcp_tools", None)
+            if not callable(register):
+                continue
+
+            try:
+                added = int(register(mcp=mcp, registry=_registry, log=log) or 0)
+                total_registered += max(0, added)
+                if added:
+                    log.info("Registered %d custom MCP tools from %s", added, mod.name)
+            except Exception as exc:
+                log.warning("register_mcp_tools failed for %s: %s", mod.name, exc)
+
+    if _in_process and _registry is not None:
         try:
-            module = importlib.import_module(mod.name)
-        except Exception as exc:
-            log.debug("Skipping env module %s (import failed): %s", mod.name, exc)
-            continue
+            from ..environments.plugins import load_plugin_mcp_tools
+            from ._state import _trained_agents
 
-        register = getattr(module, "register_mcp_tools", None)
-        if not callable(register):
-            continue
-
-        try:
-            added = int(register(mcp=mcp, registry=_registry, log=log) or 0)
-            total_registered += max(0, added)
-            if added:
-                log.info("Registered %d custom MCP tools from %s", added, mod.name)
+            total_registered += load_plugin_mcp_tools(
+                mcp=mcp,
+                registry=_registry,
+                log=log,
+                trained_agents=_trained_agents,
+            )
         except Exception as exc:
-            log.warning("register_mcp_tools failed for %s: %s", mod.name, exc)
+            log.warning("load_plugin_mcp_tools failed: %s", exc)
 
     return total_registered
 

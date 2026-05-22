@@ -357,6 +357,49 @@ registry.register(MyFactory())
 
 ---
 
+## Third-Party Environment Plugins
+
+RLIP can load additional environments from separately installed pip packages.
+Packages register factories via the ``rlip.environments`` entry-point group and
+optional MCP tools via ``rlip.environment_mcp_tools``.
+
+Example: [Flesh and Blood](https://fabtcg.com/) TCG environments live in the
+``flesh-and-blood-rlip`` package (sibling repo, not bundled with RLIP):
+
+```bash
+# Install RLIP first
+cd /path/to/RL-IP
+pip install -e .
+
+# Then install the FaB plugin from a local checkout or GitHub
+cd /path/to/flesh-and-blood
+pip install -e .
+```
+
+After installation, environments appear in the registry automatically:
+
+```python
+from rlip.environments.registry import registry
+
+env = registry.create("FleshAndBlood-Talishar-v0", format="silver_age")
+```
+
+To publish your own plugin, add to ``pyproject.toml``:
+
+```toml
+[project.entry-points."rlip.environments"]
+my-env = "my_package:register_environments"
+
+[project.entry-points."rlip.environment_mcp_tools"]
+my-env = "my_package:register_mcp_tools"
+```
+
+Each callable receives ``registry=`` (environments) or
+``mcp=``, ``registry=``, ``log=`` (MCP tools) and returns the number of
+items registered.
+
+---
+
 ## Language Translation (Python API)
 
 ```python
