@@ -190,6 +190,9 @@ class RenderedFrame:
     sub_goal_similarity: Optional[float] = None
     """Cosine similarity to the sub-goal language, if available."""
 
+    instruction_index: Optional[int] = None
+    """0-based instruction index completed at this step, when available."""
+
 
 # ── Render result ─────────────────────────────────────────────────────────────
 
@@ -366,7 +369,7 @@ class PolicyRenderer:
             # originally recorded values instead.
             rec_info = (step_infos[step_n - 1] if step_infos and step_n - 1 < len(step_infos) else None)
             if rec_info:
-                for key in ("sub_goal_reached", "sub_goal_similarity"):
+                for key in ("sub_goal_reached", "sub_goal_similarity", "instruction_index"):
                     if key in rec_info:
                         info[key] = rec_info[key]
 
@@ -439,6 +442,11 @@ class PolicyRenderer:
             language_obs=language_obs,
             sub_goal_reached=bool(info.get("sub_goal_reached", False)),
             sub_goal_similarity=info.get("sub_goal_similarity"),
+            instruction_index=(
+                int(info["instruction_index"])
+                if info.get("instruction_index") is not None
+                else None
+            ),
         )
 
 

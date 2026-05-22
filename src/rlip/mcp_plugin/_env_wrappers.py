@@ -215,10 +215,12 @@ class _SequentialShapedEnv:
                             new_info = dict(result.info or {})
                             new_info["sub_goal_reached"] = True
                             new_info["sub_goal_similarity"] = round(float(sim), 4)
+                            new_info["instruction_index"] = int(self._current_stage)
                             object.__setattr__(result, "info", new_info)
                         elif isinstance(result, dict):
                             result["sub_goal_reached"] = True
                             result["sub_goal_similarity"] = round(float(sim), 4)
+                            result["instruction_index"] = int(self._current_stage)
                     except Exception:
                         pass
                     self._current_stage += 1

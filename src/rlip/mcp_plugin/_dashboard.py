@@ -272,6 +272,11 @@ h1   { font-size: 1.4rem; font-weight: 700; color: #f8fafc;
                padding: 8px; font-size: 0.72rem; color: #cbd5e1; }
 .inst-list   { margin: 0; padding-left: 16px; }
 .inst-list li { margin-bottom: 5px; line-height: 1.25; overflow-wrap: anywhere; }
+.inst-status { display:inline-block; min-width: 28px; text-align:center; font-weight: 800;
+               border-radius: 999px; padding: 1px 8px; margin: 0 6px 0 4px;
+               border: 1px solid #475569; background:#1e293b; color:#94a3b8; }
+.inst-status.done { background:#14532d; border-color:#22c55e; color:#dcfce7; }
+.inst-step   { font-size: 0.68rem; color: #93c5fd; margin-left: 2px; white-space: nowrap; }
 .idle        { color: #475569; font-size: 0.9rem; padding: 24px 0; text-align: center; }
 #refresh-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
                background: #22c55e; margin-left: 6px; vertical-align: middle; }
@@ -311,6 +316,7 @@ function _applyFrame(sw) {
   var bn = sw.bannerId ? document.getElementById(sw.bannerId)          : null;
   var bs = sw.bannerId ? document.getElementById(sw.bannerId + '_sim') : null;
   var bl = sw.bannerId ? document.getElementById(sw.bannerId + '_lang'): null;
+  var instPrefix = el.dataset.instPrefix || '';
   if (m.sub_goal_reached) {
     el.style.borderColor = '#22c55e';
     el.style.boxShadow   = '0 0 0 2px rgba(34,197,94,0.35)';
@@ -322,6 +328,35 @@ function _applyFrame(sw) {
     el.style.borderColor = '';
     el.style.boxShadow   = '';
     if (bn) bn.style.display = 'none';
+  }
+  if (instPrefix) {
+    var reached = {};
+    var hasOnlyZero = !!document.getElementById(instPrefix + '_0') && !document.getElementById(instPrefix + '_1');
+    for (var i = 0; i <= sw.idx && i < sw.meta.length; i++) {
+      var mm = sw.meta[i] || {};
+      if (!mm.sub_goal_reached) continue;
+      if (mm.instruction_index == null) {
+        if (hasOnlyZero && reached['0'] == null) reached['0'] = Number(mm.step || (i + 1));
+        continue;
+      }
+      var key = String(mm.instruction_index);
+      if (reached[key] == null) reached[key] = Number(mm.step || (i + 1));
+    }
+    for (var k = 0; k < 128; k++) {
+      var mark = document.getElementById(instPrefix + '_' + k + '_mark');
+      if (!mark) break;
+      var step = document.getElementById(instPrefix + '_' + k + '_step');
+      var stepNum = reached[String(k)];
+      if (stepNum != null) {
+        mark.textContent = '✓';
+        mark.classList.add('done');
+        if (step) step.textContent = '(step ' + stepNum + ')';
+      } else {
+        mark.textContent = '-';
+        mark.classList.remove('done');
+        if (step) step.textContent = '';
+      }
+    }
   }
 }
 
@@ -380,14 +415,55 @@ def _render_agent_card(state: _AgentState) -> str:
     lang_tag = '<span class="meta-badge">Language translation</span>' if state.use_language_state else ''
     instr_tag = '<span class="meta-badge">Instructions</span>' if state.uses_instructions else ''
 
-    instruction_panel = ""
-    if state.uses_instructions:
+    def _instruction_panel(dynamic_prefix: str = "") -> str:
+        if not state.uses_instructions:
+            return ""
+
         items = state.instructions or ["(instruction text unavailable)"]
-        li = "".join(f"<li>{html.escape(it)}</li>" for it in items)
-        instruction_panel = (
+        n_items = len(items)
+        completed_steps: dict[int, int] = {}
+        for meta in state.policy_frame_meta or []:
+            if not meta.get("sub_goal_reached"):
+                continue
+            idx = meta.get("instruction_index")
+            if idx is None and n_items == 1:
+                idx = 0
+            try:
+                idx_i = int(idx) if idx is not None else -1
+            except Exception:
+                idx_i = -1
+            if 0 <= idx_i < n_items:
+                try:
+                    step_i = int(meta.get("step")) if meta.get("step") is not None else -1
+                except Exception:
+                    step_i = -1
+                if idx_i not in completed_steps:
+                    completed_steps[idx_i] = step_i
+
+        li_parts: list[str] = []
+        for i, it in enumerate(items):
+            done = i in completed_steps
+            mark = "✓" if done else "-"
+            step_txt = f"(step {completed_steps[i]})" if done and completed_steps[i] > 0 else ""
+            status_cls = "inst-status done" if done else "inst-status"
+            if dynamic_prefix:
+                mark_html = (
+                    f'<span id="{dynamic_prefix}_{i}_mark" class="{status_cls}">{mark}</span>'
+                    f'<span id="{dynamic_prefix}_{i}_step" class="inst-step">{step_txt}</span>'
+                )
+            else:
+                mark_html = (
+                    f'<span class="{status_cls}">{mark}</span>'
+                    f'<span class="inst-step">{step_txt}</span>'
+                )
+            li_parts.append(
+                f"<li><code>{i}</code> {mark_html} {html.escape(it)}</li>"
+            )
+
+        return (
             '<div class="inst-box">'
             '<div style="font-size:0.68rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Instructions used</div>'
-            f'<ul class="inst-list">{li}</ul>'
+            f'<ul class="inst-list">{"".join(li_parts)}</ul>'
             '</div>'
         )
 
@@ -396,6 +472,7 @@ def _render_agent_card(state: _AgentState) -> str:
     if done:
         if state.policy_gif_b64:
             # Animated GIF of the best training episode
+            instruction_panel = _instruction_panel()
             if instruction_panel:
                 policy_section = (
                     '<div class="policy-lbl">Optimal policy replay (best training episode)</div>'
@@ -421,6 +498,8 @@ def _render_agent_card(state: _AgentState) -> str:
             meta_json   = html.escape(json.dumps(state.policy_frame_meta or []))
             card_id     = f"pf_{state.agent_id}"
             banner_id   = f"pb_{state.agent_id}"
+            inst_prefix = f"inst_{state.agent_id}"
+            instruction_panel = _instruction_panel(dynamic_prefix=inst_prefix)
 
             # Banner div — hidden by default; shown by the global slideshow timer
             sg_banner = (
@@ -442,7 +521,8 @@ def _render_agent_card(state: _AgentState) -> str:
                 f'<div class="policy-pre" id="{card_id}"'
                 f' data-frames="{frames_json}"'
                 f' data-meta="{meta_json}"'
-                f' data-banner="{banner_id}">'
+                f' data-banner="{banner_id}"'
+                f' data-inst-prefix="{inst_prefix}">'
                 f'</div>'
             )
 

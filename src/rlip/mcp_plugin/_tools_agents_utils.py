@@ -168,7 +168,18 @@ def _render_policy_for_dashboard(
             if render_result.n_gif_frames > 0:
                 gif_bytes = gif_path.read_bytes()
                 b64 = _b64.b64encode(gif_bytes).decode("ascii")
-                _dash.finish(agent_id, policy_gif_b64=b64)
+                frame_meta = [
+                    {
+                        "sub_goal_reached":    f.sub_goal_reached,
+                        "sub_goal_similarity": f.sub_goal_similarity,
+                        "language_obs":        f.language_obs,
+                        "reward":              f.reward,
+                        "step":                f.step,
+                        "instruction_index":   f.instruction_index,
+                    }
+                    for f in render_result.frames
+                ]
+                _dash.finish(agent_id, policy_gif_b64=b64, policy_frame_meta=frame_meta)
                 return
         except Exception as exc:
             rgb_error = str(exc)
@@ -208,6 +219,7 @@ def _render_policy_for_dashboard(
                         "language_obs":        f.language_obs,
                         "reward":              f.reward,
                         "step":                f.step,
+                        "instruction_index":   f.instruction_index,
                     }
                     for _, f in frame_data
                 ]
