@@ -41,6 +41,8 @@ renders/
 *.png
 *.mp4
 
+!docs/_images/*.png
+
 tests/
 
 # uv (optional lockfile for reproducible dev envs)

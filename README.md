@@ -1,10 +1,16 @@
 # Reinforcement Learning Bridge (rlbridge)
 
-**Reinforcement Learning Bridge** connects LLMs to reinforcement learning environments.
+**Reinforcement Learning Bridge** connects LLMs to reinforcement learning (RL) agents.
 
-Automating how LLMs construct RL problems in language: building environments, translating observations, matching goals to sub-goals, and training agents to complete instructions without user supervision.
+RL agents can be used to automate complex decision making problems. rlbridge is the first attempt at giving LLMs the ability to use RL directly to train agents. 
 
-rlbridge ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM Studio, Cursor, Windsurf, Codex CLI, and OpenCode.
+LLMs can interact with rl problems directly (e.g. Claude plays Pokemon), using rlbridge massively reduces token costs and learns to optimize the agent for the problem. 
+
+rlbridge automates how LLMs construct RL problems in language, including: building environments, transforming observations to language, and training agents with auto generated sub-tasks without user supervision.
+ 
+LLMs interact with rlbridge through an **MCP plugin** compatible with Claude Code, Claude Desktop, Cursor, Windsurf, Codex CLI and local models through LM Studio and OpenCode.
+
+![interface_example](https://github.com/pdfosborne/rlbridge/docs/_images/interface_example.png)
 
 ---
 
@@ -127,6 +133,10 @@ Claude will call `rl_experiment_process` once, then poll `rl_get_training_result
 dashboard, baseline training, language-state training, instruction derivation,
 instruction matching, instruction-shaped training, instruction+language training,
 and final evaluation/comparison.
+
+The dashboard is viewable at the default localhost url:
+
+http://localhost:7432/
 
 ---
 
