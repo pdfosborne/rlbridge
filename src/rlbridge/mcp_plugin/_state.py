@@ -1,5 +1,5 @@
 """
-Shared state for the RLIP MCP plugin.
+Shared state for the rlbridge MCP plugin.
 
 This module is imported first by every ``_tools_*.py`` submodule.  It:
 
@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 _RLIP_SERVER_URL = os.environ.get("RLIP_SERVER_URL", "")
 
 if _RLIP_SERVER_URL:
-    # Proxy mode - forward calls to a running RLIP HTTP server
+    # Proxy mode - forward calls to a running rlbridge HTTP server
     from ..transport.http_client import RLIPClient as _RLIPClient
     _proxy: Any = _RLIPClient(_RLIP_SERVER_URL)
     _in_process = False
@@ -80,7 +80,7 @@ _sampled_states: dict[str, list[Any]] = {}
 
 # Persisted hyperparameter overrides - LLM can update these via
 # rl_update_suggested_hyperparameters().  Stored per-env under
-# ~/.rlip/environments/<env_id>/suggested_hyperparameters.json
+# ~/.rlbridge/environments/<env_id>/suggested_hyperparameters.json
 # and loaded back at import time so they survive session restarts.
 _hp_overrides: dict[str, Any] = {}
 
@@ -94,7 +94,7 @@ def _safe_env_name(env_id: str) -> str:
 # Path resolution - two distinct roots
 # ---------------------------------------------------------------------------
 #
-# CACHE ROOT  (~/.rlip  or  RLIP_CACHE_ROOT)
+# CACHE ROOT  (~/.rlbridge  or  RLIP_CACHE_ROOT)
 #   Used *internally* by the plugin to persist data that the agent tools
 #   read back automatically: custom environment definitions, the env catalog,
 #   language-translation source, instruction-matching data, and environment-
@@ -115,7 +115,7 @@ def _safe_env_name(env_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _cache_root() -> Path:
-    """Return (and guarantee existence of) the RLIP cache directory.
+    """Return (and guarantee existence of) the rlbridge cache directory.
 
     This is where the plugin stores data it reads back automatically:
     custom environments, the env catalog, language-translation source,
@@ -124,13 +124,13 @@ def _cache_root() -> Path:
     Resolution order:
       1. ``RLIP_CACHE_ROOT`` environment variable
       2. ``RLIP_OUTPUT_ROOT`` environment variable  (legacy alias)
-      3. User home directory  (~/.rlip)
+      3. User home directory  (~/.rlbridge)
     """
     env_override = os.environ.get("RLIP_CACHE_ROOT") or os.environ.get("RLIP_OUTPUT_ROOT")
     if env_override:
-        root = Path(env_override) / ".rlip"
+        root = Path(env_override) / ".rlbridge"
     else:
-        root = Path.home() / ".rlip"
+        root = Path.home() / ".rlbridge"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -219,7 +219,7 @@ def _env_reports_dir(env_id: str) -> Path:
 
 def _load_hp_overrides() -> None:
     """
-    Scan ``~/.rlip/environments/*/suggested_hyperparameters.json`` and populate
+    Scan ``~/.rlbridge/environments/*/suggested_hyperparameters.json`` and populate
     ``_hp_overrides`` so previously saved tunings survive session restarts.
     """
     import json as _json  # noqa: PLC0415

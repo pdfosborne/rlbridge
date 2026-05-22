@@ -2,7 +2,7 @@
 Public Environment Installer
 ==============================
 Downloads environment files from GitHub and stores them in a local cache
-at ``~/.rlip/public_envs/<env_id>/``.
+at ``~/.rlbridge/public_envs/<env_id>/``.
 
 Each cached environment directory contains:
   engine.py          - the downloaded environment source file(s)
@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 # ── Cache directory ───────────────────────────────────────────────────────────
 
-CACHE_ROOT = Path.home() / ".rlip" / "public_envs"
+CACHE_ROOT = Path.home() / ".rlbridge" / "public_envs"
 
 
 def cache_dir(env_id: str) -> Path:

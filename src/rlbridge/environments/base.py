@@ -1,5 +1,5 @@
 """
-Abstract base class for RLIP environment adapters.
+Abstract base class for rlbridge environment adapters.
 
 Any RL environment can be wrapped by sub-classing RLIPEnvironment and
 implementing the abstract methods.  The Gymnasium adapter in

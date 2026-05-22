@@ -760,7 +760,7 @@ def main() -> int:
         finally:
             eval_env.close()
 
-        renders_dir = Path.home() / ".rlip" / "renders"
+        renders_dir = Path.home() / ".rlbridge" / "renders"
         renders_dir.mkdir(parents=True, exist_ok=True)
         safe_env = env_id.replace("/", "_").replace(" ", "_")
         report_path = renders_dir / f"{safe_env}_{agent_type}_report.png"
@@ -839,7 +839,7 @@ def main() -> int:
     finally:
         render_env.close()
 
-    renders_dir = Path.home() / ".rlip" / "renders"
+    renders_dir = Path.home() / ".rlbridge" / "renders"
     renders_dir.mkdir(parents=True, exist_ok=True)
     safe_env = env_id.replace("/", "_").replace(" ", "_")
     gif_path = renders_dir / f"{safe_env}_{agent_type}_policy.gif"

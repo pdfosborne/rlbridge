@@ -1,5 +1,5 @@
 {
-  "_comment": "RLIP Public Environment Catalog - add entries here to make environments installable via 'rlip install <env_id>'. Sailing-v0 and Sailing-Hard-v0 are built-in (no install needed). Flesh and Blood environments install the flesh-and-blood-rlip plugin package from GitHub.",
+  "_comment": "rlbridge Public Environment Catalog - add entries here to make environments installable via 'rlbridge install <env_id>'. Sailing-v0 and Sailing-Hard-v0 are built-in (no install needed). Flesh and Blood environments install the flesh-and-blood-rlbridge plugin package from GitHub.",
   "catalog_version": "0.2",
   "environments": [
     {
@@ -73,12 +73,12 @@
       },
       "source": {
         "type": "plugin",
-        "package": "flesh-and-blood-rlip",
-        "install_url": "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git",
+        "package": "flesh-and-blood-rlbridge",
+        "install_url": "git+https://github.com/pdfosborne/flesh-and-blood-rlbridge.git",
         "adapter": "flesh_and_blood"
       },
       "extra_dependencies": [
-        "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git"
+        "git+https://github.com/pdfosborne/flesh-and-blood-rlbridge.git"
       ],
       "author": "pdfosborne",
       "year": "2026"
@@ -96,12 +96,12 @@
       },
       "source": {
         "type": "plugin",
-        "package": "flesh-and-blood-rlip",
-        "install_url": "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git",
+        "package": "flesh-and-blood-rlbridge",
+        "install_url": "git+https://github.com/pdfosborne/flesh-and-blood-rlbridge.git",
         "adapter": "flesh_and_blood"
       },
       "extra_dependencies": [
-        "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git"
+        "git+https://github.com/pdfosborne/flesh-and-blood-rlbridge.git"
       ],
       "author": "pdfosborne",
       "year": "2026"
@@ -119,12 +119,12 @@
       },
       "source": {
         "type": "plugin",
-        "package": "flesh-and-blood-rlip",
-        "install_url": "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git",
+        "package": "flesh-and-blood-rlbridge",
+        "install_url": "git+https://github.com/pdfosborne/flesh-and-blood-rlbridge.git",
         "adapter": "flesh_and_blood"
       },
       "extra_dependencies": [
-        "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git"
+        "git+https://github.com/pdfosborne/flesh-and-blood-rlbridge.git"
       ],
       "author": "pdfosborne",
       "year": "2026"

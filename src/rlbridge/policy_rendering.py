@@ -1,5 +1,5 @@
 """
-Policy Rendering for RLIP Interaction Protocols
+Policy Rendering for rlbridge Interaction Protocols
 ================================================
 Given a completed :class:`~rlbridge.interaction_protocols.InteractionResult`,
 this module:
@@ -247,7 +247,7 @@ class PolicyRenderer:
     Parameters
     ----------
     env:
-        An RLIP environment that supports ``render()`` (may be the same
+        An rlbridge environment that supports ``render()`` (may be the same
         instance used for training - it will be ``reset()`` first).
     policy:
         Observation-to-action lookup table, typically from

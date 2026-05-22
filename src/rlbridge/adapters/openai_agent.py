@@ -1,13 +1,13 @@
 """
-OpenAI Function-Calling Agent for RLIP
+OpenAI Function-Calling Agent for rlbridge
 ========================================
 Works with any OpenAI-compatible endpoint - Ollama, OpenAI, LM Studio, etc.
 
 The agent loop:
   1. User sends a natural-language task.
-  2. RLIP tools are registered as OpenAI "tools" (JSON schema function defs).
+  2. rlbridge tools are registered as OpenAI "tools" (JSON schema function defs).
   3. The model responds with tool_calls.
-  4. Each call is dispatched to the in-process RLIP dispatcher (or HTTP server).
+  4. Each call is dispatched to the in-process rlbridge dispatcher (or HTTP server).
   5. Results are fed back as tool messages.
   6. Loop until the model returns a plain text response.
 
@@ -39,7 +39,7 @@ from ..server.session import SessionManager
 
 log = logging.getLogger(__name__)
 
-# ── RLIP tool definitions in OpenAI function-calling schema ──────────────────
+# ── rlbridge tool definitions in OpenAI function-calling schema ──────────────────
 
 RLIP_TOOLS: list[dict[str, Any]] = [
     {
@@ -47,7 +47,7 @@ RLIP_TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "rl_list_environments",
             "description": (
-                "List all available RL environments registered with RLIP. "
+                "List all available RL environments registered with rlbridge. "
                 "Use to discover what environments are available before creating one."
             ),
             "parameters": {
@@ -261,7 +261,7 @@ RLIP_TOOLS: list[dict[str, Any]] = [
 
 def _call_rlip_tool(name: str, arguments: dict[str, Any], dispatcher: RLIPDispatcher) -> str:
     """
-    Execute one RLIP tool call by delegating to the same plugin functions
+    Execute one rlbridge tool call by delegating to the same plugin functions
     used by the MCP adapter - no code duplication.
     """
     # Import the actual tool implementations from the MCP plugin
@@ -290,7 +290,7 @@ def _call_rlip_tool(name: str, arguments: dict[str, Any], dispatcher: RLIPDispat
 class RLIPAgent:
     """
     OpenAI function-calling agent that connects an Ollama (or any
-    OpenAI-compatible) model to RLIP environments.
+    OpenAI-compatible) model to rlbridge environments.
 
     Parameters
     ----------
@@ -315,7 +315,7 @@ class RLIPAgent:
 
     DEFAULT_SYSTEM = (
         "You are an AI agent with access to reinforcement learning environments "
-        "via RLIP tools. When asked to interact with an RL environment, use the "
+        "via rlbridge tools. When asked to interact with an RL environment, use the "
         "provided tools in the correct order: rl_create → rl_reset → rl_step (loop) "
         "→ rl_close. Always reset before the first step. Report observations, "
         "rewards, and episode outcomes clearly."

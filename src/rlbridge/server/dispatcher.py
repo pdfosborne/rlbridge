@@ -1,5 +1,5 @@
 """
-RLIP Core Dispatcher
+rlbridge Core Dispatcher
 ======================
 Handles every JSON-RPC method call.  Transport-agnostic: accepts a dict
 (already JSON-decoded) and returns a dict (ready for JSON encoding).
@@ -43,7 +43,7 @@ log = logging.getLogger(__name__)
 
 
 class RLIPDispatcher:
-    """Stateful JSON-RPC dispatcher for the RLIP protocol."""
+    """Stateful JSON-RPC dispatcher for the rlbridge protocol."""
 
     def __init__(
         self,
@@ -82,10 +82,10 @@ class RLIPDispatcher:
             result = self._route(method, params)
             return RpcResponse(id=req_id, result=result).model_dump(exclude_none=False)
         except RLIPError as exc:
-            log.warning("RLIP application error: %s", exc)
+            log.warning("rlbridge application error: %s", exc)
             return self._error_response(req_id, exc.code, exc.message, exc.data)
         except Exception as exc:
-            log.exception("Unhandled error in RLIP dispatcher")
+            log.exception("Unhandled error in rlbridge dispatcher")
             return self._error_response(
                 req_id,
                 ErrorCodes.INTERNAL_ERROR,

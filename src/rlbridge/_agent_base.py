@@ -1,5 +1,5 @@
 """
-Shared base classes and helpers for RLIP agents.
+Shared base classes and helpers for rlbridge agents.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ def _get(obj: Any, key: str, default: Any = None) -> Any:
 
 
 def _n_actions_of(env: Any) -> int:
-    """Infer the number of discrete actions from an RLIP environment."""
+    """Infer the number of discrete actions from an rlbridge environment."""
     space = getattr(env, "action_space", None)
     if space is None:
         return 2  # safe fallback
@@ -82,7 +82,7 @@ def _flat_obs(obs: Any) -> list[float]:
 
 @dataclass
 class TrainResult:
-    """Base training result shared by all RLIP agents."""
+    """Base training result shared by all rlbridge agents."""
 
     agent_name: str
     n_episodes: int
@@ -114,7 +114,7 @@ class TrainResult:
 # ── Abstract base ─────────────────────────────────────────────────────────────
 
 class AgentBase(abc.ABC):
-    """Minimal interface every RLIP agent must satisfy."""
+    """Minimal interface every rlbridge agent must satisfy."""
 
     name: str = "base"
 

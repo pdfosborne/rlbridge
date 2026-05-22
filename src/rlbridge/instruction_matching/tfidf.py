@@ -1,7 +1,7 @@
 """
 TFIDFEncoder - bag-of-words TF-IDF instruction matcher.
 
-This is the original encoder used in RLIP, now exposed as a first-class
+This is the original encoder used in rlbridge, now exposed as a first-class
 encoder type.  ``TextEncoder`` is kept as a backward-compatible alias.
 """
 

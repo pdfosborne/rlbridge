@@ -1,5 +1,5 @@
 """
-Environment cache MCP tools for the RLIP plugin.
+Environment cache MCP tools for the rlbridge plugin.
 
 Tools: rl_load_cached_environments, rl_list_cached_environments,
        rl_clear_obs_cache.
@@ -20,7 +20,7 @@ from ._state import (
 def rl_load_cached_environments() -> str:
     """
     Load all custom environments previously built with rl_build_environment()
-    from ``~/.rlip/environments/`` and register them into this session.
+    from ``~/.rlbridge/environments/`` and register them into this session.
 
     Call this once at the start of a session to restore environments that were
     created in a previous session.  Already-registered environments are
@@ -61,7 +61,7 @@ def rl_load_cached_environments() -> str:
 @mcp.tool()
 def rl_list_cached_environments() -> str:
     """
-    List all custom environments stored in the RLIP cache (``~/.rlip/environments/``).
+    List all custom environments stored in the rlbridge cache (``~/.rlbridge/environments/``).
 
     Does not register them - call rl_load_cached_environments() to register.
 

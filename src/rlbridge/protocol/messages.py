@@ -1,8 +1,8 @@
 """
-RLIP Protocol Message Models
+rlbridge Protocol Message Models
 ==============================
 All request/response envelopes are JSON-RPC 2.0.
-RLIP-specific payload models are defined as Pydantic v2 models.
+rlbridge-specific payload models are defined as Pydantic v2 models.
 """
 
 from __future__ import annotations
@@ -137,7 +137,7 @@ class EnvironmentInfo(BaseModel):
     suggested_hyperparameters: Optional[SuggestedHyperparameters] = None
 
 
-# ── rlip/initialize ───────────────────────────────────────────────────────────
+# ── rlbridge/initialize ───────────────────────────────────────────────────────────
 
 class InitializeParams(BaseModel):
     client_name: str
@@ -152,7 +152,7 @@ class InitializeResult(BaseModel):
     capabilities: dict[str, Any] = Field(default_factory=dict)
 
 
-# ── rlip/environments/list ────────────────────────────────────────────────────
+# ── rlbridge/environments/list ────────────────────────────────────────────────────
 
 class ListEnvironmentsParams(BaseModel):
     tags: list[str] = Field(default_factory=list)
@@ -164,7 +164,7 @@ class ListEnvironmentsResult(BaseModel):
     total: int
 
 
-# ── rlip/environment/create ───────────────────────────────────────────────────
+# ── rlbridge/environment/create ───────────────────────────────────────────────────
 
 class CreateEnvironmentParams(BaseModel):
     env_id: str
@@ -179,7 +179,7 @@ class CreateEnvironmentResult(BaseModel):
     action_space: SpaceDescription
 
 
-# ── rlip/environment/reset ────────────────────────────────────────────────────
+# ── rlbridge/environment/reset ────────────────────────────────────────────────────
 
 class ResetParams(BaseModel):
     instance_id: str
@@ -192,7 +192,7 @@ class ResetResult(BaseModel):
     info: dict[str, Any] = Field(default_factory=dict)
 
 
-# ── rlip/environment/step ─────────────────────────────────────────────────────
+# ── rlbridge/environment/step ─────────────────────────────────────────────────────
 
 class StepParams(BaseModel):
     instance_id: str
@@ -207,7 +207,7 @@ class StepResult(BaseModel):
     info: dict[str, Any] = Field(default_factory=dict)
 
 
-# ── rlip/environment/spaces ───────────────────────────────────────────────────
+# ── rlbridge/environment/spaces ───────────────────────────────────────────────────
 
 class SpacesParams(BaseModel):
     instance_id: str
@@ -218,7 +218,7 @@ class SpacesResult(BaseModel):
     action_space: SpaceDescription
 
 
-# ── rlip/environment/render ───────────────────────────────────────────────────
+# ── rlbridge/environment/render ───────────────────────────────────────────────────
 
 class RenderParams(BaseModel):
     instance_id: str
@@ -232,7 +232,7 @@ class RenderResult(BaseModel):
     height: Optional[int] = None
 
 
-# ── rlip/environment/close ────────────────────────────────────────────────────
+# ── rlbridge/environment/close ────────────────────────────────────────────────────
 
 class CloseParams(BaseModel):
     instance_id: str
@@ -243,7 +243,7 @@ class CloseResult(BaseModel):
     instance_id: str
 
 
-# ── rlip/instances/list ───────────────────────────────────────────────────────
+# ── rlbridge/instances/list ───────────────────────────────────────────────────────
 
 class ListInstancesResult(BaseModel):
     instances: list[dict[str, Any]]

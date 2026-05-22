@@ -1,5 +1,5 @@
 """
-Instruction Following for RLIP
+Instruction Following for rlbridge
 ================================
 Connects a natural-language instruction to RL environment training via three
 stages:
@@ -106,13 +106,13 @@ def infer_max_reward(env: Any) -> float:
     attribute - the Gymnasium convention is a ``(min, max)`` tuple.  Returns
     the upper bound when it is finite and positive.
 
-    Falls back to ``1.0`` for native RLIP environments (e.g. Sailing-v0,
+    Falls back to ``1.0`` for native rlbridge environments (e.g. Sailing-v0,
     GridWorld) where the goal reward is +1 by convention.
 
     Parameters
     ----------
     env:
-        Any RLIP or Gymnasium environment (possibly wrapped).
+        Any rlbridge or Gymnasium environment (possibly wrapped).
 
     Returns
     -------
@@ -133,7 +133,7 @@ def infer_max_reward(env: Any) -> float:
         if next_env is None or next_env is candidate:
             break
         candidate = next_env
-    return 1.0  # safe default for RLIP native envs (+1 goal reward)
+    return 1.0  # safe default for rlbridge native envs (+1 goal reward)
 
 
 def scale_sub_goal_bonus(env: Any, n_instructions: int = 1) -> float:
@@ -152,7 +152,7 @@ def scale_sub_goal_bonus(env: Any, n_instructions: int = 1) -> float:
     Parameters
     ----------
     env:
-        The RLIP environment being used (or any wrapper around one).
+        The rlbridge environment being used (or any wrapper around one).
         Its reward range is probed via :func:`infer_max_reward`.
     n_instructions:
         Total number of active sub-goal language descriptions.
@@ -404,7 +404,7 @@ def match_instruction(
     instruction:
         Natural-language goal, e.g. ``"sail towards the beach side"``.
     env:
-        An RLIP environment instance.  The exploration protocol resets it
+        An rlbridge environment instance.  The exploration protocol resets it
         internally.
     encoder:
         Stage-2 refine encoder.  Must satisfy the
@@ -644,7 +644,7 @@ def build_sequential_instruction_following_protocol(
         List of natural-language instructions in order of completion.
         Example: ``["sail to the beach", "drop anchor", "return to harbor"]``
     env:
-        RLIP environment to explore and train on.
+        rlbridge environment to explore and train on.
     encoder:
         Text encoder for matching. Defaults to TFIDFEncoder when *None*.
     translator:
@@ -962,7 +962,7 @@ class SequentialInstructionFollowingProtocol(_BaseProtocol):
 
 class LanguageTrackingWrapper:
     """
-    Transparent wrapper around any RLIP environment that records
+    Transparent wrapper around any rlbridge environment that records
     language-described state visits during RL agent training.
 
     Pass this wrapper in place of the raw environment to any agent's
@@ -974,7 +974,7 @@ class LanguageTrackingWrapper:
     Parameters
     ----------
     env:
-        The underlying RLIP environment.
+        The underlying rlbridge environment.
     translator:
         :class:`~rlbridge.language_translation.LanguageTranslator` used to
         convert each raw observation to a language description.
@@ -986,7 +986,7 @@ class LanguageTrackingWrapper:
         ``Callable[[obs, reward, terminated, truncated, info], bool]`` that
         decides whether the current step concludes a *successful* episode.
         Defaults to ``terminated is True``, which is the standard convention
-        for goal-reaching environments in RLIP (e.g. Sailing-v0, GridWorld).
+        for goal-reaching environments in rlbridge (e.g. Sailing-v0, GridWorld).
         Override this for environments where success is reward-based or where
         ``terminated`` fires on failure instead of success.
     """
@@ -1301,10 +1301,10 @@ def train_and_derive_instructions(
     Parameters
     ----------
     agent:
-        Any RLIP agent with a ``.train(env, n_episodes, **kwargs)`` method,
+        Any rlbridge agent with a ``.train(env, n_episodes, **kwargs)`` method,
         e.g. :class:`~rlbridge.rl_agents.TabularQAgent`.
     env:
-        The RLIP environment to train on.
+        The rlbridge environment to train on.
     n_episodes:
         Number of training episodes to run.
     translator:

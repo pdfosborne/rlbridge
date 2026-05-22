@@ -1,5 +1,5 @@
 """
-Default RL experiment pipeline for the RLIP MCP plugin.
+Default RL experiment pipeline for the rlbridge MCP plugin.
 
 Tool: rl_experiment_process
 

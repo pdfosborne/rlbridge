@@ -352,7 +352,7 @@ class PPOAgent(AgentBase):
         Parameters
         ----------
         env:
-            Any RLIP environment with a discrete action space.
+            Any rlbridge environment with a discrete action space.
         n_episodes:
             Approximate total number of episodes (used to set total steps
             as ``n_episodes × max_steps``; actual count may differ slightly

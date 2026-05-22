@@ -1,4 +1,4 @@
-"""RLIP application-level exception."""
+"""rlbridge application-level exception."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 
 class RLIPError(Exception):
-    """Raised by RLIP server components; maps directly to a JSON-RPC error object."""
+    """Raised by rlbridge server components; maps directly to a JSON-RPC error object."""
 
     def __init__(self, code: int, message: str, data: Optional[Any] = None) -> None:
         super().__init__(message)

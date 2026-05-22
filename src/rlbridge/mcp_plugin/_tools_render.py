@@ -1,5 +1,5 @@
 """
-Rendering MCP tools and resources for the RLIP plugin.
+Rendering MCP tools and resources for the rlbridge plugin.
 
 Resources: environments_resource, instances_resource.
 Tools:     rl_render_policy.
@@ -27,17 +27,17 @@ from ._state import (
 
 # ── MCP Resources ─────────────────────────────────────────────────────────────
 
-@mcp.resource("rlip://environments")
+@mcp.resource("rlbridge://environments")
 def environments_resource() -> str:
-    """All registered RLIP environments as JSON."""
+    """All registered rlbridge environments as JSON."""
     from ..protocol.constants import Methods
     result = _dispatch(Methods.LIST_ENVIRONMENTS, tags=[], namespace=None)
     return json.dumps(result, indent=2)
 
 
-@mcp.resource("rlip://instances")
+@mcp.resource("rlbridge://instances")
 def instances_resource() -> str:
-    """All active RLIP environment instances as JSON."""
+    """All active rlbridge environment instances as JSON."""
     from ..protocol.constants import Methods
     result = _dispatch(Methods.LIST_INSTANCES)
     return json.dumps(result, indent=2)

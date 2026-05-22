@@ -1,4 +1,4 @@
-# RLIP Protocol Specification v0.1
+# rlbridge Protocol Specification v0.1
 
 **Reinforcement Learning Interaction Protocol** - a JSON-RPC 2.0-based protocol
 for connecting AI agents to reinforcement learning environments.
@@ -7,7 +7,7 @@ for connecting AI agents to reinforcement learning environments.
 
 ## Overview
 
-RLIP is a stateful session protocol where a **client** (e.g. Claude Code) opens
+rlbridge is a stateful session protocol where a **client** (e.g. Claude Code) opens
 one or more *environment instances* on a **server**, orchestrates episodes by
 calling `reset` / `step`, and closes instances when done.
 
@@ -43,7 +43,7 @@ All messages conform to **JSON-RPC 2.0**.
 {
   "jsonrpc": "2.0",
   "id": "<uuid-string>",
-  "method": "rlip/environment/step",
+  "method": "rlbridge/environment/step",
   "params": { ... }
 }
 ```
@@ -95,7 +95,7 @@ All messages conform to **JSON-RPC 2.0**.
 
 ## Methods
 
-### `rlip/initialize`
+### `rlbridge/initialize`
 
 Exchange capabilities and verify the protocol version.
 
@@ -105,20 +105,20 @@ Exchange capabilities and verify the protocol version.
 |-------------------|--------|----------|---------------------------------|
 | `client_name`     | string | ✓        | Human-readable client name      |
 | `client_version`  | string |          | Client version string           |
-| `protocol_version`| string |          | RLIP version (default `"0.1"`)  |
+| `protocol_version`| string |          | rlbridge version (default `"0.1"`)  |
 
 **Result**
 
 | Field              | Type   | Description                   |
 |--------------------|--------|-------------------------------|
-| `server_name`      | string | e.g. `"RLIP Server"`          |
+| `server_name`      | string | e.g. `"rlbridge Server"`          |
 | `server_version`   | string | Server package version        |
 | `protocol_version` | string | Negotiated protocol version   |
 | `capabilities`     | object | Feature flags                 |
 
 ---
 
-### `rlip/environments/list`
+### `rlbridge/environments/list`
 
 List environments registered with the server.
 
@@ -153,7 +153,7 @@ List environments registered with the server.
 
 ---
 
-### `rlip/environment/create`
+### `rlbridge/environment/create`
 
 Instantiate an environment.  Returns an `instance_id` for subsequent calls.
 
@@ -176,7 +176,7 @@ Instantiate an environment.  Returns an `instance_id` for subsequent calls.
 
 ---
 
-### `rlip/environment/reset`
+### `rlbridge/environment/reset`
 
 Reset an instance to its initial state.  **Must be called before the first step.**
 
@@ -197,7 +197,7 @@ Reset an instance to its initial state.  **Must be called before the first step.
 
 ---
 
-### `rlip/environment/step`
+### `rlbridge/environment/step`
 
 Execute one action and advance the environment by one timestep.
 
@@ -230,7 +230,7 @@ Action encoding per space type:
 
 ---
 
-### `rlip/environment/spaces`
+### `rlbridge/environment/spaces`
 
 Retrieve the space descriptions for an existing instance.
 
@@ -240,7 +240,7 @@ Retrieve the space descriptions for an existing instance.
 
 ---
 
-### `rlip/environment/render`
+### `rlbridge/environment/render`
 
 Render the current state of an environment.
 
@@ -258,7 +258,7 @@ Render the current state of an environment.
 
 ---
 
-### `rlip/environment/close`
+### `rlbridge/environment/close`
 
 Destroy an environment instance and free its resources.
 
@@ -268,7 +268,7 @@ Destroy an environment instance and free its resources.
 
 ---
 
-### `rlip/instances/list`
+### `rlbridge/instances/list`
 
 List all currently active environment instances on the server.
 
@@ -330,30 +330,30 @@ All space objects carry a discriminating `"type"` field.
 
 ```
 client                          server
-  │── rlip/initialize ─────────────►│
+  │── rlbridge/initialize ─────────────►│
   │◄─ {server_name, capabilities} ──│
   │                                 │
-  │── rlip/environments/list ───────►│
+  │── rlbridge/environments/list ───────►│
   │◄─ {environments: [...]} ────────│
   │                                 │
-  │── rlip/environment/create ──────►│  (returns instance_id)
+  │── rlbridge/environment/create ──────►│  (returns instance_id)
   │◄─ {instance_id, spaces} ────────│
   │                                 │
-  │── rlip/environment/reset ───────►│
+  │── rlbridge/environment/reset ───────►│
   │◄─ {observation, info} ──────────│
   │                                 │
   │   ┌─ episode loop ─────────┐    │
-  │   │ rlip/environment/step ─►│   │
+  │   │ rlbridge/environment/step ─►│   │
   │   │◄─ {obs, reward, done}  │   │
   │   └────────────────────────┘    │
   │                                 │
-  │── rlip/environment/close ───────►│
+  │── rlbridge/environment/close ───────►│
   │◄─ {closed: true} ───────────────│
 ```
 
 ---
 
-## Extending RLIP
+## Extending rlbridge
 
 To add a custom environment:
 

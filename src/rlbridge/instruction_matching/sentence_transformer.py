@@ -55,7 +55,7 @@ class SentenceEncoder(BaseEncoder):
     additional normalisation step.
 
     :meth:`fit` is a no-op - the model is pre-trained and does not need to
-    learn from the RLIP corpus.  It is provided to satisfy the
+    learn from the rlbridge corpus.  It is provided to satisfy the
     :class:`~base.BaseEncoder` interface.
 
     Parameters

@@ -1,5 +1,5 @@
 """
-Basic environment interaction MCP tools for the RLIP plugin.
+Basic environment interaction MCP tools for the rlbridge plugin.
 
 Tools: rl_list_environments, rl_create, rl_reset, rl_step, rl_sample_action,
        rl_spaces, rl_render, rl_close, rl_list_instances, rl_run_episode,
@@ -21,7 +21,7 @@ def rl_list_environments(
     namespace: str = "",
 ) -> str:
     """
-    List all available RL environments registered with RLIP.
+    List all available RL environments registered with rlbridge.
 
     Parameters
     ----------
@@ -301,7 +301,7 @@ def rl_close(instance_id: str) -> str:
 @mcp.tool()
 def rl_list_instances() -> str:
     """
-    List all currently active RL environment instances managed by RLIP.
+    List all currently active RL environment instances managed by rlbridge.
 
     Returns instance IDs, environment IDs, and initialization status.
     """
@@ -421,7 +421,7 @@ def rl_get_suggested_hyperparameters(env_id: str) -> str:
     """
     Return the recommended training hyperparameters for a registered environment.
 
-    Predefined RLIP environments ship with environment-specific suggestions for
+    Predefined rlbridge environments ship with environment-specific suggestions for
     agent type, episode counts, step limits, and RL hyperparameters.  Use these
     as a starting point before calling ``rl_train_agent()`` or
     ``rl_experiment_process()``.
@@ -436,7 +436,7 @@ def rl_get_suggested_hyperparameters(env_id: str) -> str:
     Parameters
     ----------
     env_id:
-        A registered RLIP environment ID, e.g. ``"Sailing-v0"``.
+        A registered rlbridge environment ID, e.g. ``"Sailing-v0"``.
 
     Returns
     -------
@@ -517,7 +517,7 @@ def rl_update_suggested_hyperparameters(
     suggested values.
 
     The updated values are saved to
-    ``~/.rlip/environments/<env_id>/suggested_hyperparameters.json`` and will
+    ``~/.rlbridge/environments/<env_id>/suggested_hyperparameters.json`` and will
     be loaded automatically in future sessions.  ``rl_experiment_process()``
     picks them up immediately.
 
@@ -529,7 +529,7 @@ def rl_update_suggested_hyperparameters(
     Parameters
     ----------
     env_id:
-        A registered RLIP environment ID, e.g. ``"Sailing-v0"``.
+        A registered rlbridge environment ID, e.g. ``"Sailing-v0"``.
     agent_type:
         Best agent type found (``"tabular_q"``, ``"dqn"``, or ``"ppo"``).
     n_episodes:

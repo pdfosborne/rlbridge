@@ -1,7 +1,7 @@
 """
 In-Process Usage Example
 =========================
-Use RLIP entirely in-process (no server, no subprocess) - useful for testing
+Use rlbridge entirely in-process (no server, no subprocess) - useful for testing
 and for building your own agent loop in Python.
 """
 

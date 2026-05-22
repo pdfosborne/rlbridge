@@ -2,7 +2,7 @@
 Custom Environment Example
 ===========================
 Shows how to wrap a fully custom environment (no Gymnasium dependency needed)
-and register it with the RLIP registry so it appears in Claude Code.
+and register it with the rlbridge registry so it appears in Claude Code.
 
 The GridWorld-1D-v0 environment used here is a simple 1D Grid World:
   - State:  integer position on a line [0..9]
@@ -11,7 +11,7 @@ The GridWorld-1D-v0 environment used here is a simple 1D Grid World:
   - Done:   reaching position 9
 
 GridWorld-1D-v0 is bundled as a predefined environment, so it is already
-registered automatically when RLIP starts.  This script demonstrates how
+registered automatically when rlbridge starts.  This script demonstrates how
 custom environments work and shows a live episode.
 
 Run this script:
@@ -27,8 +27,8 @@ from rlbridge.environments.predefined.gridworld import GridWorldEnv, GridWorldFa
 from rlbridge.environments.registry import registry
 
 
-# GridWorld-1D-v0 is registered automatically by the RLIP registry at import
-# time (via rlip.environments.predefined.gridworld).  The factory and env
+# GridWorld-1D-v0 is registered automatically by the rlbridge registry at import
+# time (via rlbridge.environments.predefined.gridworld).  The factory and env
 # classes live in that module; we import them here for direct use below.
 
 # ── Run a quick demo episode ──────────────────────────────────────────────────
@@ -51,4 +51,4 @@ for i in range(20):
 
 env.close()
 print("\nGridWorld-1D-v0 is available automatically in the MCP plugin.")
-print("See rlip/environments/predefined/gridworld.py to inspect the implementation.")
+print("See rlbridge/environments/predefined/gridworld.py to inspect the implementation.")

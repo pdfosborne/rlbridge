@@ -27,7 +27,7 @@ from .utils import (
 
 
 class GymnasiumEnvironment(RLIPEnvironment):
-    """Thread-safe RLIP wrapper around a gymnasium.Env instance."""
+    """Thread-safe rlbridge wrapper around a gymnasium.Env instance."""
 
     def __init__(self, env: gym.Env, env_id: Optional[str] = None) -> None:
         self._env = env

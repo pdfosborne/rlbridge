@@ -1,5 +1,5 @@
 """
-RL agent training MCP tools for the RLIP plugin.
+RL agent training MCP tools for the rlbridge plugin.
 
 Tools: rl_train_agent, rl_get_training_result
 """
@@ -217,7 +217,7 @@ def rl_train_agent(
     agent_type:
         One of "tabular_q", "dqn", or "ppo".
     env_id:
-        A registered RLIP environment ID, e.g. "Sailing-v0".
+        A registered rlbridge environment ID, e.g. "Sailing-v0".
     n_episodes:
         Number of training episodes.
     max_steps:

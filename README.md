@@ -31,12 +31,19 @@ LLMs interact with rlbridge through an **MCP plugin** compatible with Claude Cod
 │                 rl_render · rl_close · rl_run_episode│
 │         │                                            │
 │   In-process dispatcher                              │
-└──────────┼───────────────────────────────────────────┘
-           │           ╌╌ OR ╌╌ (RLIP_SERVER_URL)
-┌──────────▼───────────────────────────────────────────┐
-│  RL Bridge Server (HTTP/JSON-RPC 2.0)                │
-│  POST /rpc  ·  GET /environments  ·  GET /health     │
-└──────────┬───────────────────────────────────────────┘
+└──────────┼────────────────────────────┬──────────────┘
+           │                            │
+           │     ╌╌ OR ╌╌ (RLIP_SERVER_URL)
+           │                            │
+┌──────────▼─────────────────┐  ┌──────▼────────────────┐
+│  RL Bridge Server           │  │  Live Training        │
+│  (HTTP/JSON-RPC 2.0)        │  │  Dashboard            │
+│  POST /rpc  ·  GET /docs    │  │  (http://localhost:7860)
+└──────────┬─────────────────┘  │  WebSocket/HTTP       │
+           │                    │  Real-time reward     │
+           │                    │  tracking & policy    │
+           │                    │  visualization        │
+           │                    └──────────────────────┘
            │
 ┌──────────▼───────────────────────────────────────────┐
 │  Environment Registry + Session Manager              │
@@ -119,13 +126,17 @@ of `python -m`) and `--config-path` to override the default config location.
 
 Open Claude Code and ask:
 
-> *"Run a CartPole episode with a random policy and show me the total reward."*
+> *"Run a CartPole episode with a tabular agent and render the optimal policy."*
 
 Claude will call `rl_create`, `rl_reset`, `rl_step` (in a loop), and `rl_close` automatically.
 
+You can try using Claude directly to make actions in the environment:
+
+> *"Run a blackjack episode with an llm agent with language translation and show me the token cost."*
+
 For the default end-to-end training pipeline, ask:
 
-> *"Run the default experiment process on CartPole-v1 with 300 episodes and show me the best agent when it finishes."*
+> *"Run the default experiment process on the easy Sailing environment and show me the best agent when it finishes."*
 
 Claude will call `rl_experiment_process` once, then poll `rl_get_training_result(job_id)` until completion.
 
@@ -164,7 +175,7 @@ metadata, local caching, and language translation.
 
 | Tool | Description |
 |------|-------------|
-| `rl_build_environment` | Wrap a Gymnasium env with custom ID, description, and tags; cache to `~/.rlip/envs/` and write to user catalog |
+| `rl_build_environment` | Wrap a Gymnasium env with custom ID, description, and tags; cache to `~/.rlbridge/envs/` and write to user catalog |
 | `rl_list_cached_environments` | Browse previously built environments stored in the local cache |
 | `rl_load_cached_environments` | Re-register all cached environments at session start |
 
@@ -185,7 +196,7 @@ for instruction-following and sub-goal reward shaping.
 | Tool | Description |
 |------|-------------|
 | `rl_sample_states_for_translation` | Randomly explore an environment and display raw observed states so a `translate()` function can be written |
-| `rl_set_translator_code` | Compile, validate, and install a Python `translate()` function; saves it to `~/.rlip/envs/<env_id>/translator.py` so it reloads automatically |
+| `rl_set_translator_code` | Compile, validate, and install a Python `translate()` function; saves it to `~/.rlbridge/envs/<env_id>/translator.py` so it reloads automatically |
 | `rl_translate_state` | Test a single state → natural-language description round-trip |
 
 **Example workflow in Claude Code:**
@@ -332,7 +343,7 @@ curl -X POST http://localhost:8765/rpc \
   -d '{
     "jsonrpc": "2.0",
     "id": "1",
-    "method": "rlip/environment/create",
+    "method": "rlbridge/environment/create",
     "params": {"env_id": "CartPole-v1"}
   }'
 ```
@@ -409,14 +420,14 @@ Packages register factories via the ``rlbridge.environments`` entry-point group 
 optional MCP tools via ``rlbridge.environment_mcp_tools``.
 
 Example: [Flesh and Blood](https://fabtcg.com/) TCG environments live in the
-[`flesh-and-blood-rlip`](https://github.com/pdfosborne/flesh-and-blood-rlip) package (not bundled with RL Bridge):
+[`flesh-and-blood-rlbridge`](https://github.com/pdfosborne/flesh-and-blood-rlbridge) package (not bundled with RL Bridge):
 
 ```bash
 # Install RL Bridge from PyPI
 pip install rlbridge
 
 # Then install the FaB plugin from GitHub
-pip install git+https://github.com/pdfosborne/flesh-and-blood-rlip.git
+pip install git+https://github.com/pdfosborne/flesh-and-blood-rlbridge.git
 ```
 
 After installation, environments appear in the registry automatically:

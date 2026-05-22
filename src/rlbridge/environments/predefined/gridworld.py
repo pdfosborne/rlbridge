@@ -1,5 +1,5 @@
 """
-RLIP 1-D Grid World Environment
+rlbridge 1-D Grid World Environment
 ================================
 Simple discrete grid world used as a bundled example environment.
 

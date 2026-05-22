@@ -1,5 +1,5 @@
 """
-RLIP Training Analysis & Reporting
+rlbridge Training Analysis & Reporting
 ==================================
 Comparison-first report generation for one or many trained agents.
 
@@ -296,7 +296,7 @@ def create_training_report(
     _draw_convergence_panel(ax_conv, runs, window)
     _draw_metrics_summary_panel(ax_eval, runs, window)
     fig_rewards.suptitle(
-        f"RLIP Reward Report ({n_agents} agent(s)){env_label}",
+        f"rlbridge Reward Report ({n_agents} agent(s)){env_label}",
         fontsize=15, fontweight="bold", color="#1b1f24", y=0.99,
     )
     fig_rewards.text(
@@ -577,7 +577,7 @@ def _build_instruction_figure(
     ax.axis("off")
 
     fig.suptitle(
-        f"RLIP Instruction Match Summary ({len(runs)} agent(s)){env_label}",
+        f"rlbridge Instruction Match Summary ({len(runs)} agent(s)){env_label}",
         fontsize=15, fontweight="bold", color="#1b1f24", y=0.995,
     )
 
@@ -768,7 +768,7 @@ def _build_config_figure(
     ax.axis("off")
 
     fig.suptitle(
-        f"RLIP Metadata & Hyper-parameters ({len(runs)} agent(s)){env_label}",
+        f"rlbridge Metadata & Hyper-parameters ({len(runs)} agent(s)){env_label}",
         fontsize=15, fontweight="bold", color="#1b1f24", y=0.995,
     )
 

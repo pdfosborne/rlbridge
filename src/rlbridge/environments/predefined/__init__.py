@@ -1,4 +1,4 @@
-"""Predefined RLIP environments - bundled, ready-to-use without extra installs."""
+"""Predefined rlbridge environments - bundled, ready-to-use without extra installs."""
 
 from .sailing import (
     SailingEnvironment,

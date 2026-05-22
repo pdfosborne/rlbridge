@@ -1,8 +1,8 @@
 """
-RLIP TextWorld Environments
+rlbridge TextWorld Environments
 ============================
 Wraps `TextWorld <https://github.com/microsoft/TextWorld>`_ text-adventure
-games as RLIP environments.
+games as rlbridge environments.
 
 TextWorld generates fully-specified interactive-fiction (IF) games and
 exposes them as text-in/text-out RL environments.  The observation at
@@ -10,7 +10,7 @@ every step is a narrative text string (room description + feedback from
 the last command); the agent selects from a dynamic set of admissible
 natural-language commands.
 
-Game variants shipped with RLIP
+Game variants shipped with rlbridge
 ---------------------------------
 ``TextWorld-Take-v0``
     Single room.  One object on the floor.  Quest: *take <object>*.
@@ -24,7 +24,7 @@ Game variants shipped with RLIP
     Three rooms in a line.  A key in room 2 unlocks a chest in room 3
     that contains the treasure.  Quest: take the treasure.
 
-Game files are compiled once to ``~/.rlip/textworld/<variant>/game.z8``
+Game files are compiled once to ``~/.rlbridge/textworld/<variant>/game.z8``
 and reused on subsequent calls; delete the directory to force recompilation.
 
 Language translation
@@ -68,7 +68,7 @@ from ...protocol.messages import (
 
 # ── Cache directory ───────────────────────────────────────────────────────────
 
-_CACHE_ROOT = Path.home() / ".rlip" / "textworld"
+_CACHE_ROOT = Path.home() / ".rlbridge" / "textworld"
 
 _REQUEST_INFOS_KWARGS: dict[str, bool] = dict(
     description=True,
@@ -268,7 +268,7 @@ def _get_or_compile_game(env_id: str) -> Path:
 
 class TextWorldEnvironment(RLIPEnvironment):
     """
-    RLIP wrapper around a compiled TextWorld game file.
+    rlbridge wrapper around a compiled TextWorld game file.
 
     Observations are the raw text output from the interpreter.
     Actions are natural-language command strings drawn from
@@ -277,7 +277,7 @@ class TextWorldEnvironment(RLIPEnvironment):
     Parameters
     ----------
     env_id:
-        Registered RLIP environment ID, e.g. ``"TextWorld-Take-v0"``.
+        Registered rlbridge environment ID, e.g. ``"TextWorld-Take-v0"``.
     game_file:
         Path to the compiled ``.z8`` (or ``.ulx``) game file.
     max_episode_steps:

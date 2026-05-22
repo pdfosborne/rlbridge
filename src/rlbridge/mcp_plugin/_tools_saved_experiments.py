@@ -1,5 +1,5 @@
 """
-Saved experiment management MCP tools for the RLIP plugin.
+Saved experiment management MCP tools for the rlbridge plugin.
 
 An "experiment" is a confirmed, named configuration that captures:
   - the user's original objective (prompt)
@@ -68,11 +68,11 @@ def rl_save_experiment(
     prompt_log: Optional[list[dict]] = None,
 ) -> str:
     """
-    Save a confirmed experiment configuration to the RLIP cache.
+    Save a confirmed experiment configuration to the rlbridge cache.
 
     Call this once the LLM and user have agreed on the best agent, instruction,
     and training configuration for the user's objective.  The experiment is
-    stored in ``~/.rlip/experiments_registry.json`` and can be recalled with
+    stored in ``~/.rlbridge/experiments_registry.json`` and can be recalled with
     ``rl_load_experiment()`` in any future session.
 
     When to call this tool
@@ -88,7 +88,7 @@ def rl_save_experiment(
         The user's original goal or task description (verbatim or summarised).
         This is the primary search key when recalling experiments later.
     env_id:
-        The registered RLIP environment ID the agent was trained on.
+        The registered rlbridge environment ID the agent was trained on.
     agent_id:
         The agent_id returned by ``rl_train_agent`` / ``rl_experiment_process``
         for the best performing agent in this session.
@@ -191,7 +191,7 @@ def rl_list_experiments(
     limit: int = 20,
 ) -> str:
     """
-    List saved experiments from the RLIP cache, newest first.
+    List saved experiments from the rlbridge cache, newest first.
 
     Call this at the start of a session to check whether a previous experiment
     already solved the user's objective.  If a matching experiment exists with

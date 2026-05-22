@@ -1,5 +1,5 @@
 """
-Dashboard MCP tools for the RLIP plugin.
+Dashboard MCP tools for the rlbridge plugin.
 
 Tools:
   rl_start_dashboard  - start the live training dashboard web server

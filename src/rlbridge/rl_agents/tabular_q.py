@@ -2,7 +2,7 @@
 Tabular Q-Learning Agent
 =========================
 Classic lookup-table Q-learning with ε-greedy exploration and optional
-ε decay.  Works on any RLIP environment whose observations are hashable
+ε decay.  Works on any rlbridge environment whose observations are hashable
 (strings, ints, tuples) - ideal for text-observation envs like
 ``Sailing-v0``.
 
@@ -127,7 +127,7 @@ class TabularQAgent(AgentBase):
         Parameters
         ----------
         env:
-            Any RLIP environment.
+            Any rlbridge environment.
         n_episodes:
             Total number of training episodes.
         max_steps:

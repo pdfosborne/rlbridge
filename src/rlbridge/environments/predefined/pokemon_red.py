@@ -1,5 +1,5 @@
 """
-RLIP Pokemon Red Environment - Gary's First Battle
+rlbridge Pokemon Red Environment - Gary's First Battle
 ====================================================
 
 Wraps *Pokemon Red* (Game Boy, 1996) via the `PyBoy
@@ -9,7 +9,7 @@ Requirements
 ------------
 1. **ROM** - Place your *Pokemon Red (International)* ROM at::
 
-       ~/.rlip/pokemon_red/rom.gb
+       ~/.rlbridge/pokemon_red/rom.gb
 
    or point the ``POKEMON_RED_ROM`` environment variable at the file.
 
@@ -17,7 +17,7 @@ Requirements
    state at the exact frame Gary's first trainer battle begins
    (D057 == 2).  The expected path is::
 
-       ~/.rlip/pokemon_red/gary_battle.state
+       ~/.rlbridge/pokemon_red/gary_battle.state
 
    To create this file interactively, call::
 
@@ -62,7 +62,7 @@ from ...protocol.messages import (
 
 # ── File paths ────────────────────────────────────────────────────────────────
 
-_STATE_ROOT = Path.home() / ".rlip" / "pokemon_red"
+_STATE_ROOT = Path.home() / ".rlbridge" / "pokemon_red"
 
 _DEFAULT_ROM_PATH   = _STATE_ROOT / "rom.gb"
 _DEFAULT_STATE_PATH = _STATE_ROOT / "gary_battle.state"
@@ -266,7 +266,7 @@ def _normalize_button(text: str) -> Optional[str]:
 
 class PokemonRedEnvironment(RLIPEnvironment):
     """
-    RLIP wrapper for a single Pokemon Red battle episode via PyBoy.
+    rlbridge wrapper for a single Pokemon Red battle episode via PyBoy.
 
     Each episode loads a PyBoy save state and runs until the battle
     finishes (player or enemy faints).  The observation is a rich text
@@ -276,7 +276,7 @@ class PokemonRedEnvironment(RLIPEnvironment):
     ----------
     variant:
         Short name used to locate the save state file under
-        ``~/.rlip/pokemon_red/<variant>.state``.
+        ``~/.rlbridge/pokemon_red/<variant>.state``.
     max_episode_steps:
         Maximum number of button presses before the episode is
         truncated.
@@ -801,11 +801,11 @@ def setup_save_state(
     ----------
     rom_path:
         Path to the Pokemon Red ROM.  Defaults to
-        ``~/.rlip/pokemon_red/rom.gb`` or the ``POKEMON_RED_ROM``
+        ``~/.rlbridge/pokemon_red/rom.gb`` or the ``POKEMON_RED_ROM``
         environment variable.
     output_path:
         Where to write the ``.state`` file.  Defaults to
-        ``~/.rlip/pokemon_red/gary_battle.state``.
+        ``~/.rlbridge/pokemon_red/gary_battle.state``.
 
     Returns
     -------

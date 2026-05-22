@@ -1,5 +1,5 @@
 """
-RLIP Language Translation
+rlbridge Language Translation
 ==========================
 Maps raw RL environment observations (states) to natural-language descriptions.
 

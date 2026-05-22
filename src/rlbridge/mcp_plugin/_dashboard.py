@@ -769,7 +769,7 @@ def start_dashboard(port: int = _PREFERRED_PORT) -> str:
         def _serve() -> None:
             server.serve_forever()
 
-        _server_thread = threading.Thread(target=_serve, daemon=True, name="rlip-dashboard")
+        _server_thread = threading.Thread(target=_serve, daemon=True, name="rlbridge-dashboard")
         _server_thread.start()
         return f"http://localhost:{actual_port}"
 

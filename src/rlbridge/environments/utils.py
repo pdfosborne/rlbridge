@@ -52,7 +52,7 @@ def numpy_to_python(obj: Any) -> Any:
 # ── Space serialisation ──────────────────────────────────────────────────────
 
 def space_to_description(space: "spaces.Space") -> SpaceDescription:  # type: ignore[name-defined]
-    """Convert a Gymnasium space to an RLIP SpaceDescription."""
+    """Convert a Gymnasium space to an rlbridge SpaceDescription."""
     if not _GYM_AVAILABLE:
         raise ImportError("gymnasium is required for space_to_description")
 
@@ -91,7 +91,7 @@ def space_to_description(space: "spaces.Space") -> SpaceDescription:  # type: ig
 
 
 def description_to_space(desc: SpaceDescription) -> "spaces.Space":  # type: ignore[name-defined]
-    """Reconstruct a Gymnasium space from an RLIP SpaceDescription."""
+    """Reconstruct a Gymnasium space from an rlbridge SpaceDescription."""
     if not _GYM_AVAILABLE:
         raise ImportError("gymnasium is required for description_to_space")
 

@@ -1,5 +1,5 @@
 """
-RL agent evaluation MCP tools for the RLIP plugin.
+RL agent evaluation MCP tools for the rlbridge plugin.
 
 Tools: rl_run_agent_episode, rl_create_training_report, rl_evaluate_agent
 """
@@ -368,7 +368,7 @@ def rl_create_training_report(
                     "matched_language":  getattr(m, "matched_language", "") or "—",
                     "similarity":        getattr(m, "similarity_score", None),
                     # render_text: the language description IS the text render of
-                    # the matched observation for all RLIP text environments.
+                    # the matched observation for all rlbridge text environments.
                     "render_text":       getattr(m, "matched_language", "") or None,
                     "render_b64":        None,
                 })

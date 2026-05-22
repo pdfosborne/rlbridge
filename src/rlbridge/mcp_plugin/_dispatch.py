@@ -1,5 +1,5 @@
 """
-Dispatch helpers for the RLIP MCP plugin.
+Dispatch helpers for the rlbridge MCP plugin.
 
 Routes method calls to either the in-process RLIPDispatcher or the remote
 proxy (RLIPClient) depending on the mode selected in ``_state``.

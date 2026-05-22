@@ -5,7 +5,7 @@ Reads newline-delimited JSON-RPC requests from stdin and writes responses to
 stdout.  Errors/logging go to stderr.
 
 This transport is intended for use as a subprocess protocol (similar to how
-MCP works with stdio), allowing any process to communicate with RLIP without
+MCP works with stdio), allowing any process to communicate with rlbridge without
 needing an HTTP server.
 
 Usage

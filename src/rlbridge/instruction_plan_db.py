@@ -1,5 +1,5 @@
 """
-Instruction Planning Database for RLIP
+Instruction Planning Database for rlbridge
 =======================================
 Persistent per-environment storage of instruction usage and evaluation
 outcomes.  Accumulates results across sessions in a JSON file so the LLM
@@ -219,7 +219,7 @@ class InstructionPlanDatabase:
 
     Stores every instruction tried in an environment, the sub-steps the LLM
     decomposed it into, and the clean evaluation reward obtained after each
-    training run.  Saved as JSON to the RLIP cache directory so results
+    training run.  Saved as JSON to the rlbridge cache directory so results
     accumulate across sessions.
 
     The LLM can read this via ``rl_get_instruction_plan`` to plan which

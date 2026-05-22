@@ -1,4 +1,4 @@
-"""Adapters sub-package - connects RLIP to non-MCP frontends."""
+"""Adapters sub-package - connects rlbridge to non-MCP frontends."""
 
 from .openai_agent import RLIPAgent, RLIP_TOOLS
 

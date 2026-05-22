@@ -1,5 +1,5 @@
 """
-Custom environment creation MCP tools for the RLIP plugin.
+Custom environment creation MCP tools for the rlbridge plugin.
 
 Tools: rl_create_environment_from_code, rl_get_environment_template,
        rl_validate_environment_code, rl_delete_custom_environment
@@ -28,7 +28,7 @@ from ._state import (
 
 _TEMPLATE = '''\
 """
-{env_id} - Custom RLIP Environment
+{env_id} - Custom rlbridge Environment
 ====================================
 Describe your environment here.
 """
@@ -262,7 +262,7 @@ def rl_get_environment_template(
     max_episode_steps: int = 200,
 ) -> str:
     """
-    Return a Python source template for a new custom RLIP environment.
+    Return a Python source template for a new custom rlbridge environment.
 
     The template is a complete, runnable skeleton that you can fill in.
     Once edited, pass it to ``rl_create_environment_from_code()`` to
@@ -393,7 +393,7 @@ def rl_create_environment_from_code(
     validate: bool = True,
 ) -> str:
     """
-    Create, validate, cache, and register a custom RLIP environment from
+    Create, validate, cache, and register a custom rlbridge environment from
     Python source code.
 
     This is the primary tool for authoring entirely new RL environments.
@@ -404,7 +404,7 @@ def rl_create_environment_from_code(
     3. Optionally call ``rl_validate_environment_code()`` to iterate.
     4. Call this tool to save and register the final version.
 
-    The source is saved to ``~/.rlip/environments/<env_id>/env.py`` and
+    The source is saved to ``~/.rlbridge/environments/<env_id>/env.py`` and
     a ``spec.json`` is written so ``rl_load_cached_environments()`` can
     restore it in future sessions.
 
@@ -607,8 +607,8 @@ def rl_delete_custom_environment(
     Delete a custom environment from the cache and catalog.
 
     This removes the environment's source files from
-    ``~/.rlip/environments/<env_id>/`` and removes its entry from
-    ``~/.rlip/catalog.json``.  The environment is also de-registered from
+    ``~/.rlbridge/environments/<env_id>/`` and removes its entry from
+    ``~/.rlbridge/catalog.json``.  The environment is also de-registered from
     the current session.
 
     Parameters

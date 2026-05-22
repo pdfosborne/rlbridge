@@ -1,7 +1,7 @@
 """
-RLIP HTTP Client
+rlbridge HTTP Client
 =================
-Synchronous and async clients for communicating with a remote RLIP HTTP server.
+Synchronous and async clients for communicating with a remote rlbridge HTTP server.
 
 Synchronous example
 -------------------
@@ -68,7 +68,7 @@ def _check_response(response: dict[str, Any]) -> Any:
 
 
 class RLIPClientError(Exception):
-    """Raised when the RLIP server returns an error response."""
+    """Raised when the rlbridge server returns an error response."""
 
     def __init__(self, code: int, message: str, data: Any = None) -> None:
         super().__init__(f"[{code}] {message}")
@@ -81,7 +81,7 @@ class RLIPClientError(Exception):
 
 class RLIPClient:
     """
-    Blocking RLIP client backed by ``httpx``.
+    Blocking rlbridge client backed by ``httpx``.
     """
 
     def __init__(self, base_url: str = "http://localhost:8765", timeout: float = 30.0) -> None:
@@ -98,7 +98,7 @@ class RLIPClient:
 
     def initialize(
         self,
-        client_name: str = "rlip-python-client",
+        client_name: str = "rlbridge-python-client",
         client_version: str = "0.1.0",
     ) -> InitializeResult:
         result = self._rpc(
@@ -184,7 +184,7 @@ class RLIPClient:
 
 class AsyncRLIPClient:
     """
-    Async RLIP client backed by ``httpx.AsyncClient``.
+    Async rlbridge client backed by ``httpx.AsyncClient``.
     """
 
     def __init__(self, base_url: str = "http://localhost:8765", timeout: float = 30.0) -> None:
@@ -199,7 +199,7 @@ class AsyncRLIPClient:
 
     async def initialize(
         self,
-        client_name: str = "rlip-async-client",
+        client_name: str = "rlbridge-async-client",
         client_version: str = "0.1.0",
     ) -> InitializeResult:
         result = await self._rpc(

@@ -1,5 +1,5 @@
 """
-Instruction-following MCP tools for the RLIP plugin.
+Instruction-following MCP tools for the rlbridge plugin.
 
 Tools:
 - rl_match_instruction
@@ -36,7 +36,7 @@ def _extract_vocab_clauses(observed_langs: list[str]) -> list[str]:
     descriptions using only general clause boundaries.
 
     Splits on commas, semicolons, and sentence terminals - no environment-
-    specific keywords - so this works for any RLIP environment.  Returns only
+    specific keywords - so this works for any rlbridge environment.  Returns only
     clauses that appear in at least two distinct descriptions (i.e. genuine
     vocabulary atoms, not one-off noise), sorted and deduplicated.
     """
@@ -243,7 +243,7 @@ async def rl_match_instruction(
     Parameters
     ----------
     env_id:
-        A registered RLIP environment ID, e.g. "Sailing-v0".
+        A registered rlbridge environment ID, e.g. "Sailing-v0".
     instruction:
         The natural-language goal to match, e.g.
         "sail towards the beach side".
@@ -588,7 +588,7 @@ async def rl_match_sequential_instructions(
     Parameters
     ----------
     env_id:
-        A registered RLIP environment ID, e.g. "Sailing-v0".
+        A registered rlbridge environment ID, e.g. "Sailing-v0".
     instructions:
         List of natural-language instructions in completion order, e.g.
         ["sail towards the beach", "approach the dock", "return to harbor"].

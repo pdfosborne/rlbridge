@@ -1,5 +1,5 @@
 """
-RLIP Sailing Environment
+rlbridge Sailing Environment
 =========================
 Native implementation of the simple sailing simulator originally described in
 https://github.com/pdfosborne/elsciRL-App-Sailing.
@@ -90,7 +90,7 @@ def _vel(theta: float, theta_0: float = 0.0) -> float:
 
 class SailingEnvironment(RLIPEnvironment):
     """
-    RLIP sailing environment.
+    rlbridge sailing environment.
 
     Parameters
     ----------

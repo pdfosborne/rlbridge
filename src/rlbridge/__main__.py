@@ -39,7 +39,7 @@ app = typer.Typer(
 console = Console()
 
 
-# ── rlip server ───────────────────────────────────────────────────────────────
+# ── rlbridge server ───────────────────────────────────────────────────────────────
 
 @app.command("server")
 def server_app(
@@ -77,7 +77,7 @@ def server_app(
     uvicorn.run(app_instance, host=host, port=port, log_level=log_level)
 
 
-# ── rlip mcp ──────────────────────────────────────────────────────────────────
+# ── rlbridge mcp ──────────────────────────────────────────────────────────────────
 
 @app.command("mcp")
 def mcp_command() -> None:
@@ -86,7 +86,7 @@ def mcp_command() -> None:
     main()
 
 
-# ── rlip install-claude ───────────────────────────────────────────────────────
+# ── rlbridge install-claude ───────────────────────────────────────────────────────
 
 @app.command("install-claude")
 def install_claude(
@@ -112,7 +112,7 @@ def install_claude(
     """
     target = config_path or Path.home() / ".claude.json"
 
-    # Use the home directory as cwd so relative paths (e.g. .rlip/) resolve
+    # Use the home directory as cwd so relative paths (e.g. .rlbridge/) resolve
     # to a user-writable location regardless of how the client launches the server.
     cwd = str(Path.home())
 
@@ -149,7 +149,7 @@ def install_claude(
     )
 
 
-# ── rlip install-codex ───────────────────────────────────────────────────────
+# ── rlbridge install-codex ───────────────────────────────────────────────────────
 
 @app.command("install-codex")
 def install_codex(
@@ -209,7 +209,7 @@ def install_codex(
     )
 
 
-# ── rlip install-opencode ─────────────────────────────────────────────────────
+# ── rlbridge install-opencode ─────────────────────────────────────────────────────
 
 @app.command("install-opencode")
 def install_opencode(
@@ -267,7 +267,7 @@ def install_opencode(
     )
 
 
-# ── rlip install-claude-desktop ───────────────────────────────────────────────
+# ── rlbridge install-claude-desktop ───────────────────────────────────────────────
 
 def _find_claude_desktop_config_windows() -> list[Path]:
     """
@@ -349,7 +349,7 @@ def install_claude_desktop(
 
     # On Windows, resolve the rlbridge-mcp script to its full absolute path so
     # Claude Desktop can find it without needing PATH.
-    # Always set cwd to the user home dir so .rlip/ writes land somewhere
+    # Always set cwd to the user home dir so .rlbridge/ writes land somewhere
     # writable - Claude Desktop otherwise defaults to C:\Windows\System32.
     cwd = str(Path.home())
 
@@ -401,7 +401,7 @@ def install_claude_desktop(
     )
 
 
-# ── rlip install-lmstudio ─────────────────────────────────────────────────────
+# ── rlbridge install-lmstudio ─────────────────────────────────────────────────────
 
 @app.command("install-lmstudio")
 def install_lmstudio(
@@ -471,7 +471,7 @@ def install_lmstudio(
     )
 
 
-# ── rlip install-cursor ───────────────────────────────────────────────────────
+# ── rlbridge install-cursor ───────────────────────────────────────────────────────
 
 @app.command("install-cursor")
 def install_cursor(
@@ -525,7 +525,7 @@ def install_cursor(
     )
 
 
-# ── rlip install-windsurf ─────────────────────────────────────────────────────
+# ── rlbridge install-windsurf ─────────────────────────────────────────────────────
 
 @app.command("install-windsurf")
 def install_windsurf(
@@ -579,7 +579,7 @@ def install_windsurf(
     )
 
 
-# ── rlip list ─────────────────────────────────────────────────────────────────
+# ── rlbridge list ─────────────────────────────────────────────────────────────────
 
 @app.command("list")
 def list_environments(
@@ -615,7 +615,7 @@ def list_environments(
     console.print(table)
 
 
-# ── rlip agent ───────────────────────────────────────────────────────────────
+# ── rlbridge agent ───────────────────────────────────────────────────────────────
 
 @app.command("agent")
 def agent_command(
@@ -708,7 +708,7 @@ def agent_command(
 import logging
 
 
-# ── rlip catalog ────────────────────────────────────────────────────────────
+# ── rlbridge catalog ────────────────────────────────────────────────────────────
 
 @app.command("catalog")
 def catalog_command(
@@ -747,7 +747,7 @@ def catalog_command(
     )
 
 
-# ── rlip install ───────────────────────────────────────────────────────────
+# ── rlbridge install ───────────────────────────────────────────────────────────
 
 @app.command("install")
 def install_command(
@@ -801,7 +801,7 @@ def install_command(
     )
 
 
-# ── rlip uninstall ───────────────────────────────────────────────────────
+# ── rlbridge uninstall ───────────────────────────────────────────────────────
 
 @app.command("uninstall")
 def uninstall_command(

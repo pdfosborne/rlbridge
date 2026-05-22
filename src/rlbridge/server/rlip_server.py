@@ -1,7 +1,7 @@
 """
-RLIP HTTP Server (FastAPI)
+rlbridge HTTP Server (FastAPI)
 ===========================
-Exposes the RLIP protocol over HTTP as a JSON-RPC 2.0 endpoint.
+Exposes the rlbridge protocol over HTTP as a JSON-RPC 2.0 endpoint.
 
     POST /rpc          - single JSON-RPC request
     POST /rpc/batch    - batch of JSON-RPC requests
@@ -50,7 +50,7 @@ def create_app(
     dispatcher = RLIPDispatcher(registry=reg, session=session)
 
     app = FastAPI(
-        title="RLIP Server",
+        title="rlbridge Server",
         description=(
             "Reinforcement Learning Interaction Protocol - "
             "JSON-RPC 2.0 over HTTP"
@@ -71,12 +71,12 @@ def create_app(
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok", "server": "rlip", "version": __version__}
+        return {"status": "ok", "server": "rlbridge", "version": __version__}
 
     @app.get("/info")
     async def info() -> dict[str, Any]:
         return {
-            "server_name": "RLIP Server",
+            "server_name": "rlbridge Server",
             "server_version": __version__,
             "protocol_version": RLIP_PROTOCOL_VERSION,
             "registered_environments": len(reg),

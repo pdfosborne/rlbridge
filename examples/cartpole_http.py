@@ -1,14 +1,14 @@
 """
-CartPole Example - RLIP HTTP Client
+CartPole Example - rlbridge HTTP Client
 =====================================
-Demonstrates using the RLIP HTTP client to run a CartPole episode.
+Demonstrates using the rlbridge HTTP client to run a CartPole episode.
 
 Prerequisites
 -------------
-1. Install RLIP with examples:
+1. Install rlbridge with examples:
        pip install -e ".[examples]"
 
-2. Start the RLIP server in a separate terminal:
+2. Start the rlbridge server in a separate terminal:
        rlbridge server
 
 3. Run this script:
@@ -32,7 +32,7 @@ def run_cartpole_episode(
         # ── Handshake ────────────────────────────────────────────────────────
         info = client.initialize(client_name="cartpole-example")
         print(f"Connected to: {info.server_name} v{info.server_version}")
-        print(f"Protocol:     RLIP {info.protocol_version}\n")
+        print(f"Protocol:     rlbridge {info.protocol_version}\n")
 
         # ── Create environment ────────────────────────────────────────────────
         env = client.create_environment("CartPole-v1", render_mode=None)
@@ -79,6 +79,6 @@ if __name__ == "__main__":
     try:
         run_cartpole_episode()
     except RLIPClientError as e:
-        print(f"RLIP error: {e}")
+        print(f"rlbridge error: {e}")
     except Exception as e:
-        print(f"Error: {e}\n\nMake sure the RLIP server is running: rlip server")
+        print(f"Error: {e}\n\nMake sure the rlbridge server is running: rlbridge server")

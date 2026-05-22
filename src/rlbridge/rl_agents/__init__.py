@@ -1,7 +1,7 @@
 """
-RLIP Agents
+rlbridge Agents
 ============
-Self-contained RL agent implementations that train on any RLIP environment.
+Self-contained RL agent implementations that train on any rlbridge environment.
 
 Each agent exposes the same minimal interface::
 

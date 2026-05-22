@@ -23,9 +23,9 @@ from .base import BaseEncoder
 def _cache_root() -> Path:
     env_override = os.environ.get("RLIP_CACHE_ROOT") or os.environ.get("RLIP_OUTPUT_ROOT")
     if env_override:
-        root = Path(env_override) / ".rlip"
+        root = Path(env_override) / ".rlbridge"
     else:
-        root = Path.home() / ".rlip"
+        root = Path.home() / ".rlbridge"
     return root
 
 

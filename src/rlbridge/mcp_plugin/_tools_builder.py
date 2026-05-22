@@ -1,5 +1,5 @@
 """
-Environment builder MCP tools for the RLIP plugin.
+Environment builder MCP tools for the rlbridge plugin.
 
 Tools: rl_build_environment, rl_sample_states_for_translation,
        rl_set_translator_code, rl_translate_state.
@@ -41,8 +41,8 @@ def rl_build_environment(
     Wrap a Gymnasium environment with custom metadata, cache it locally,
     and register it so it is immediately available in this session.
 
-    The environment is saved to ``~/.rlip/environments/<env_id>/`` and written to
-    ``~/.rlip/catalog.json`` so it is reloaded automatically on restart via
+    The environment is saved to ``~/.rlbridge/environments/<env_id>/`` and written to
+    ``~/.rlbridge/catalog.json`` so it is reloaded automatically on restart via
     rl_load_cached_environments().
 
     Parameters
@@ -150,7 +150,7 @@ def rl_sample_states_for_translation(
     Parameters
     ----------
     env_id:
-        A registered RLIP environment ID.
+        A registered rlbridge environment ID.
     n_samples:
         Number of unique states to collect (default 20, max 50).
     seed:
@@ -231,7 +231,7 @@ def rl_set_translator_code(
     Parameters
     ----------
     env_id:
-        Environment to attach the translator to (must be registered with RLIP).
+        Environment to attach the translator to (must be registered with rlbridge).
     python_code:
         Complete Python source of a ``translate`` function.  Example::
 
@@ -249,7 +249,7 @@ def rl_set_translator_code(
         - Do not import external packages; only Python built-ins are safe.
     save:
         If True (default), persist the translator to
-        ``~/.rlip/environments/<env_id>/translator.py`` and update ``spec.json``
+        ``~/.rlbridge/environments/<env_id>/translator.py`` and update ``spec.json``
         so it is reloaded automatically by ``rl_load_cached_environments()``.
 
     Returns
@@ -352,7 +352,7 @@ def rl_translate_state(
     Parameters
     ----------
     env_id:
-        A registered RLIP environment ID.
+        A registered rlbridge environment ID.
     state:
         The raw state value encoded as a JSON string.
         - String observations: ``'"0.0300_0.2"'``

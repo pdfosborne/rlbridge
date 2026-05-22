@@ -1,12 +1,12 @@
 """
 Environment Builder
 ====================
-Fluent API for defining, caching, and registering new RLIP environments.
+Fluent API for defining, caching, and registering new rlbridge environments.
 
 The builder handles three concerns in one place:
 
 * **Metadata** - description, tags, namespace, episode limits.
-* **Local cache** - persists everything to ``~/.rlip/environments/<env_id>/`` so the
+* **Local cache** - persists everything to ``~/.rlbridge/environments/<env_id>/`` so the
   environment can be reloaded in future sessions without repeating the build
   steps.
 * **Language translation** - attach a named, custom, or LLM-generated
@@ -33,7 +33,7 @@ Quick start
     )
 
     env = built.create()
-    built.register()          # loads into the running RLIP registry
+    built.register()          # loads into the running rlbridge registry
 
 **Use an LLM-generated translator:**
 
@@ -95,8 +95,8 @@ from .base import RLIPEnvironment, RLIPEnvironmentFactory
 
 # ── Default paths ─────────────────────────────────────────────────────────────
 
-_DEFAULT_CACHE_DIR: Path = Path.home() / ".rlip" / "environments"
-_USER_CATALOG: Path = Path.home() / ".rlip" / "catalog.json"
+_DEFAULT_CACHE_DIR: Path = Path.home() / ".rlbridge" / "environments"
+_USER_CATALOG: Path = Path.home() / ".rlbridge" / "catalog.json"
 
 
 # ── Spec dataclass ────────────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ class EnvSpec:
     Serialisable description of a custom environment.
 
     Persisted as ``spec.json`` inside the environment's cache directory
-    and mirrored into the user catalog (``~/.rlip/catalog.json``).
+    and mirrored into the user catalog (``~/.rlbridge/catalog.json``).
     """
     env_id: str
     description: str = ""
@@ -345,7 +345,7 @@ class BuiltEnvironment:
         ----------
         catalog_path:
             Path to the target ``catalog.json`` file.  Defaults to
-            ``~/.rlip/catalog.json``.
+            ``~/.rlbridge/catalog.json``.
 
         Returns
         -------
@@ -386,7 +386,7 @@ class BuiltEnvironment:
 
         The cache directory layout::
 
-            ~/.rlip/environments/<env_id>/
+            ~/.rlbridge/environments/<env_id>/
                 spec.json         - environment metadata
                 translator.py     - generated translator module (if present)
 
@@ -419,7 +419,7 @@ class BuiltEnvironment:
         env_id:
             The environment identifier used when it was built.
         cache_dir:
-            Root cache directory.  Defaults to ``~/.rlip/environments/``.
+            Root cache directory.  Defaults to ``~/.rlbridge/environments/``.
 
         Returns
         -------
@@ -692,13 +692,13 @@ class EnvironmentBuilder:
         Parameters
         ----------
         cache_dir:
-            Override the default cache root (``~/.rlip/environments/``).
+            Override the default cache root (``~/.rlbridge/environments/``).
         auto_register:
             If *True*, immediately call
             :meth:`BuiltEnvironment.register` after building so the
             environment is available in the current session.
         update_catalog:
-            If *True*, write the entry to ``~/.rlip/catalog.json``.
+            If *True*, write the entry to ``~/.rlbridge/catalog.json``.
 
         Returns
         -------
@@ -879,7 +879,7 @@ def load_cached_environments(
         :class:`~rlbridge.environments.registry.EnvironmentRegistry` to register
         into.  Defaults to the global ``registry`` singleton.
     cache_dir:
-        Root cache directory.  Defaults to ``~/.rlip/environments/``.
+        Root cache directory.  Defaults to ``~/.rlbridge/environments/``.
     register_translators:
         Whether to also register translators into the global ``TRANSLATORS``
         dict.

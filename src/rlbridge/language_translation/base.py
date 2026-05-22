@@ -1,5 +1,5 @@
 """
-Base class for RLIP language translators.
+Base class for rlbridge language translators.
 """
 
 from __future__ import annotations

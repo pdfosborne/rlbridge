@@ -280,7 +280,7 @@ def _get_flag(step_out: Any, name: str) -> bool:
 
 def _sample_action(env: Any, rng: random.Random) -> Any:
     """Sample a random action from the environment's action space."""
-    # RLIP environments expose sample_action() directly - prefer that so
+    # rlbridge environments expose sample_action() directly - prefer that so
     # text-action envs (chess, sailing, textworld …) return valid moves.
     if hasattr(env, "sample_action"):
         try:
@@ -698,7 +698,7 @@ class TranslatorGenerator:
     Parameters
     ----------
     env:
-        An RLIP environment instance used for state sampling.  It will be
+        An rlbridge environment instance used for state sampling.  It will be
         ``reset()`` and ``step()``-ped to collect observations; it is not
         closed by this class.
     llm_fn:
@@ -928,7 +928,7 @@ def build_translator(
     Parameters
     ----------
     env:
-        RLIP environment to sample from.
+        rlbridge environment to sample from.
     llm_fn:
         LLM callable ``(prompt: str) -> str``.
     env_context:

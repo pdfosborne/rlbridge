@@ -1,5 +1,5 @@
 """
-RL agent utility MCP tools for the RLIP plugin.
+RL agent utility MCP tools for the rlbridge plugin.
 
 Tools: rl_list_agents
 

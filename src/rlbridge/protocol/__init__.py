@@ -1,4 +1,4 @@
-"""RLIP protocol sub-package."""
+"""rlbridge protocol sub-package."""
 
 from .constants import ErrorCodes, Methods, RLIP_PROTOCOL_VERSION
 from .messages import (

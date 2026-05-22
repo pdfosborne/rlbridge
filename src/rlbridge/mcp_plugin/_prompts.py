@@ -103,7 +103,7 @@ def rlip_system_prompt() -> str:
 
         # ── Tool workflows (unchanged from previous system prompt) ─────────
         "Storage layout:\n"
-        "  • ~/.rlip/  (cache) - custom env definitions, catalog, language-"
+        "  • ~/.rlbridge/  (cache) - custom env definitions, catalog, language-"
         "translation source, and instruction data.  Managed automatically.\n"
         "  • <cwd>/rlip_results/  (local saves) - policy render GIFs, "
         "training-report PNGs, and trained-agent ZIP packages.\n\n"
@@ -199,7 +199,7 @@ def rlip_system_prompt() -> str:
         "rl_experiment_process(agent_type, env_id)  # derives instruction automatically\n\n"
 
         "Instruction planning database: every match and training run is "
-        "recorded in ~/.rlip/environments/<env>/instruction_plan.json.  "
+        "recorded in ~/.rlbridge/environments/<env>/instruction_plan.json.  "
         "rl_get_instruction_plan(env_id) shows all tried instructions, "
         "sub-steps, eval rewards, similarity scores, and usage history.  "
         "Always read it before any planning decision.\n\n"

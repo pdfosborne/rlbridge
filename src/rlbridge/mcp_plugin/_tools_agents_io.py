@@ -1,5 +1,5 @@
 """
-RL agent save/load MCP tools for the RLIP plugin.
+RL agent save/load MCP tools for the rlbridge plugin.
 
 Tools: rl_list_trained_agents, rl_load_agent
 

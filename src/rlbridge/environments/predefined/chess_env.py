@@ -1,5 +1,5 @@
 """
-RLIP Chess Environment
+rlbridge Chess Environment
 ========================
 
 Wraps `python-chess <https://python-chess.readthedocs.io/>`_ to provide a

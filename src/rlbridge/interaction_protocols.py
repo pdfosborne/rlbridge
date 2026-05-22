@@ -1,5 +1,5 @@
 """
-RLIP Interaction Protocols
+rlbridge Interaction Protocols
 ============================
 Defines named, reusable forms of agent–environment interaction.
 
@@ -156,7 +156,7 @@ def _make_sampler(env: _EnvLike, seed: Optional[int]) -> Callable[[], Any]:
     space = env.action_space
     space_type = getattr(space, "type", None)
 
-    # Pydantic SpaceDescription objects (RLIP's own format)
+    # Pydantic SpaceDescription objects (rlbridge's own format)
     if space_type == "Discrete":
         n: int = space.n
         start: int = getattr(space, "start", 0)
@@ -799,7 +799,7 @@ def run_protocol(
     name:
         One of the protocol names returned by :func:`list_protocols`.
     env:
-        An RLIP environment instance.
+        An rlbridge environment instance.
     **kwargs:
         Forwarded to the protocol's ``__init__``.
 

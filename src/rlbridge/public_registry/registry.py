@@ -1,13 +1,13 @@
 """
-RLIP Public Registry
+rlbridge Public Registry
 ======================
 Manages the catalog of publicly available environments and provides a
 unified API for installing, loading, and registering them.
 
 Catalog location
 ----------------
-Built-in catalog: ``rlbridge/public_registry/catalog.json``  (ships with RLIP)
-User catalog:     ``~/.rlip/catalog.json``                (add your own entries)
+Built-in catalog: ``rlbridge/public_registry/catalog.json``  (ships with rlbridge)
+User catalog:     ``~/.rlbridge/catalog.json``                (add your own entries)
 
 The user catalog is merged over the built-in catalog, so entries with the
 same ``env_id`` in the user catalog take precedence.
@@ -22,7 +22,7 @@ Usage
     # Download an environment
     public_registry.install("Sailing-v0")
 
-    # Load all installed envs into the RLIP registry
+    # Load all installed envs into the rlbridge registry
     public_registry.load_installed(registry)
 
     # Or install + load in one call
@@ -39,11 +39,11 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 _BUILTIN_CATALOG = Path(__file__).parent / "catalog.json"
-_USER_CATALOG    = Path.home() / ".rlip" / "catalog.json"
+_USER_CATALOG    = Path.home() / ".rlbridge" / "catalog.json"
 
 
 class PublicRegistry:
-    """Manages the catalog and installation of public RLIP environments."""
+    """Manages the catalog and installation of public rlbridge environments."""
 
     def __init__(self) -> None:
         self._catalog: dict[str, dict[str, Any]] = {}
@@ -96,14 +96,14 @@ class PublicRegistry:
         """Return the catalog entry for *env_id*, raising KeyError if absent."""
         if env_id not in self._catalog:
             raise KeyError(
-                f"'{env_id}' is not in the RLIP public catalog.\n"
+                f"'{env_id}' is not in the rlbridge public catalog.\n"
                 f"Available: {list(self._catalog.keys())}"
             )
         return self._catalog[env_id]
 
     def add_to_user_catalog(self, entry: dict[str, Any]) -> None:
         """
-        Append *entry* to the user catalog at ``~/.rlip/catalog.json``.
+        Append *entry* to the user catalog at ``~/.rlbridge/catalog.json``.
         Creates the file if it doesn't exist.
         """
         _USER_CATALOG.parent.mkdir(parents=True, exist_ok=True)
@@ -152,7 +152,7 @@ class PublicRegistry:
         from .installer import uninstall
         return uninstall(env_id)
 
-    # ── Load into RLIP registry ───────────────────────────────────────────────
+    # ── Load into rlbridge registry ───────────────────────────────────────────────
 
     def load_installed(
         self,
@@ -220,7 +220,7 @@ class PublicRegistry:
 
             load_plugin_environments(registry)
             if env_id not in registry:
-                package = entry.get("source", {}).get("package", "flesh-and-blood-rlip")
+                package = entry.get("source", {}).get("package", "flesh-and-blood-rlbridge")
                 raise ValueError(
                     f"Plugin '{package}' is installed but '{env_id}' is not registered."
                 )

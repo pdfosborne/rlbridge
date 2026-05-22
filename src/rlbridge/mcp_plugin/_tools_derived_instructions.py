@@ -1,5 +1,5 @@
 """
-Derived-instruction MCP tools for the RLIP plugin.
+Derived-instruction MCP tools for the rlbridge plugin.
 
 Tools:
   rl_train_and_derive_instructions  - train an RL agent while tracking
@@ -258,7 +258,7 @@ def rl_train_and_derive_instructions(
     Parameters
     ----------
     env_id:
-        A registered RLIP environment ID, e.g. ``"Sailing-v0"``.
+        A registered rlbridge environment ID, e.g. ``"Sailing-v0"``.
     agent_type:
         One of ``"tabular_q"``, ``"dqn"``, or ``"ppo"``.
     n_episodes:

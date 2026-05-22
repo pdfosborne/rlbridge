@@ -1,5 +1,5 @@
 """
-Instruction plan and cache MCP tools for the RLIP plugin.
+Instruction plan and cache MCP tools for the rlbridge plugin.
 
 Tools: rl_get_instruction_plan, rl_list_cached_instructions,
        rl_clear_instruction_cache.
@@ -37,7 +37,7 @@ def rl_get_instruction_plan(env_id: str) -> str:
     Parameters
     ----------
     env_id:
-        A registered RLIP environment ID, e.g. "Sailing-v0".
+        A registered rlbridge environment ID, e.g. "Sailing-v0".
 
     Returns
     -------

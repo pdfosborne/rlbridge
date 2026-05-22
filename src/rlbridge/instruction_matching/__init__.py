@@ -1,7 +1,7 @@
 """
 rlbridge.instruction_matching
 =========================
-Text encoders for instruction-to-state matching in RLIP.
+Text encoders for instruction-to-state matching in rlbridge.
 
 All encoders share the :class:`~base.BaseEncoder` interface:
 

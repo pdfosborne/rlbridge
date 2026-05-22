@@ -1,5 +1,5 @@
 """
-LLM direct-play MCP tool for the RLIP plugin.
+LLM direct-play MCP tool for the rlbridge plugin.
 
 Tool: rl_llm_play_episode
 
