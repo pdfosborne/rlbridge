@@ -47,8 +47,8 @@ async def rl_llm_play_episode(
         Optional seed for the environment reset.
     modes:
         Comma-separated list of play modes.  Supported values:
-        ``raw``      – observations passed as-is (numeric / dict).
-        ``language`` – observations translated to natural-language strings via
+        ``raw``      - observations passed as-is (numeric / dict).
+        ``language`` - observations translated to natural-language strings via
                        the registered translator for this environment.
         Default: ``"raw,language"`` (runs both).
 

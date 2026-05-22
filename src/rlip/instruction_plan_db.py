@@ -8,14 +8,14 @@ decisions about which instructions to try next.
 
 Classes
 -------
-- :class:`InstructionUsageRecord` – one training run's metadata.
-- :class:`InstructionPlanEntry`   – all runs for a single instruction string.
-- :class:`InstructionPlanDatabase` – the full per-environment database.
+- :class:`InstructionUsageRecord` - one training run's metadata.
+- :class:`InstructionPlanEntry`   - all runs for a single instruction string.
+- :class:`InstructionPlanDatabase` - the full per-environment database.
 
 Module-level state
 ------------------
-- :data:`_PLAN_DATABASES` – in-memory registry keyed by *env_id*.
-- :func:`get_plan_database` – accessor that loads from disk on first call.
+- :data:`_PLAN_DATABASES` - in-memory registry keyed by *env_id*.
+- :func:`get_plan_database` - accessor that loads from disk on first call.
 """
 
 from __future__ import annotations

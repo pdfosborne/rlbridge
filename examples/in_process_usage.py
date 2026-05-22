@@ -1,7 +1,7 @@
 """
 In-Process Usage Example
 =========================
-Use RLIP entirely in-process (no server, no subprocess) – useful for testing
+Use RLIP entirely in-process (no server, no subprocess) - useful for testing
 and for building your own agent loop in Python.
 """
 
@@ -17,7 +17,7 @@ from rlip.protocol.constants import Methods
 
 
 def main() -> None:
-    # Build the dispatcher directly – no HTTP needed
+    # Build the dispatcher directly - no HTTP needed
     session = SessionManager(max_instances=4)
     dispatcher = RLIPDispatcher(registry=registry, session=session)
 

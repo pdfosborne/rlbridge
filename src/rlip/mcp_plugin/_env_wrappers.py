@@ -1,8 +1,8 @@
 """
 Environment wrapper classes for the RLIP MCP plugin.
 
-_ShapedEnv  – injects a sub-goal similarity bonus into step() rewards.
-_LangStateEnv – replaces raw observations with their natural-language translations.
+_ShapedEnv  - injects a sub-goal similarity bonus into step() rewards.
+_LangStateEnv - replaces raw observations with their natural-language translations.
 """
 
 from __future__ import annotations

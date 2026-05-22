@@ -132,7 +132,7 @@ class _MLP:
         return self._out
 
     def predict(self, x: np.ndarray) -> np.ndarray:
-        """Stateless forward pass – no gradient graph retained."""
+        """Stateless forward pass - no gradient graph retained."""
         with torch.no_grad():
             t = torch.as_tensor(x, dtype=torch.float64, device=_DEVICE)
             return self._net(t).cpu().numpy()

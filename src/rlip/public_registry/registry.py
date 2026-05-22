@@ -38,7 +38,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-_BUILTIN_CATALOG = Path(__file__).parent.parent.parent.parent / "catalog.json"
+_BUILTIN_CATALOG = Path(__file__).parent / "catalog.json"
 _USER_CATALOG    = Path.home() / ".rlip" / "catalog.json"
 
 
@@ -215,10 +215,21 @@ class PublicRegistry:
                 max_episode_steps=entry.get("max_episode_steps", 200),
                 description=entry.get("description", ""),
             )
+        elif adapter_type == "flesh_and_blood":
+            from ..environments.plugins import load_plugin_environments
+
+            load_plugin_environments(registry)
+            if env_id not in registry:
+                package = entry.get("source", {}).get("package", "flesh-and-blood-rlip")
+                raise ValueError(
+                    f"Plugin '{package}' is installed but '{env_id}' is not registered."
+                )
+            log.info("Registered public env '%s' via plugin.", env_id)
+            return
         else:
             raise ValueError(
                 f"Unknown adapter type '{adapter_type}' for '{env_id}'. "
-                "Supported: 'sailing'."
+                "Supported: 'sailing', 'flesh_and_blood'."
             )
 
         registry.register(factory)

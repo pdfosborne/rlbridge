@@ -9,11 +9,11 @@ according to a specific interaction pattern.
 
 Available protocols
 -------------------
-- :class:`SingleStepProtocol`  – manual one-step-at-a-time control
-- :class:`RandomEpisodeProtocol` – full episode with a uniform-random policy
-- :class:`GreedyEpisodeProtocol` – full episode using a caller-supplied policy fn
-- :class:`MultiEpisodeProtocol` – wrapper that repeats any protocol N times
-- :func:`run_protocol`         – convenience helper to run a named protocol by string
+- :class:`SingleStepProtocol`  - manual one-step-at-a-time control
+- :class:`RandomEpisodeProtocol` - full episode with a uniform-random policy
+- :class:`GreedyEpisodeProtocol` - full episode using a caller-supplied policy fn
+- :class:`MultiEpisodeProtocol` - wrapper that repeats any protocol N times
+- :func:`run_protocol`         - convenience helper to run a named protocol by string
 
 All protocols return an :class:`InteractionResult` dataclass.
 
@@ -22,9 +22,9 @@ Language translation
 All protocols accept a ``translate`` parameter that maps raw observations to
 natural-language descriptions via :mod:`rlip.language_translation`.
 
-    translate=True          – auto-lookup translator for the environment
-    translate=False / None  – no translation (default)
-    translate=<translator>  – use a specific :class:`~rlip.language_translation.LanguageTranslator`
+    translate=True          - auto-lookup translator for the environment
+    translate=False / None  - no translation (default)
+    translate=<translator>  - use a specific :class:`~rlip.language_translation.LanguageTranslator`
 
 When enabled, each :class:`StepRecord` gains a ``language_obs`` string field
 alongside the raw ``observation``.

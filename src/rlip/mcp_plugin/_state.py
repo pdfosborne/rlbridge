@@ -30,14 +30,14 @@ log = logging.getLogger(__name__)
 _RLIP_SERVER_URL = os.environ.get("RLIP_SERVER_URL", "")
 
 if _RLIP_SERVER_URL:
-    # Proxy mode – forward calls to a running RLIP HTTP server
+    # Proxy mode - forward calls to a running RLIP HTTP server
     from ..transport.http_client import RLIPClient as _RLIPClient
     _proxy: Any = _RLIPClient(_RLIP_SERVER_URL)
     _in_process = False
     _registry: Any = None
     _dispatcher: Any = None
 else:
-    # In-process mode – run environments directly in this process
+    # In-process mode - run environments directly in this process
     from ..environments.registry import registry as _registry  # type: ignore[assignment]
     from ..server.dispatcher import RLIPDispatcher as _Dispatcher
     from ..server.session import SessionManager as _SessionManager

@@ -46,7 +46,7 @@ for i in range(20):
     render = env.render()
     print(f"  step {i+1:2d}  action={action}  {render.text}  reward={step.reward:+.2f}")
     if step.terminated:
-        print("  DONE – reached goal!")
+        print("  DONE - reached goal!")
         break
 
 env.close()

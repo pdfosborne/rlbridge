@@ -1,5 +1,5 @@
 """
-CartPole Example – RLIP HTTP Client
+CartPole Example - RLIP HTTP Client
 =====================================
 Demonstrates using the RLIP HTTP client to run a CartPole episode.
 

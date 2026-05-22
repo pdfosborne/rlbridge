@@ -44,10 +44,31 @@ It ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM St
 
 ### 1. Install
 
+From PyPI (recommended):
+
 ```bash
-git clone https://github.com/your-org/rlip
-cd rlip
-pip install -e ".[examples]"
+pip install rlip
+
+# Classic Gymnasium envs for examples (CartPole, etc.)
+pip install "rlip[examples]"
+```
+
+With [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv pip install rlip
+# or, in a uv-managed project:
+uv add rlip
+uv add "rlip[examples]"
+```
+
+From source (development):
+
+```bash
+git clone https://github.com/pdfosborne/RL-IP
+cd RL-IP
+pip install -e ".[dev,examples]"
+# or: uv sync --extra dev --extra examples
 ```
 
 ### 2. Add to your AI tool
@@ -364,16 +385,14 @@ Packages register factories via the ``rlip.environments`` entry-point group and
 optional MCP tools via ``rlip.environment_mcp_tools``.
 
 Example: [Flesh and Blood](https://fabtcg.com/) TCG environments live in the
-``flesh-and-blood-rlip`` package (sibling repo, not bundled with RLIP):
+[`flesh-and-blood-rlip`](https://github.com/pdfosborne/flesh-and-blood-rlip) package (not bundled with RLIP):
 
 ```bash
-# Install RLIP first
-cd /path/to/RL-IP
-pip install -e .
+# Install RLIP from PyPI
+pip install rlip
 
-# Then install the FaB plugin from a local checkout or GitHub
-cd /path/to/flesh-and-blood
-pip install -e .
+# Then install the FaB plugin from GitHub
+pip install git+https://github.com/pdfosborne/flesh-and-blood-rlip.git
 ```
 
 After installation, environments appear in the registry automatically:
@@ -491,7 +510,6 @@ src/rlip/
 │   └── http_client.py       # Sync + async HTTP clients
 └── mcp_plugin/
     └── plugin.py            # FastMCP MCP plugin for Claude Code
-catalog.json                 # Built-in public environment catalog
 examples/
 ├── cartpole_http.py         # HTTP client episode example
 ├── custom_env.py            # Registering a custom environment
@@ -500,11 +518,64 @@ docs/
 └── protocol_spec.md         # Full RLIP specification
 ```
 
+### Console scripts
+
+| Command | Entry point | Purpose |
+|---------|-------------|---------|
+| `rlip` | `rlip.__main__:app` | CLI (server, MCP, install-*, catalog, …) |
+| `rlip-mcp` | `rlip.mcp_plugin.plugin:main` | MCP stdio plugin for AI tools |
+| `rlip-server` | `rlip.__main__:server_app` | Standalone HTTP JSON-RPC server |
+
+### Optional dependency extras
+
+| Extra | Install | Use case |
+|-------|---------|----------|
+| `examples` / `envs-classic` | `pip install "rlip[examples]"` | CartPole and other classic-control envs |
+| `envs-box2d` | `pip install "rlip[envs-box2d]"` | LunarLander, etc. |
+| `envs-atari` | `pip install "rlip[envs-atari]"` | Atari games |
+| `envs-mujoco` | `pip install "rlip[envs-mujoco]"` | MuJoCo envs |
+| `envs-all` | `pip install "rlip[envs-all]"` | All Gymnasium env groups |
+| `torch` | `pip install "rlip[torch]"` | DQN / PPO training agents |
+| `sentence-transformers` | `pip install "rlip[sentence-transformers]"` | Semantic instruction matching |
+| `openai-sdk` | `pip install "rlip[openai-sdk]"` | Official OpenAI client (optional) |
+| `dev` | `pip install "rlip[dev]"` | pytest, ruff, mypy, build, twine |
+
+---
+
+## Publishing (maintainers)
+
+Build and upload to PyPI (test first on [TestPyPI](https://test.pypi.org/)):
+
+```bash
+# Install build tools
+pip install "rlip[dev]"
+# or: uv sync --extra dev
+
+# Bump version in pyproject.toml (single source of truth; __version__ reads it at runtime)
+
+# Build sdist + wheel
+python -m build
+# or: uv build
+
+# Upload (requires PyPI account + API token)
+twine upload dist/*
+# or: uv publish
+```
+
+User install after release:
+
+```bash
+pip install rlip
+uv add rlip
+```
+
+**Manual steps before first release:** create a PyPI account, generate an API token, confirm the `rlip` project name is available (currently unclaimed on PyPI), and tag releases on GitHub.
+
 ---
 
 ## License
 
-MIT
+Apache License 2.0 — see [LICENSE](LICENSE).
 
 The framework used in this work is currently patent pending with the US Patent and Trademark Office (18/955718). 
 

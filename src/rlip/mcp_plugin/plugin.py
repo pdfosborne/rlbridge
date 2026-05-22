@@ -31,7 +31,7 @@ Claude Code  (~/.claude.json):
       }
     }
 
-Claude Desktop (GUI – macOS/Windows/Linux):
+Claude Desktop (GUI - macOS/Windows/Linux):
     rlip install-claude-desktop
     # or manually add to claude_desktop_config.json:
     {
@@ -104,25 +104,25 @@ If installed via pip as a console script, replace ``["python", "-m",
 
 Module layout
 -------------
-_state.py            – FastMCP instance + all shared mutable caches
-_dispatch.py         – _dispatch(), _proxy_dispatch(), _fmt_obs()
-_env_wrappers.py     – _ShapedEnv, _LangStateEnv
-_tools_env.py        – basic environment interaction tools
+_state.py            - FastMCP instance + all shared mutable caches
+_dispatch.py         - _dispatch(), _proxy_dispatch(), _fmt_obs()
+_env_wrappers.py     - _ShapedEnv, _LangStateEnv
+_tools_env.py        - basic environment interaction tools
 _tools_instruction.py– instruction-following tools
-_tools_instruction_plan.py – instruction plan DB and cache tools (rl_get_instruction_plan, rl_list_cached_instructions, rl_clear_instruction_cache)
-_tools_agents_training.py  – RL agent training tools (rl_train_agent, rl_get_training_result)
-_tools_agents_utils.py     – RL agent utilities (rl_list_agents) and training helpers
-_tools_agents_io.py        – RL agent save/load (rl_list_trained_agents, rl_load_agent)
-_tools_agents_eval.py      – RL agent evaluation (rl_run_agent_episode, rl_create_training_report, rl_evaluate_agent)
-_tools_experiment.py       – Automated RL experiment pipeline (rl_experiment_process)
+_tools_instruction_plan.py - instruction plan DB and cache tools (rl_get_instruction_plan, rl_list_cached_instructions, rl_clear_instruction_cache)
+_tools_agents_training.py  - RL agent training tools (rl_train_agent, rl_get_training_result)
+_tools_agents_utils.py     - RL agent utilities (rl_list_agents) and training helpers
+_tools_agents_io.py        - RL agent save/load (rl_list_trained_agents, rl_load_agent)
+_tools_agents_eval.py      - RL agent evaluation (rl_run_agent_episode, rl_create_training_report, rl_evaluate_agent)
+_tools_experiment.py       - Automated RL experiment pipeline (rl_experiment_process)
 _tools_saved_experiments.py– Saved experiment management (rl_save_experiment, rl_list_experiments, rl_load_experiment)
-_tools_builder.py    – custom environment builder tools (wrap Gymnasium envs)
-_tools_cache.py      – environment cache tools (rl_load_cached_environments, rl_list_cached_environments, rl_clear_obs_cache)
-_tools_create_env.py – custom environment creation from code (rl_create_environment_from_code, rl_get_environment_template, rl_validate_environment_code, rl_delete_custom_environment)
-_tools_render.py     – rendering tools and MCP resources
-_tools_dashboard.py  – live training dashboard server tools
-env custom tools     – discovered from environment modules at startup
-plugin.py            – this file: entry-point + main()
+_tools_builder.py    - custom environment builder tools (wrap Gymnasium envs)
+_tools_cache.py      - environment cache tools (rl_load_cached_environments, rl_list_cached_environments, rl_clear_obs_cache)
+_tools_create_env.py - custom environment creation from code (rl_create_environment_from_code, rl_get_environment_template, rl_validate_environment_code, rl_delete_custom_environment)
+_tools_render.py     - rendering tools and MCP resources
+_tools_dashboard.py  - live training dashboard server tools
+env custom tools     - discovered from environment modules at startup
+plugin.py            - this file: entry-point + main()
 """
 
 from __future__ import annotations

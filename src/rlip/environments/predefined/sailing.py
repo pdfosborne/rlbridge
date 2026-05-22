@@ -9,8 +9,8 @@ Physics
 A sailboat starts at position (x=0, y=0, angle=0).  The agent chooses one of
 two discrete actions at each step:
 
-    0 – turn slightly left  (angle -= 0.1 rad)
-    1 – turn slightly right (angle += 0.1 rad)
+    0 - turn slightly left  (angle -= 0.1 rad)
+    1 - turn slightly right (angle += 0.1 rad)
 
 The boat's velocity is a Gaussian function of the angle relative to the wind
 (which blows straight down the y-axis from above):

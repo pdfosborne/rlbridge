@@ -10,9 +10,9 @@ An "experiment" is a confirmed, named configuration that captures:
 
 Tools
 -----
-rl_save_experiment      – persist a confirmed configuration to cache
-rl_list_experiments     – list all saved experiments (optionally by env)
-rl_load_experiment      – recall a saved experiment by ID
+rl_save_experiment      - persist a confirmed configuration to cache
+rl_list_experiments     - list all saved experiments (optionally by env)
+rl_load_experiment      - recall a saved experiment by ID
 """
 
 from __future__ import annotations

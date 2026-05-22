@@ -11,9 +11,9 @@ Each agent exposes the same minimal interface::
 
 Available agents
 ----------------
-- :class:`~rlip.agents.tabular_q.TabularQAgent`   – tabular Q-learning (ε-greedy)
-- :class:`~rlip.agents.dqn.DQNAgent`              – deep Q-network (NumPy, no framework dep)
-- :class:`~rlip.agents.ppo.PPOAgent`              – proximal policy optimisation (NumPy)
+- :class:`~rlip.agents.tabular_q.TabularQAgent`   - tabular Q-learning (ε-greedy)
+- :class:`~rlip.agents.dqn.DQNAgent`              - deep Q-network (NumPy, no framework dep)
+- :class:`~rlip.agents.ppo.PPOAgent`              - proximal policy optimisation (NumPy)
 
 All three work with discrete action spaces.  DQN and PPO also handle
 continuous ``Box`` observations via flat-vector encoding.

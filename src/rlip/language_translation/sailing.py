@@ -9,13 +9,13 @@ State format
 ------------
 The observation is a string ``"{x:.4f}_{angle:.1f}"``, e.g. ``"0.0300_0.2"``.
 
-    x     – horizontal position  (negative = harbor side, positive = beach side)
-    angle – heading in radians   (0 = directly into wind, ±π/2 = across wind)
+    x     - horizontal position  (negative = harbor side, positive = beach side)
+    angle - heading in radians   (0 = directly into wind, ±π/2 = across wind)
 
 Actions
 -------
-    0 – turn slightly left  (angle -= 0.1 rad)
-    1 – turn slightly right (angle += 0.1 rad)
+    0 - turn slightly left  (angle -= 0.1 rad)
+    1 - turn slightly right (angle += 0.1 rad)
 
 Example output
 --------------

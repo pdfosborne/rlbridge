@@ -1,5 +1,5 @@
 """
-RLIP – Reinforcement Learning Interaction Protocol
+RLIP - Reinforcement Learning Interaction Protocol
 ====================================================
 A JSON-RPC 2.0-based protocol for connecting AI agents to RL environments.
 Surfaces as a Claude Code MCP plugin, and as an optional standalone HTTP server.

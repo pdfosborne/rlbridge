@@ -243,10 +243,10 @@ def create_training_report(
     Returns
     -------
     dict with keys:
-        ``"rewards"``       – Figure 1: rolling training reward + summary metrics
+        ``"rewards"``       - Figure 1: rolling training reward + summary metrics
                              table (training + clean evaluation).
-        ``"instructions"``  – Figure 2: instruction match summary (no text overlap).
-        ``"config"``        – Figure 3: metadata and hyper-parameters.
+        ``"instructions"``  - Figure 2: instruction match summary (no text overlap).
+        ``"config"``        - Figure 3: metadata and hyper-parameters.
 
     When *output_path* is given each figure is saved to:
         ``{stem}_rewards.png``, ``{stem}_instructions.png``, ``{stem}_config.png``

@@ -1,5 +1,5 @@
 """
-Gymnasium adapter – wraps any gymnasium.Env as an RLIPEnvironment.
+Gymnasium adapter - wraps any gymnasium.Env as an RLIPEnvironment.
 """
 
 from __future__ import annotations

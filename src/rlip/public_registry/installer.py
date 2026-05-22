@@ -5,8 +5,8 @@ Downloads environment files from GitHub and stores them in a local cache
 at ``~/.rlip/public_envs/<env_id>/``.
 
 Each cached environment directory contains:
-  engine.py          – the downloaded environment source file(s)
-  meta.json          – copy of the catalog entry at install time
+  engine.py          - the downloaded environment source file(s)
+  meta.json          - copy of the catalog entry at install time
 
 No file is executed at install time — the engine module is only imported
 when the environment is first instantiated.
@@ -82,13 +82,27 @@ def install(entry: dict[str, Any], force: bool = False) -> Path:
         return target
 
     source: dict[str, Any] = entry["source"]
-    if source.get("type") != "github":
-        raise ValueError(
-            f"Unsupported source type '{source.get('type')}' for '{env_id}'. "
-            "Only 'github' is currently supported."
-        )
+    source_type = source.get("type")
+    if source_type == "github":
+        return _install_github(entry, target, meta_path, source, force)
+    if source_type == "plugin":
+        return _install_plugin(entry, target, meta_path, source, force)
 
-    repo: str   = source["repo"]
+    raise ValueError(
+        f"Unsupported source type '{source_type}' for '{env_id}'. "
+        "Supported: 'github', 'plugin'."
+    )
+
+
+def _install_github(
+    entry: dict[str, Any],
+    target: Path,
+    meta_path: Path,
+    source: dict[str, Any],
+    force: bool,
+) -> Path:
+    env_id: str = entry["env_id"]
+    repo: str = source["repo"]
     branch: str = source.get("branch", "main")
     files: list[dict[str, str]] = source["files"]
 
@@ -97,7 +111,7 @@ def install(entry: dict[str, Any], force: bool = False) -> Path:
     with httpx.Client(timeout=30.0, follow_redirects=True) as client:
         for file_spec in files:
             remote_path: str = file_spec["path"]
-            local_name: str  = file_spec.get("save_as", Path(remote_path).name)
+            local_name: str = file_spec.get("save_as", Path(remote_path).name)
             url = _raw_url(repo, branch, remote_path)
 
             log.debug("  GET %s", url)
@@ -114,9 +128,37 @@ def install(entry: dict[str, Any], force: bool = False) -> Path:
             dest.write_bytes(resp.content)
             log.info("  Saved %s → %s", remote_path, dest)
 
-    # Persist metadata so we know it installed cleanly
     meta_path.write_text(json.dumps(entry, indent=2))
     log.info("'%s' installed to %s", env_id, target)
+    return target
+
+
+def _install_plugin(
+    entry: dict[str, Any],
+    target: Path,
+    meta_path: Path,
+    source: dict[str, Any],
+    force: bool,
+) -> Path:
+    import subprocess
+    import sys
+
+    env_id: str = entry["env_id"]
+    install_url = source.get("install_url") or source.get("package")
+    if not install_url:
+        raise ValueError(
+            f"Plugin source for '{env_id}' must include 'install_url' or 'package'."
+        )
+
+    log.info("Installing plugin package for '%s' via pip …", env_id)
+    cmd = [sys.executable, "-m", "pip", "install"]
+    if force:
+        cmd.append("--force-reinstall")
+    cmd.append(install_url)
+    subprocess.run(cmd, check=True)
+
+    meta_path.write_text(json.dumps(entry, indent=2))
+    log.info("'%s' plugin installed for %s", source.get("package", install_url), env_id)
     return target
 
 

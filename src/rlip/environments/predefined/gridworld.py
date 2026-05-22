@@ -10,8 +10,8 @@ must navigate right to reach the goal cell (position SIZE-1).
 
 Actions
 -------
-    0 – move left  (clamps at 0)
-    1 – move right (clamps at SIZE-1)
+    0 - move left  (clamps at 0)
+    1 - move right (clamps at SIZE-1)
 
 Observation
 -----------

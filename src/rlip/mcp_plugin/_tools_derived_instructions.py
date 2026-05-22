@@ -2,10 +2,10 @@
 Derived-instruction MCP tools for the RLIP plugin.
 
 Tools:
-  rl_train_and_derive_instructions  – train an RL agent while tracking
+  rl_train_and_derive_instructions  - train an RL agent while tracking
       language state visits, then automatically generate the top instruction
       candidates most correlated with success and cache them.
-  rl_apply_derived_instruction      – take a derived instruction from the
+  rl_apply_derived_instruction      - take a derived instruction from the
       cache and set it up as a sub-goal for rl_instruction_run_episode /
       rl_train_agent (returns a match_id).
 

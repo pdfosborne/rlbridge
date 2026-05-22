@@ -4,8 +4,8 @@ Third-party environment plugins
 Discover and register environments shipped as separate pip packages via
 setuptools entry points:
 
-- ``rlip.environments`` – register environment factories
-- ``rlip.environment_mcp_tools`` – register environment-specific MCP tools
+- ``rlip.environments`` - register environment factories
+- ``rlip.environment_mcp_tools`` - register environment-specific MCP tools
 """
 
 from __future__ import annotations

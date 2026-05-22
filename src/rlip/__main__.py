@@ -3,19 +3,19 @@ RLIP CLI  (``rlip`` command)
 ==============================
 Provides these commands:
 
-    rlip server              – start the HTTP JSON-RPC server
-    rlip mcp                 – start the MCP stdio plugin
-    rlip install-claude          – configure RLIP in ~/.claude.json  (Claude Code)
-    rlip install-claude-desktop  – configure RLIP in Claude Desktop GUI
-    rlip install-codex           – configure RLIP in ~/.codex/config.toml  (Codex CLI)
-    rlip install-opencode        – configure RLIP in ~/.config/opencode/config.json  (OpenCode)
-    rlip install-lmstudio        – configure RLIP in LM Studio (~/.lmstudio/mcp.json)
-    rlip install-cursor          – configure RLIP in ~/.cursor/mcp.json  (Cursor)
-    rlip install-windsurf        – configure RLIP in Windsurf (~/.codeium/windsurf/mcp_config.json)
-    rlip agent               – run an Ollama / OpenAI-compatible agent loop
-    rlip catalog             – list the public environment catalog
-    rlip install             – download a public environment from GitHub
-    rlip uninstall           – remove a cached public environment
+    rlip server              - start the HTTP JSON-RPC server
+    rlip mcp                 - start the MCP stdio plugin
+    rlip install-claude          - configure RLIP in ~/.claude.json  (Claude Code)
+    rlip install-claude-desktop  - configure RLIP in Claude Desktop GUI
+    rlip install-codex           - configure RLIP in ~/.codex/config.toml  (Codex CLI)
+    rlip install-opencode        - configure RLIP in ~/.config/opencode/config.json  (OpenCode)
+    rlip install-lmstudio        - configure RLIP in LM Studio (~/.lmstudio/mcp.json)
+    rlip install-cursor          - configure RLIP in ~/.cursor/mcp.json  (Cursor)
+    rlip install-windsurf        - configure RLIP in Windsurf (~/.codeium/windsurf/mcp_config.json)
+    rlip agent               - run an Ollama / OpenAI-compatible agent loop
+    rlip catalog             - list the public environment catalog
+    rlip install             - download a public environment from GitHub
+    rlip uninstall           - remove a cached public environment
 """
 
 from __future__ import annotations
@@ -132,7 +132,7 @@ def install_claude(
         try:
             config = json.loads(target.read_text())
         except json.JSONDecodeError:
-            console.print(f"[yellow]Warning: {target} contains invalid JSON – creating fresh config.[/yellow]")
+            console.print(f"[yellow]Warning: {target} contains invalid JSON - creating fresh config.[/yellow]")
 
     config.setdefault("mcpServers", {})
     config["mcpServers"]["rlip"] = entry
@@ -248,7 +248,7 @@ def install_opencode(
             config = json.loads(target.read_text())
         except json.JSONDecodeError:
             console.print(
-                f"[yellow]Warning: {target} contains invalid JSON – creating fresh config.[/yellow]"
+                f"[yellow]Warning: {target} contains invalid JSON - creating fresh config.[/yellow]"
             )
 
     config.setdefault("mcp", {})
@@ -330,9 +330,9 @@ def install_claude_desktop(
     Add RLIP to your Claude Desktop MCP configuration (GUI app, not Claude Code).
 
     The config path is chosen automatically:
-      macOS   – ~/Library/Application Support/Claude/claude_desktop_config.json
-      Windows – %APPDATA%\\Claude\\  OR  Microsoft Store sandbox path (auto-detected)
-      Linux   – ~/.config/Claude/claude_desktop_config.json
+      macOS   - ~/Library/Application Support/Claude/claude_desktop_config.json
+      Windows - %APPDATA%\\Claude\\  OR  Microsoft Store sandbox path (auto-detected)
+      Linux   - ~/.config/Claude/claude_desktop_config.json
 
     After running this command, restart Claude Desktop and RLIP tools will be
     available in your conversations.
@@ -380,7 +380,7 @@ def install_claude_desktop(
             try:
                 config = json.loads(cp.read_text())
             except json.JSONDecodeError:
-                console.print(f"[yellow]Warning: {cp} contains invalid JSON – creating fresh config.[/yellow]")
+                console.print(f"[yellow]Warning: {cp} contains invalid JSON - creating fresh config.[/yellow]")
         config.setdefault("mcpServers", {})
         config["mcpServers"]["rlip"] = entry
         cp.parent.mkdir(parents=True, exist_ok=True)
@@ -391,7 +391,7 @@ def install_claude_desktop(
     console.print("\nConfiguration written:")
     console.print(json.dumps({"mcpServers": {"rlip": entry}}, indent=2))
     if len(written) > 1:
-        console.print(f"\n[dim](Written to {len(written)} config files – classic install and Microsoft Store install)[/dim]")
+        console.print(f"\n[dim](Written to {len(written)} config files - classic install and Microsoft Store install)[/dim]")
     console.print(
         "\n[bold]Next steps:[/bold]\n"
         "  1. Fully quit Claude Desktop (right-click system tray icon → Quit)\n"
@@ -424,9 +424,9 @@ def install_lmstudio(
 
     LM Studio follows Cursor's mcp.json notation.  The config path is chosen
     automatically:
-      macOS   – ~/Library/Application Support/LM Studio/mcp.json
-      Windows – %APPDATA%\\LM Studio\\mcp.json
-      Linux   – ~/.lmstudio/mcp.json
+      macOS   - ~/Library/Application Support/LM Studio/mcp.json
+      Windows - %APPDATA%\\LM Studio\\mcp.json
+      Linux   - ~/.lmstudio/mcp.json
 
     After running this command, restart LM Studio and RLIP tools will be
     available in your chat sessions.
@@ -453,7 +453,7 @@ def install_lmstudio(
         try:
             config = json.loads(config_path.read_text())
         except json.JSONDecodeError:
-            console.print(f"[yellow]Warning: {config_path} contains invalid JSON – creating fresh config.[/yellow]")
+            console.print(f"[yellow]Warning: {config_path} contains invalid JSON - creating fresh config.[/yellow]")
 
     config.setdefault("mcpServers", {})
     config["mcpServers"]["rlip"] = entry
@@ -507,7 +507,7 @@ def install_cursor(
         try:
             config = json.loads(target.read_text())
         except json.JSONDecodeError:
-            console.print(f"[yellow]Warning: {target} contains invalid JSON – creating fresh config.[/yellow]")
+            console.print(f"[yellow]Warning: {target} contains invalid JSON - creating fresh config.[/yellow]")
 
     config.setdefault("mcpServers", {})
     config["mcpServers"]["rlip"] = entry
@@ -561,7 +561,7 @@ def install_windsurf(
         try:
             config = json.loads(target.read_text())
         except json.JSONDecodeError:
-            console.print(f"[yellow]Warning: {target} contains invalid JSON – creating fresh config.[/yellow]")
+            console.print(f"[yellow]Warning: {target} contains invalid JSON - creating fresh config.[/yellow]")
 
     config.setdefault("mcpServers", {})
     config["mcpServers"]["rlip"] = entry

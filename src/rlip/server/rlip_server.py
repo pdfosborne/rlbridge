@@ -3,11 +3,11 @@ RLIP HTTP Server (FastAPI)
 ===========================
 Exposes the RLIP protocol over HTTP as a JSON-RPC 2.0 endpoint.
 
-    POST /rpc          – single JSON-RPC request
-    POST /rpc/batch    – batch of JSON-RPC requests
-    GET  /health       – liveness probe
-    GET  /info         – server metadata
-    GET  /environments – shorthand REST list of available environments
+    POST /rpc          - single JSON-RPC request
+    POST /rpc/batch    - batch of JSON-RPC requests
+    GET  /health       - liveness probe
+    GET  /info         - server metadata
+    GET  /environments - shorthand REST list of available environments
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def create_app(
     app = FastAPI(
         title="RLIP Server",
         description=(
-            "Reinforcement Learning Interaction Protocol – "
+            "Reinforcement Learning Interaction Protocol - "
             "JSON-RPC 2.0 over HTTP"
         ),
         version=__version__,

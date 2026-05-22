@@ -4,17 +4,17 @@ Policy Rendering for RLIP Interaction Protocols
 Given a completed :class:`~rlip.interaction_protocols.InteractionResult`,
 this module:
 
-1. **Extracts an optimal policy** – selects the best episode by total reward
+1. **Extracts an optimal policy** - selects the best episode by total reward
    and builds a greedy observation-to-action lookup table from its trajectory.
 
-2. **Replays the policy** – runs a fresh environment episode, consulting the
+2. **Replays the policy** - runs a fresh environment episode, consulting the
    lookup table at each step and falling back to a random action for
    unseen observations.
 
-3. **Renders each step** – captures ``rgb_array`` PNG frames or ``ansi`` text
+3. **Renders each step** - captures ``rgb_array`` PNG frames or ``ansi`` text
    from the environment's ``render()`` call after every action.
 
-4. **Saves output** – writes individual PNG frames to a directory and/or
+4. **Saves output** - writes individual PNG frames to a directory and/or
    composes them into an animated GIF (requires Pillow, already a core dep).
 
 Quick start
@@ -256,8 +256,8 @@ class PolicyRenderer:
         Action to execute when the current observation is not in *policy*.
         Accepts:
 
-        * ``"random"`` (default) – sample from the environment's action space.
-        * ``"zero"`` – always use action 0.
+        * ``"random"`` (default) - sample from the environment's action space.
+        * ``"zero"`` - always use action 0.
         * Any callable ``(obs) -> action``.
     render_mode:
         Override the environment's render mode.  If the environment was

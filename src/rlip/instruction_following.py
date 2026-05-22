@@ -4,19 +4,19 @@ Instruction Following for RLIP
 Connects a natural-language instruction to RL environment training via three
 stages:
 
-1. **Exploration** – an interaction protocol (optionally driven by a
+1. **Exploration** - an interaction protocol (optionally driven by a
    Claude/OpenAI agent via :class:`~rlip.adapters.openai_agent.RLIPAgent`)
    runs the environment and collects a trajectory of raw observations.
 
-2. **Language translation** – each raw observation is passed through a
+2. **Language translation** - each raw observation is passed through a
    :class:`~rlip.language_translation.LanguageTranslator` to produce a
    natural-language description.
 
-3. **Instruction matching** – TF-IDF shortlists candidates, then a sentence
+3. **Instruction matching** - TF-IDF shortlists candidates, then a sentence
    transformer re-ranks the top subset; the best-matching observed state is
    designated the *sub-goal*.
 
-4. **Sub-goal protocol** – :func:`build_sequential_instruction_following_protocol`
+4. **Sub-goal protocol** - :func:`build_sequential_instruction_following_protocol`
    wraps the matched sub-goals in a
    :class:`SequentialInstructionFollowingProtocol` that adds a shaped-reward
    bonus whenever the agent reaches each sub-goal state during RL training.

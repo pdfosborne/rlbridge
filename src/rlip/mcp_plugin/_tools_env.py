@@ -47,7 +47,7 @@ def rl_list_environments(
     for env in envs:
         line = f"  • {env['env_id']}"
         if env.get("description"):
-            line += f"  –  {env['description']}"
+            line += f"  -  {env['description']}"
         if env.get("max_episode_steps"):
             line += f"  (max {env['max_episode_steps']} steps)"
         if env.get("reward_threshold") is not None:
@@ -222,7 +222,7 @@ def rl_sample_action(instance_id: str) -> str:
             from ..environments.utils import numpy_to_python
             action = numpy_to_python(space.sample())
         except Exception:
-            action = "Unable to sample – use rl_step with an action from the action space description"
+            action = "Unable to sample - use rl_step with an action from the action space description"
 
     return f"Sampled action: {json.dumps(action)}\nUse with: rl_step(instance_id='{instance_id}', action='{json.dumps(action)}')"
 

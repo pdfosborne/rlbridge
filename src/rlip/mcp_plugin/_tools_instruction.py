@@ -470,8 +470,8 @@ def rl_instruction_run_episode(
         Cosine similarity threshold (0–1) required to award the bonus.
         Lower values make the sub-goal easier to reach.
     sub_goal_repeatable:
-        False (default) – bonus awarded at most once per episode.
-        True – bonus awarded on every step the threshold is met.
+        False (default) - bonus awarded at most once per episode.
+        True - bonus awarded on every step the threshold is met.
     seed:
         Optional seed for the training episode reset.
 

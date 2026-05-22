@@ -2,8 +2,8 @@
 Dashboard MCP tools for the RLIP plugin.
 
 Tools:
-  rl_start_dashboard  – start the live training dashboard web server
-  rl_stop_dashboard   – (no-op – server is daemon-threaded; provided for symmetry)
+  rl_start_dashboard  - start the live training dashboard web server
+  rl_stop_dashboard   - (no-op - server is daemon-threaded; provided for symmetry)
 """
 
 from __future__ import annotations
