@@ -4,7 +4,8 @@
 
 Automating how LLMs construct RL problems in language: building environments, translating observations, matching goals to sub-goals, and training agents to complete instructions without user supervision.
 
-It ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM Studio, Cursor, Windsurf, Codex CLI, and OpenCode.
+rlbridge ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM Studio, Cursor, Windsurf, Codex CLI, and OpenCode.
+
 ---
 
 ## Architecture
