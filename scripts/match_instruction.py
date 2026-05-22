@@ -3,8 +3,9 @@
 Standalone instruction matching script.
 
 Scores a natural-language instruction against a list of observed language
-descriptions using TF-IDF cosine similarity, optionally adjusted by validated
-feedback stored for an environment.
+descriptions using two-stage matching (TF-IDF filter, then sentence
+transformer re-rank), optionally adjusted by validated feedback stored for
+an environment.
 
 Examples
 --------
@@ -49,6 +50,7 @@ from rlip.instruction_matching import (  # noqa: E402
     record_match_feedback,
     score_instruction_against_corpus,
 )
+from rlip.instruction_matching.matcher import DEFAULT_REFINE_TOP_K  # noqa: E402
 
 
 def _load_candidates(path: str) -> list[str]:
@@ -101,10 +103,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Record that this state_language is an incorrect match for the instruction.",
     )
     parser.add_argument(
+        "--refine-top-k",
+        type=int,
+        default=DEFAULT_REFINE_TOP_K,
+        help="TF-IDF top candidates to re-score with the semantic encoder.",
+    )
+    parser.add_argument(
         "--top-k",
         type=int,
         default=5,
         help="Number of ranked candidates to print.",
+    )
+    parser.add_argument(
+        "--tfidf-only",
+        action="store_true",
+        help="Disable semantic re-ranking; use TF-IDF cosine similarity only.",
     )
     args = parser.parse_args(argv)
 
@@ -145,16 +158,17 @@ def main(argv: list[str] | None = None) -> int:
     result = score_instruction_against_corpus(
         args.instruction,
         pairs,
-        encoder=TFIDFEncoder(),
+        encoder=TFIDFEncoder() if args.tfidf_only else None,
         feedback_layer=feedback,
         similarity_band=args.similarity_band,
+        refine_top_k=args.refine_top_k,
     )
 
     top_k = max(1, min(args.top_k, len(result.candidates)))
     print(f"Instruction: {result.instruction!r}")
     print(f"Best match:  {result.best_language!r}")
     print(f"Adjusted:    {result.similarity_score:.4f}")
-    print(f"Base TF-IDF: {result.base_similarity_score:.4f}")
+    print(f"Base score:  {result.base_similarity_score:.4f}")
     print(f"Sub-goals:   {len(result.matched_states)}")
     print()
     print(f"Top {top_k} candidates:")

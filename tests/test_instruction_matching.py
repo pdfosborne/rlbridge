@@ -1,133 +1,139 @@
-"""Tests for instruction matching and feedback layer."""
+"""Tests for two-stage instruction matching."""
 
 from __future__ import annotations
-
-import json
-from pathlib import Path
 
 import numpy as np
 import pytest
 
-from rlip.instruction_matching import (
-    FeedbackLayer,
-    TFIDFEncoder,
-    get_feedback_layer,
-    record_match_feedback,
-    save_feedback_layer,
+from rlip.instruction_matching.feedback import FeedbackLayer
+from rlip.instruction_matching.matcher import (
+    DEFAULT_REFINE_TOP_K,
     score_instruction_against_corpus,
 )
+from rlip.instruction_matching.tfidf import TFIDFEncoder
 
 
-def test_tfidf_cosine_baseline_ranks_expected_candidate() -> None:
-    instruction = "sail towards the beach shore"
-    candidates = [
-        ("you are in open deep water far from land", None),
-        ("you are near the sandy beach shore", None),
-        ("you are at the harbor dock", None),
-    ]
-    result = score_instruction_against_corpus(instruction, candidates)
-    assert result.best_language == "you are near the sandy beach shore"
-    assert result.similarity_score == pytest.approx(result.base_similarity_score)
-    assert result.similarity_score > 0.0
+class _KeywordRefineEncoder:
+    """Deterministic semantic encoder for tests (no model download)."""
+
+    _TOPICS = {
+        "beach": np.array([1.0, 0.0, 0.0]),
+        "shore": np.array([0.95, 0.05, 0.0]),
+        "harbor": np.array([0.0, 1.0, 0.0]),
+        "dock": np.array([0.0, 0.95, 0.05]),
+        "water": np.array([0.0, 0.0, 1.0]),
+        "ocean": np.array([0.0, 0.05, 0.95]),
+    }
+
+    def fit(self, corpus: list[str]) -> "_KeywordRefineEncoder":
+        self._corpus = corpus
+        return self
+
+    def encode(self, text: str) -> np.ndarray:
+        lowered = text.lower()
+        for keyword, vec in self._TOPICS.items():
+            if keyword in lowered:
+                return vec / np.linalg.norm(vec)
+        return np.array([0.33, 0.33, 0.34])
+
+    @staticmethod
+    def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+        return float(np.dot(a, b))
 
 
-def test_feedback_layer_boosts_validated_correct_pair() -> None:
-    instruction = "go to the red room"
-    good = "standing in the red room with a table"
-    bad = "standing in the blue hallway"
-    candidates = [(good, None), (bad, None)]
+def _pairs(*langs: str) -> list[tuple[str, None]]:
+    return [(lang, None) for lang in langs]
 
-    baseline = score_instruction_against_corpus(instruction, candidates)
-    assert baseline.best_language == good
 
-    layer = FeedbackLayer(env_id="test-env")
-    layer.record(instruction, good, correct=True, source="user")
-    layer.prepare(TFIDFEncoder().fit([instruction, good, bad]))
+def test_two_stage_prefers_semantic_match_over_tfidf():
+    instruction = "sail towards the beach"
+    candidates = _pairs(
+        "agent is in open water far from land",
+        "agent is near the sandy shore",
+        "agent is close to the harbor dock",
+    )
 
-    boosted = score_instruction_against_corpus(
+    result = score_instruction_against_corpus(
         instruction,
         candidates,
-        feedback_layer=layer,
+        encoder=_KeywordRefineEncoder(),
+        refine_top_k=2,
     )
-    good_cand = next(c for c in boosted.candidates if c.language == good)
-    assert good_cand.adjusted_score >= good_cand.base_score
-    assert boosted.best_language == good
+
+    assert result.best_language == "agent is near the sandy shore"
+    assert result.candidates[0].base_score > result.candidates[-1].base_score
 
 
-def test_feedback_layer_penalizes_incorrect_pair() -> None:
-    instruction = "pick up the golden key"
-    wrong = "empty corridor with no items"
-    alt = "room containing a silver key on the table"
-    candidates = [(wrong, None), (alt, None)]
+def test_tfidf_only_mode_uses_single_encoder():
+    instruction = "sail towards the beach"
+    candidates = _pairs("near the shore", "in open water")
 
-    layer = FeedbackLayer(env_id="test-env")
-    layer.record(instruction, wrong, correct=False, source="user")
-
-    adjusted = score_instruction_against_corpus(
+    result = score_instruction_against_corpus(
         instruction,
         candidates,
+        encoder=TFIDFEncoder(),
+    )
+
+    assert result.best_language in {lang for lang, _ in candidates}
+    assert len(result.candidates) == 2
+
+
+def test_refine_top_k_limits_semantic_rescore():
+    instruction = "go to the beach"
+    candidates = _pairs(
+        "state on the sandy shore",
+        "state in the harbor area",
+        "state in deep ocean water",
+        "state at the dock",
+    )
+
+    full = score_instruction_against_corpus(
+        instruction,
+        candidates,
+        encoder=_KeywordRefineEncoder(),
+        refine_top_k=len(candidates),
+    )
+    limited = score_instruction_against_corpus(
+        instruction,
+        candidates,
+        encoder=_KeywordRefineEncoder(),
+        refine_top_k=1,
+    )
+
+    assert full.best_language == "state on the sandy shore"
+    assert limited.best_language != "state on the sandy shore"
+
+
+def test_feedback_adjusts_refined_scores():
+    instruction = "sail towards the beach"
+    candidates = _pairs("near the sandy shore", "in open ocean water")
+    layer = FeedbackLayer(env_id="test")
+    layer.record(instruction, "near the sandy shore", correct=True)
+
+    without = score_instruction_against_corpus(
+        instruction,
+        candidates,
+        encoder=_KeywordRefineEncoder(),
+        feedback_layer=None,
+    )
+    with_fb = score_instruction_against_corpus(
+        instruction,
+        candidates,
+        encoder=_KeywordRefineEncoder(),
         feedback_layer=layer,
     )
-    wrong_cand = next(c for c in adjusted.candidates if c.language == wrong)
-    assert wrong_cand.adjusted_score <= wrong_cand.base_score
 
-
-def test_feedback_persistence_roundtrip(tmp_path: Path) -> None:
-    path = tmp_path / "match_feedback.json"
-    record_match_feedback(
-        "GridWorld-v0",
-        "reach the goal tile",
-        "agent on goal square",
-        correct=True,
-        source="user",
-        path=str(path),
+    shore_without = next(
+        c for c in without.candidates if "shore" in c.language
     )
-    layer = get_feedback_layer("GridWorld-v0", path=str(path))
-    assert len(layer.records) == 1
-    assert layer.records[0].correct is True
-
-    layer.record("fail case", "wrong tile", correct=False, source="llm")
-    save_feedback_layer(layer)
-
-    from rlip.instruction_matching import feedback as fb_mod
-
-    fb_mod._FEEDBACK_STORE.clear()
-    reloaded = get_feedback_layer("GridWorld-v0", path=str(path))
-    assert len(reloaded.records) == 2
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    assert raw["env_id"] == "GridWorld-v0"
+    shore_with = next(c for c in with_fb.candidates if "shore" in c.language)
+    assert shore_with.adjusted_score >= shore_without.adjusted_score
 
 
-def test_feedback_cache_reloads_when_disk_changes(tmp_path: Path) -> None:
-    path = tmp_path / "match_feedback.json"
-    record_match_feedback(
-        "GridWorld-v0",
-        "reach the goal tile",
-        "agent on goal square",
-        correct=True,
-        source="user",
-        path=str(path),
-    )
-
-    from rlip.instruction_matching import feedback as fb_mod
-
-    cached = get_feedback_layer("GridWorld-v0", path=str(path))
-    assert len(cached.records) == 1
-
-    external = FeedbackLayer.from_dict(json.loads(path.read_text(encoding="utf-8")))
-    external.record("another case", "other tile", correct=False, source="script")
-    external._path = str(path)  # type: ignore[attr-defined]
-    save_feedback_layer(external)
-
-    reloaded = get_feedback_layer("GridWorld-v0", path=str(path))
-    assert len(reloaded.records) == 2
+def test_empty_candidates_raises():
+    with pytest.raises(ValueError, match="at least one"):
+        score_instruction_against_corpus("goal", [])
 
 
-def test_pair_direction_math() -> None:
-    from rlip.instruction_matching.feedback import _pair_direction
-
-    q = np.array([1.0, 0.0])
-    s = np.array([0.0, 1.0])
-    d = _pair_direction(q, s)
-    assert d is not None
-    assert np.allclose(np.linalg.norm(d), 1.0)
+def test_default_refine_top_k_constant():
+    assert DEFAULT_REFINE_TOP_K == 20

@@ -12,10 +12,9 @@ stages:
    :class:`~rlip.language_translation.LanguageTranslator` to produce a
    natural-language description.
 
-3. **Instruction matching** – all descriptions and the instruction string are
-   encoded as TF-IDF vectors (:class:`TextEncoder`); the observed state with
-   the highest cosine similarity to the instruction is designated the
-   *sub-goal*.
+3. **Instruction matching** – TF-IDF shortlists candidates, then a sentence
+   transformer re-ranks the top subset; the best-matching observed state is
+   designated the *sub-goal*.
 
 4. **Sub-goal protocol** – :func:`build_sequential_instruction_following_protocol`
    wraps the matched sub-goals in a
@@ -71,6 +70,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from .instruction_matching import BaseEncoder, TextEncoder, TFIDFEncoder
+from .instruction_matching.matcher import DEFAULT_REFINE_TOP_K
 from .instruction_matching.feedback import FeedbackLayer, get_feedback_layer
 from .instruction_matching.matcher import score_instruction_against_corpus
 from .interaction_protocols import (
@@ -378,10 +378,11 @@ def match_instruction(
     use_raw_observations: bool = False,
     feedback_layer: Optional[FeedbackLayer] = None,
     use_feedback: bool = True,
+    refine_top_k: int = DEFAULT_REFINE_TOP_K,
 ) -> InstructionMatch:
     """
     Explore *env* and find the observed state whose language description
-    best matches *instruction* using TF-IDF cosine similarity.
+    best matches *instruction* using two-stage scoring.
 
     Pipeline
     --------
@@ -389,11 +390,11 @@ def match_instruction(
        trajectory with language annotations.
     2. Deduplicate identical language descriptions, keeping the first
        corresponding raw observation.
-    3. Fit a :class:`TextEncoder` on the corpus
-       ``[instruction] + unique_language_descriptions``.
-    4. Compute cosine similarity between the encoded instruction and each
-       encoded language description.
-    5. Return the state with the highest similarity as an
+    3. Rank all candidates with TF-IDF cosine similarity and keep the top
+       *refine_top_k*.
+    4. Re-score that subset with a sentence transformer (or *encoder* when
+       provided) and apply optional feedback adjustments.
+    5. Return the state with the highest adjusted similarity as an
        :class:`InstructionMatch`.
 
     Parameters
@@ -404,12 +405,13 @@ def match_instruction(
         An RLIP environment instance.  The exploration protocol resets it
         internally.
     encoder:
-        Text encoder instance to use for similarity scoring.  Must satisfy
-        the :class:`~rlip.instruction_matching.BaseEncoder` interface.
-        Defaults to :class:`~rlip.instruction_matching.TFIDFEncoder` when
-        *None*.  Pass a :class:`~rlip.instruction_matching.BM25Encoder` or
-        :class:`~rlip.instruction_matching.SentenceEncoder` for improved
-        matching quality.
+        Stage-2 refine encoder.  Must satisfy the
+        :class:`~rlip.instruction_matching.BaseEncoder` interface.
+        Defaults to sentence-transformers (``all-MiniLM-L6-v2``) when *None*.
+        Pass :class:`~rlip.instruction_matching.TFIDFEncoder` to disable
+        semantic re-ranking and use TF-IDF only.
+    refine_top_k:
+        Number of TF-IDF top candidates to re-score with the refine encoder.
     translator:
         :class:`~rlip.language_translation.LanguageTranslator` to convert
         raw observations to text.  Auto-resolved from the environment's
@@ -558,6 +560,7 @@ def match_instruction(
         encoder=encoder,
         feedback_layer=_layer,
         similarity_band=similarity_band,
+        refine_top_k=refine_top_k,
     )
 
     result_match = InstructionMatch(
@@ -583,7 +586,7 @@ def match_instruction(
 
     # ── Attach this instruction to each matched observed state ─────────────────
     state_map = _STATE_INSTRUCTIONS.setdefault(env_id, {})
-    for lang, _obs, _sc in matched_states:
+    for lang, _obs, _sc in result_match.matched_states:
         instr_list = state_map.setdefault(lang, [])
         if instruction not in instr_list:
             instr_list.append(instruction)

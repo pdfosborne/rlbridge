@@ -59,7 +59,12 @@ from .feedback import (
     record_match_feedback,
     save_feedback_layer,
 )
-from .matcher import CorpusMatchResult, ScoredCandidate, score_instruction_against_corpus
+from .matcher import (
+    DEFAULT_REFINE_TOP_K,
+    CorpusMatchResult,
+    ScoredCandidate,
+    score_instruction_against_corpus,
+)
 from .sentence_transformer import SentenceEncoder
 from .tfidf import TextEncoder, TFIDFEncoder
 
@@ -149,6 +154,7 @@ __all__ = [
     "BM25Encoder",
     "SentenceEncoder",
     "get_encoder",
+    "DEFAULT_REFINE_TOP_K",
     "CorpusMatchResult",
     "ScoredCandidate",
     "score_instruction_against_corpus",
