@@ -1,0 +1,133 @@
+{
+  "_comment": "RLIP Public Environment Catalog - add entries here to make environments installable via 'rlip install <env_id>'. Sailing-v0 and Sailing-Hard-v0 are built-in (no install needed). Flesh and Blood environments install the flesh-and-blood-rlip plugin package from GitHub.",
+  "catalog_version": "0.2",
+  "environments": [
+    {
+      "env_id": "Sailing-v0",
+      "description": "Simple sailing simulator: steer a sailboat upwind to y>25 within x-bounds of ±10. Discrete action space (turn left / right).",
+      "tags": ["navigation", "sailing", "discrete"],
+      "namespace": "sailing",
+      "max_episode_steps": 200,
+      "render_modes": ["rgb_array"],
+      "action_space_size": 2,
+      "observation_type": "text",
+      "default_setup_info": {
+        "y_limit": 25,
+        "x_limit": 10,
+        "obs_precision": 4,
+        "supervised_rewards": false
+      },
+      "language_translation": {
+        "default": "sailing",
+        "available": ["sailing"],
+        "module": "rlbridge.language_translation.sailing",
+        "class": "SailingLanguageTranslator"
+      },
+      "source": {
+        "type": "builtin",
+        "module": "rlbridge.environments.sailing",
+        "adapter": "sailing"
+      },
+      "author": "pdfosborne",
+      "year": "2024"
+    },
+    {
+      "env_id": "Sailing-Hard-v0",
+      "description": "Harder sailing variant: longer course (y>50), tighter x-bounds (±8), and supervised heading reward to guide exploration.",
+      "tags": ["navigation", "sailing", "discrete", "hard"],
+      "namespace": "sailing",
+      "max_episode_steps": 500,
+      "render_modes": ["rgb_array"],
+      "action_space_size": 2,
+      "observation_type": "text",
+      "default_setup_info": {
+        "y_limit": 50,
+        "x_limit": 8,
+        "obs_precision": 4,
+        "supervised_rewards": true
+      },
+      "language_translation": {
+        "default": "sailing",
+        "available": ["sailing"],
+        "module": "rlbridge.language_translation.sailing",
+        "class": "SailingLanguageTranslator"
+      },
+      "source": {
+        "type": "builtin",
+        "module": "rlbridge.environments.sailing",
+        "adapter": "sailing"
+      },
+      "author": "pdfosborne",
+      "year": "2024"
+    },
+    {
+      "env_id": "FleshAndBlood-Talishar-v0",
+      "description": "Talishar-inspired Flesh and Blood TCG simulation: agent vs scripted opponent with hand/deck/combat phases and structured card database.",
+      "tags": ["tcg", "flesh-and-blood", "card-game", "turn-based", "simulator"],
+      "namespace": "flesh_and_blood",
+      "max_episode_steps": 60,
+      "render_modes": ["ansi", "rgb_array"],
+      "observation_type": "text",
+      "default_setup_info": {
+        "format": "silver_age"
+      },
+      "source": {
+        "type": "plugin",
+        "package": "flesh-and-blood-rlip",
+        "install_url": "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git",
+        "adapter": "flesh_and_blood"
+      },
+      "extra_dependencies": [
+        "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git"
+      ],
+      "author": "pdfosborne",
+      "year": "2026"
+    },
+    {
+      "env_id": "FleshAndBlood-SelfPlay-v0",
+      "description": "Flesh and Blood self-play simulation where one policy controls both heroes across alternating turns.",
+      "tags": ["tcg", "flesh-and-blood", "card-game", "turn-based", "simulator", "self-play"],
+      "namespace": "flesh_and_blood",
+      "max_episode_steps": 60,
+      "render_modes": ["ansi", "rgb_array"],
+      "observation_type": "text",
+      "default_setup_info": {
+        "format": "silver_age"
+      },
+      "source": {
+        "type": "plugin",
+        "package": "flesh-and-blood-rlip",
+        "install_url": "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git",
+        "adapter": "flesh_and_blood"
+      },
+      "extra_dependencies": [
+        "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git"
+      ],
+      "author": "pdfosborne",
+      "year": "2026"
+    },
+    {
+      "env_id": "FleshAndBlood-DeckBuild-v0",
+      "description": "Flesh and Blood deck-building variant with a two-phase deck selection phase before gameplay begins.",
+      "tags": ["tcg", "flesh-and-blood", "card-game", "turn-based", "simulator", "deck-selection"],
+      "namespace": "flesh_and_blood",
+      "max_episode_steps": 60,
+      "render_modes": ["ansi", "rgb_array"],
+      "observation_type": "text",
+      "default_setup_info": {
+        "format": "silver_age"
+      },
+      "source": {
+        "type": "plugin",
+        "package": "flesh-and-blood-rlip",
+        "install_url": "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git",
+        "adapter": "flesh_and_blood"
+      },
+      "extra_dependencies": [
+        "git+https://github.com/pdfosborne/flesh-and-blood-rlip.git"
+      ],
+      "author": "pdfosborne",
+      "year": "2026"
+    }
+  ]
+}

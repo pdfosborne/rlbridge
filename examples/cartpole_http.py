@@ -9,7 +9,7 @@ Prerequisites
        pip install -e ".[examples]"
 
 2. Start the RLIP server in a separate terminal:
-       rlip server
+       rlbridge server
 
 3. Run this script:
        python examples/cartpole_http.py
@@ -20,7 +20,7 @@ from __future__ import annotations
 import sys
 sys.path.insert(0, "../src")  # for running from the examples/ directory
 
-from rlip.transport.http_client import RLIPClient, RLIPClientError
+from rlbridge.transport.http_client import RLIPClient, RLIPClientError
 
 
 def run_cartpole_episode(

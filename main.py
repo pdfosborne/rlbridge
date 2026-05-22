@@ -28,14 +28,14 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from rlip.analysis import create_training_report
-from rlip.environments.registry import registry
-from rlip.instruction_following import match_instruction, scale_sub_goal_bonus
-from rlip.interaction_protocols import GreedyEpisodeProtocol, MultiEpisodeProtocol
-from rlip.language_translation import TRANSLATORS, get_translator
-from rlip.mcp_plugin._dashboard import dashboard, start_dashboard
-from rlip.mcp_plugin._env_wrappers import _LangStateEnv, _ShapedEnv
-from rlip.policy_rendering import render_optimal_policy
+from rlbridge.analysis import create_training_report
+from rlbridge.environments.registry import registry
+from rlbridge.instruction_following import match_instruction, scale_sub_goal_bonus
+from rlbridge.interaction_protocols import GreedyEpisodeProtocol, MultiEpisodeProtocol
+from rlbridge.language_translation import TRANSLATORS, get_translator
+from rlbridge.mcp_plugin._dashboard import dashboard, start_dashboard
+from rlbridge.mcp_plugin._env_wrappers import _LangStateEnv, _ShapedEnv
+from rlbridge.policy_rendering import render_optimal_policy
 
 
 @dataclass
@@ -167,7 +167,7 @@ def _select_from_list(title: str, options: list[str], default_idx: int = 0) -> i
 
 def _build_agent(agent_type: str, hyperparams: dict[str, Any]) -> Any:
     if agent_type == "tabular_q":
-        mod = importlib.import_module("rlip.rl_agents.tabular_q")
+        mod = importlib.import_module("rlbridge.rl_agents.tabular_q")
         return mod.TabularQAgent(
             alpha=float(hyperparams.get("alpha", 0.1)),
             gamma=float(hyperparams.get("gamma", 0.99)),
@@ -178,7 +178,7 @@ def _build_agent(agent_type: str, hyperparams: dict[str, Any]) -> Any:
         )
 
     if agent_type == "dqn":
-        mod = importlib.import_module("rlip.rl_agents.dqn")
+        mod = importlib.import_module("rlbridge.rl_agents.dqn")
         return mod.DQNAgent(
             hidden_size=int(hyperparams.get("hidden_size", 64)),
             lr=float(hyperparams.get("lr", 1e-3)),
@@ -193,7 +193,7 @@ def _build_agent(agent_type: str, hyperparams: dict[str, Any]) -> Any:
         )
 
     if agent_type == "ppo":
-        mod = importlib.import_module("rlip.rl_agents.ppo")
+        mod = importlib.import_module("rlbridge.rl_agents.ppo")
         return mod.PPOAgent(
             hidden_size=int(hyperparams.get("hidden_size", 64)),
             lr_actor=float(hyperparams.get("lr_actor", 1e-3)),

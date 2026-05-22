@@ -23,8 +23,8 @@ from __future__ import annotations
 import sys
 sys.path.insert(0, "../src")
 
-from rlip.environments.predefined.gridworld import GridWorldEnv, GridWorldFactory
-from rlip.environments.registry import registry
+from rlbridge.environments.predefined.gridworld import GridWorldEnv, GridWorldFactory
+from rlbridge.environments.registry import registry
 
 
 # GridWorld-1D-v0 is registered automatically by the RLIP registry at import

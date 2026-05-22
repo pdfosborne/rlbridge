@@ -10,10 +10,10 @@ from __future__ import annotations
 import sys
 sys.path.insert(0, "../src")
 
-from rlip.environments.registry import registry
-from rlip.server.dispatcher import RLIPDispatcher
-from rlip.server.session import SessionManager
-from rlip.protocol.constants import Methods
+from rlbridge.environments.registry import registry
+from rlbridge.server.dispatcher import RLIPDispatcher
+from rlbridge.server.session import SessionManager
+from rlbridge.protocol.constants import Methods
 
 
 def main() -> None:

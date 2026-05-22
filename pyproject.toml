@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rlbridge"
-version = "0.1.1"
+version = "0.1.2"
 description = "Reinforcement Learning Bridge - connects LLMs to RL environments, automates language-based problem construction, and derives instructions for long-term goals without user supervision"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -71,9 +71,9 @@ dev = [
 ]
 
 [project.scripts]
-rlip-server = "rlip.__main__:server_app"
-rlip-mcp = "rlip.mcp_plugin.plugin:main"
-rlip = "rlip.__main__:app"
+rlbridge-server = "rlbridge.__main__:server_app"
+rlbridge-mcp = "rlbridge.mcp_plugin.plugin:main"
+rlbridge = "rlbridge.__main__:app"
 
 [project.urls]
 Homepage = "https://github.com/pdfosborne/RL-IP"
@@ -83,7 +83,7 @@ Issues = "https://github.com/pdfosborne/RL-IP/issues"
 Changelog = "https://github.com/pdfosborne/RL-IP/releases"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rlip"]
+packages = ["src/rlbridge"]
 
 [tool.hatch.build.targets.sdist]
 include = [

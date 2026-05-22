@@ -1,8 +1,10 @@
-# Reinforcement Learning Bridge (RL Bridge)
+# Reinforcement Learning Bridge (rlbridge)
 
 **Reinforcement Learning Bridge** connects LLMs to reinforcement learning environments.
-It ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM Studio, Cursor, Windsurf, Codex CLI, and OpenCode, and uniquely automates how LLMs construct RL problems in language - building environments, translating observations, matching goals to sub-goals, and training agents to complete instructions without user supervision.
 
+Automating how LLMs construct RL problems in language: building environments, translating observations, matching goals to sub-goals, and training agents to complete instructions without user supervision.
+
+It ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM Studio, Cursor, Windsurf, Codex CLI, and OpenCode.
 ---
 
 ## Architecture
@@ -17,7 +19,7 @@ It ships as an **MCP plugin** compatible with Claude Code, Claude Desktop, LM St
 └──────────┼───────────────────────────────────────────┘
            │
 ┌──────────▼───────────────────────────────────────────┐
-│  RL Bridge MCP Plugin  (rlip.mcp_plugin)             │
+│  RL Bridge MCP Plugin  (rlbridge.mcp_plugin)             │
 │  FastMCP tools:  rl_create · rl_reset · rl_step      │
 │                 rl_render · rl_close · rl_run_episode│
 │         │                                            │
@@ -77,33 +79,33 @@ Run the command for whichever tool(s) you use, then restart the client:
 
 ```bash
 # Claude Code (CLI)  → ~/.claude.json
-rlip install-claude
+rlbridge install-claude
 
 # Claude Desktop (GUI app)
 #   macOS   → ~/Library/Application Support/Claude/claude_desktop_config.json
 #   Windows → %APPDATA%\Claude\claude_desktop_config.json
 #   Linux   → ~/.config/Claude/claude_desktop_config.json
-rlip install-claude-desktop
+rlbridge install-claude-desktop
 
 # LM Studio  → ~/.lmstudio/mcp.json  (Linux)
 #              ~/Library/Application Support/LM Studio/mcp.json  (macOS)
 #              %APPDATA%\LM Studio\mcp.json  (Windows)
-rlip install-lmstudio
+rlbridge install-lmstudio
 
 # Cursor  → ~/.cursor/mcp.json
-rlip install-cursor
+rlbridge install-cursor
 
 # Windsurf  → ~/.codeium/windsurf/mcp_config.json
-rlip install-windsurf
+rlbridge install-windsurf
 
 # Codex CLI  → ~/.codex/config.toml
-rlip install-codex
+rlbridge install-codex
 
 # OpenCode   → ~/.config/opencode/config.json
-rlip install-opencode
+rlbridge install-opencode
 ```
 
-All commands accept `--use-script` (uses the `rlip-mcp` console script instead
+All commands accept `--use-script` (uses the `rlbridge-mcp` console script instead
 of `python -m`) and `--config-path` to override the default config location.
 
 ### 3. Use it
@@ -113,6 +115,17 @@ Open Claude Code and ask:
 > *"Run a CartPole episode with a random policy and show me the total reward."*
 
 Claude will call `rl_create`, `rl_reset`, `rl_step` (in a loop), and `rl_close` automatically.
+
+For the default end-to-end training pipeline, ask:
+
+> *"Run the default experiment process on CartPole-v1 with 300 episodes and show me the best agent when it finishes."*
+
+Claude will call `rl_experiment_process` once, then poll `rl_get_training_result(job_id)` until completion.
+
+`rl_experiment_process` runs the full 8-stage workflow in one job:
+dashboard, baseline training, language-state training, instruction derivation,
+instruction matching, instruction-shaped training, instruction+language training,
+and final evaluation/comparison.
 
 ---
 
@@ -232,9 +245,9 @@ RL Bridge also includes a direct `local_llm` policy agent for action selection
 without gradient training.
 
 ```python
-from rlip.environments.registry import registry
-from rlip.language_translation import get_translator
-from rlip.rl_agents import LocalLLMAgent
+from rlbridge.environments.registry import registry
+from rlbridge.language_translation import get_translator
+from rlbridge.rl_agents import LocalLLMAgent
 
 env = registry.get("Sailing-v0").create()
 translator = get_translator("Sailing-v0")
@@ -297,7 +310,7 @@ Run RL Bridge as a standalone service (useful for multi-process workflows or
 connecting non-Python agents):
 
 ```bash
-rlip server --port 8765
+rlbridge server --port 8765
 ```
 
 Then send JSON-RPC requests:
@@ -321,7 +334,7 @@ Browse the auto-generated API docs at `http://localhost:8765/docs`.
 
 ```bash
 # Point the plugin at a remote server instead of running envs in-process
-RLIP_SERVER_URL=http://my-gpu-machine:8765 rlip mcp
+RLIP_SERVER_URL=http://my-gpu-machine:8765 rlbridge mcp
 ```
 
 ---
@@ -331,7 +344,7 @@ RLIP_SERVER_URL=http://my-gpu-machine:8765 rlip mcp
 For programmatic use, the `EnvironmentBuilder` Python API mirrors the MCP tools:
 
 ```python
-from rlip.environments.builder import EnvironmentBuilder, load_cached_environments
+from rlbridge.environments.builder import EnvironmentBuilder, load_cached_environments
 
 # Build, cache, and register in one call
 built = (
@@ -352,9 +365,9 @@ load_cached_environments()
 For a fully custom (non-Gymnasium) environment, subclass the ABCs directly:
 
 ```python
-from rlip.environments.base import RLIPEnvironment, RLIPEnvironmentFactory
-from rlip.environments.registry import registry
-from rlip.protocol.messages import DiscreteSpace, EnvironmentInfo, ResetResult, StepResult, RenderResult
+from rlbridge.environments.base import RLIPEnvironment, RLIPEnvironmentFactory
+from rlbridge.environments.registry import registry
+from rlbridge.protocol.messages import DiscreteSpace, EnvironmentInfo, ResetResult, StepResult, RenderResult
 
 class MyEnv(RLIPEnvironment):
     def reset(self, seed=None, options=None) -> ResetResult: ...
@@ -381,8 +394,8 @@ registry.register(MyFactory())
 ## Third-Party Environment Plugins
 
 RL Bridge can load additional environments from separately installed pip packages.
-Packages register factories via the ``rlip.environments`` entry-point group and
-optional MCP tools via ``rlip.environment_mcp_tools``.
+Packages register factories via the ``rlbridge.environments`` entry-point group and
+optional MCP tools via ``rlbridge.environment_mcp_tools``.
 
 Example: [Flesh and Blood](https://fabtcg.com/) TCG environments live in the
 [`flesh-and-blood-rlip`](https://github.com/pdfosborne/flesh-and-blood-rlip) package (not bundled with RL Bridge):
@@ -398,7 +411,7 @@ pip install git+https://github.com/pdfosborne/flesh-and-blood-rlip.git
 After installation, environments appear in the registry automatically:
 
 ```python
-from rlip.environments.registry import registry
+from rlbridge.environments.registry import registry
 
 env = registry.create("FleshAndBlood-Talishar-v0", format="silver_age")
 ```
@@ -406,64 +419,16 @@ env = registry.create("FleshAndBlood-Talishar-v0", format="silver_age")
 To publish your own plugin, add to ``pyproject.toml``:
 
 ```toml
-[project.entry-points."rlip.environments"]
+[project.entry-points."rlbridge.environments"]
 my-env = "my_package:register_environments"
 
-[project.entry-points."rlip.environment_mcp_tools"]
+[project.entry-points."rlbridge.environment_mcp_tools"]
 my-env = "my_package:register_mcp_tools"
 ```
 
 Each callable receives ``registry=`` (environments) or
 ``mcp=``, ``registry=``, ``log=`` (MCP tools) and returns the number of
 items registered.
-
----
-
-## Language Translation (Python API)
-
-```python
-from rlip.language_translation.generator import TranslatorGenerator, build_translator
-
-def my_llm(prompt: str) -> str:
-    ...  # wrap any LLM provider
-
-# Option A: two-stage LLM pipeline (describe → synthesise rules)
-translator = build_translator(
-    env, llm_fn=my_llm,
-    env_context="4×4 grid, state = integer 0–15.",
-    n_samples=20,
-)
-
-# Option B: hand-written rules with LLM fallback
-from rlip.language_translation.generator import GeneratedTranslator
-
-translator = GeneratedTranslator(llm_fn=my_llm, env_id="MyEnv-v0")
-translator.rule_code = """
-def translate(state, *, legal_moves=None, action_history=None):
-    row, col = divmod(int(state), 4)
-    return f"row {row}, col {col}"
-"""
-
-# Save as a standalone module (no LLM dependency at runtime)
-translator.save_code("my_env_translator.py")
-```
-
-Generated translators fall back to live LLM calls for states the rule function
-cannot handle, cache those answers, and auto-refine the rules once the cache
-grows past `refine_threshold`.
-
----
-
-## Proxy Mode (MCP ↔ Remote RL Bridge)
-
-```
-┌─────────────┐   stdio/MCP   ┌───────────────────┐   HTTP/JSON-RPC   ┌──────────────┐
-│ Claude Code │ ────────────► │  RL Bridge Plugin │ ────────────────► │ RL Bridge    │
-│             │               │ (thin proxy)      │                   │ Server       │
-└─────────────┘               └───────────────────┘                   └──────────────┘
-```
-
-Set `RLIP_SERVER_URL` to enable proxy mode.
 
 ---
 
@@ -478,9 +443,9 @@ and the session lifecycle diagram.
 ## Project Layout
 
 ```
-src/rlip/
+src/rlbridge/
 ├── __init__.py
-├── __main__.py              # CLI (rlip server / rlip install-claude / rlip install-claude-desktop / rlip install-lmstudio / rlip install-cursor / rlip install-windsurf / rlip install-codex / rlip install-opencode / …)
+├── __main__.py              # CLI (rlbridge server / rlbridge install-claude / …)
 ├── protocol/
 │   ├── constants.py         # Method names, error codes
 │   └── messages.py          # Pydantic message models
@@ -522,9 +487,9 @@ docs/
 
 | Command | Entry point | Purpose |
 |---------|-------------|---------|
-| `rlip` | `rlip.__main__:app` | CLI (server, MCP, install-*, catalog, …) |
-| `rlip-mcp` | `rlip.mcp_plugin.plugin:main` | MCP stdio plugin for AI tools |
-| `rlip-server` | `rlip.__main__:server_app` | Standalone HTTP JSON-RPC server |
+| `rlbridge` | `rlbridge.__main__:app` | CLI (server, MCP, install-*, catalog, …) |
+| `rlbridge-mcp` | `rlbridge.mcp_plugin.plugin:main` | MCP stdio plugin for AI tools |
+| `rlbridge-server` | `rlbridge.__main__:server_app` | Standalone HTTP JSON-RPC server |
 
 ### Optional dependency extras
 
@@ -569,7 +534,7 @@ pip install rlbridge
 uv add rlbridge
 ```
 
-**Note:** The PyPI distribution name is `rlbridge`. The Python import package is `rlip`. Console commands remain `rlip`, `rlip-mcp`, and `rlip-server` after install.
+**Note:** The PyPI distribution name is `rlbridge`. The Python import package and console commands are `rlbridge`, `rlbridge-mcp`, and `rlbridge-server`.
 
 **Manual steps before first release:** create a PyPI account, generate an API token, and tag releases on GitHub.
 
