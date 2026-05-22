@@ -929,7 +929,8 @@ def rl_validate_instruction_match(
         f"  Environment:  {env_id}\n"
         f"  Instruction:  {instruction!r}\n"
         f"  State:        {validated_state!r}\n"
-        f"Future matches will {action} for similar instruction/state pairs."
+        f"Future matches will {action} for similar instruction/state pairs "
+        f"and update the supervised predictor."
     )
 
 
@@ -1045,7 +1046,7 @@ async def rl_validate_instruction_match_llm(
         recorded = (
             "\nFeedback recorded — future matches will "
             + ("boost" if verdict else "penalise")
-            + " similar pairs."
+            + " similar pairs and update the supervised predictor."
         )
 
     label = "CORRECT" if verdict else "INCORRECT"

@@ -42,3 +42,4 @@ renders/
 *.mp4
 
 CLAUDE.md
+tests/

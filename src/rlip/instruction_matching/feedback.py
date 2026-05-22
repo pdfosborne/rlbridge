@@ -313,11 +313,20 @@ def record_match_feedback(
     correct: bool,
     source: str = "user",
     path: str | None = None,
+    update_predictor: bool = True,
+    encoder: BaseEncoder | None = None,
 ) -> FeedbackRecord:
     """Record validation feedback and persist it."""
     layer = get_feedback_layer(env_id, path=path)
     rec = layer.record(instruction, state_language, correct=correct, source=source)
     save_feedback_layer(layer)
+    if update_predictor:
+        from .predictor import update_predictor_from_feedback
+
+        predictor_path = None
+        if path:
+            predictor_path = str(Path(path).with_name("match_predictor.pkl"))
+        update_predictor_from_feedback(env_id, rec, path=predictor_path, encoder=encoder)
     return rec
 
 

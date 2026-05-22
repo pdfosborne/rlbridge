@@ -59,6 +59,15 @@ from .feedback import (
     record_match_feedback,
     save_feedback_layer,
 )
+from .predictor import (
+    MatchContext,
+    MatchPredictor,
+    default_predictor_path,
+    get_match_predictor,
+    resolve_match_context,
+    save_match_predictor,
+    update_predictor_from_feedback,
+)
 from .matcher import (
     DEFAULT_REFINE_TOP_K,
     CorpusMatchResult,
@@ -164,4 +173,11 @@ __all__ = [
     "get_feedback_layer",
     "record_match_feedback",
     "save_feedback_layer",
+    "MatchContext",
+    "MatchPredictor",
+    "default_predictor_path",
+    "get_match_predictor",
+    "resolve_match_context",
+    "save_match_predictor",
+    "update_predictor_from_feedback",
 ]

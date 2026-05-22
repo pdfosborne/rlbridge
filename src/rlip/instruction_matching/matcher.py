@@ -16,6 +16,7 @@ import numpy as np
 
 from .base import BaseEncoder
 from .feedback import FeedbackLayer
+from .predictor import MatchContext, MatchPredictor
 from .tfidf import TFIDFEncoder, TextEncoder
 
 DEFAULT_REFINE_TOP_K = 20
@@ -31,8 +32,10 @@ class ScoredCandidate:
     """Encoder similarity before feedback adjustment."""
 
     adjusted_score: float
-    """Similarity after :class:`FeedbackLayer` adjustment (equals *base_score*
-    when no feedback layer is supplied)."""
+    """Similarity after feedback and supervised blending."""
+
+    supervised_score: float | None = None
+    """Supervised match probability mapped to [0, 1], or *None* when inactive."""
 
 
 @dataclass
@@ -68,12 +71,36 @@ def _default_refine_encoder() -> BaseEncoder:
     return get_encoder("sentence")
 
 
+def _blend_supervised_score(
+    feedback_score: float,
+    instruction: str,
+    state_language: str,
+    *,
+    predictor: MatchPredictor | None,
+    match_context: MatchContext | None,
+) -> tuple[float, float | None]:
+    if predictor is None or not predictor.is_ready():
+        return feedback_score, None
+
+    ctx = match_context or predictor.context
+    if ctx.env_id and not predictor.context.description:
+        predictor.context = ctx
+
+    proba = predictor.predict_proba(instruction, state_language)
+    supervised = MatchPredictor.proba_to_score(proba)
+    weight = predictor.blend_weight()
+    blended = (1.0 - weight) * feedback_score + weight * supervised
+    return float(np.clip(blended, -1.0, 1.0)), supervised
+
+
 def score_instruction_against_corpus(
     instruction: str,
     candidates: list[tuple[str, Any]],
     *,
     encoder: Optional[BaseEncoder] = None,
     feedback_layer: Optional[FeedbackLayer] = None,
+    predictor: MatchPredictor | None = None,
+    match_context: MatchContext | None = None,
     similarity_band: float = 0.05,
     refine_top_k: int = DEFAULT_REFINE_TOP_K,
 ) -> CorpusMatchResult:
@@ -104,6 +131,12 @@ def score_instruction_against_corpus(
     feedback_layer:
         Optional validated-feedback layer that boosts or penalises scores.
         Applied on top of refine-encoder vectors for shortlisted candidates.
+    predictor:
+        Optional supervised model trained from validation feedback.  When
+        enough labelled samples exist, its probability is blended into the
+        final ranking score.
+    match_context:
+        Environment context (description, tags) for the supervised predictor.
     similarity_band:
         Include every candidate whose adjusted score is within this margin of
         the best score.
@@ -180,12 +213,21 @@ def score_instruction_against_corpus(
             base = tfidf_score
             adjusted = base
 
+        adjusted, supervised = _blend_supervised_score(
+            adjusted,
+            instruction,
+            lang,
+            predictor=predictor,
+            match_context=match_context,
+        )
+
         scored.append(
             ScoredCandidate(
                 language=lang,
                 observation=obs,
                 base_score=base,
                 adjusted_score=adjusted,
+                supervised_score=supervised,
             )
         )
 

@@ -73,6 +73,7 @@ from .instruction_matching import BaseEncoder, TextEncoder, TFIDFEncoder
 from .instruction_matching.matcher import DEFAULT_REFINE_TOP_K
 from .instruction_matching.feedback import FeedbackLayer, get_feedback_layer
 from .instruction_matching.matcher import score_instruction_against_corpus
+from .instruction_matching.predictor import get_match_predictor, resolve_match_context
 from .interaction_protocols import (
     EpisodeResult,
     InstructionFollowingProtocol,
@@ -378,6 +379,7 @@ def match_instruction(
     use_raw_observations: bool = False,
     feedback_layer: Optional[FeedbackLayer] = None,
     use_feedback: bool = True,
+    use_predictor: bool = True,
     refine_top_k: int = DEFAULT_REFINE_TOP_K,
 ) -> InstructionMatch:
     """
@@ -448,6 +450,9 @@ def match_instruction(
     use_feedback:
         When True (default), apply validated feedback adjustments during
         scoring.  Set False to force raw TF-IDF cosine similarity only.
+    use_predictor:
+        When True (default) and *use_feedback* is enabled, blend in the
+        supervised predictor when enough labelled feedback exists.
 
     Returns
     -------
@@ -554,11 +559,19 @@ def match_instruction(
     if use_feedback:
         _layer = feedback_layer if feedback_layer is not None else get_feedback_layer(env_id)
 
+    _predictor = None
+    _context = None
+    if use_feedback and use_predictor:
+        _predictor = get_match_predictor(env_id)
+        _context = resolve_match_context(env_id)
+
     match_result = score_instruction_against_corpus(
         instruction,
         candidates,
         encoder=encoder,
         feedback_layer=_layer,
+        predictor=_predictor,
+        match_context=_context,
         similarity_band=similarity_band,
         refine_top_k=refine_top_k,
     )
