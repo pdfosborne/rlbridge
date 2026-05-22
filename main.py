@@ -563,7 +563,15 @@ def main() -> int:
 
     env_infos = sorted(registry.list_environments(), key=lambda e: e.env_id.lower())
     env_options = [f"{e.env_id}  |  {e.namespace}  |  {e.description[:80]}" for e in env_infos]
-    env_idx = _select_from_list("Available environments", env_options)
+    default_env_idx = next(
+        (i for i, e in enumerate(env_infos) if e.env_id == "Sailing-v0"),
+        0,
+    )
+    env_idx = _select_from_list(
+        "Available environments",
+        env_options,
+        default_idx=default_env_idx,
+    )
     env_info = env_infos[env_idx]
     env_id = env_info.env_id
 

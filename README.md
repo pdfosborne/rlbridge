@@ -2,13 +2,13 @@
 
 **Reinforcement Learning Bridge** connects LLMs to reinforcement learning (RL) agents.
 
-RL agents can be used to automate complex decision making problems. rlbridge is the first attempt at giving LLMs the ability to use RL directly to train agents. 
+RL agents can be used to automate complex decision making problems. rlbridge is the first attempt at giving LLMs the ability to train RL agents. 
 
-LLMs can interact with rl problems directly (e.g. Claude plays Pokemon), using rlbridge massively reduces token costs and learns to optimize the agent for the problem. 
+LLMs can interact with rl problems directly (e.g. Claude plays Pokemon) but using rlbridge massively reduces token costs and learns to optimize the agent for the problem. 
 
-rlbridge automates how LLMs construct RL problems in language, including: building environments, transforming observations to language, and training agents with auto generated sub-tasks without user supervision.
+rlbridge streamlines how LLMs construct RL problems for language interaction. This includes: standardized problem specification, novel approach for translating any problem to language, and agent training with auto generated & completed sub-tasks without user supervision.
  
-LLMs interact with rlbridge through an **MCP plugin** compatible with Claude Code, Claude Desktop, Cursor, Windsurf, Codex CLI and local models through LM Studio and OpenCode.
+LLMs interact use rlbridge through an **MCP plugin** compatible with Claude Code, Claude Desktop, Cursor, Windsurf, Codex CLI and local models through LM Studio and OpenCode.
 
 ![interface_example](https://raw.githubusercontent.com/pdfosborne/rlbridge/refs/heads/main/docs/_images/interface_example.png)
 
@@ -21,15 +21,15 @@ LLMs interact with rlbridge through an **MCP plugin** compatible with Claude Cod
 │  Claude Code                                         │
 │                                                      │
 │  "Run 100 steps of CartPole with a random policy"    │
-│         │                                            │
+│          │                                           │
 │   MCP layer (stdio)                                  │
 └──────────┼───────────────────────────────────────────┘
            │
 ┌──────────▼───────────────────────────────────────────┐
-│  RL Bridge MCP Plugin  (rlbridge.mcp_plugin)             │
+│  RL Bridge MCP Plugin  (rlbridge.mcp_plugin)         │
 │  FastMCP tools:  rl_create · rl_reset · rl_step      │
 │                 rl_render · rl_close · rl_run_episode│
-│         │                                            │
+│          │                                           │
 │   In-process dispatcher                              │
 └──────────┼────────────────────────────┬──────────────┘
            │                            │
@@ -126,7 +126,11 @@ of `python -m`) and `--config-path` to override the default config location.
 
 Open Claude Code and ask:
 
-> *"Run a CartPole episode with a tabular agent and render the optimal policy."*
+> *"List the available environments."*
+
+Then try running an agent with a problem of your choice, for example:
+
+> *"Run a blackjack episode with a tabular agent and render the optimal policy."*
 
 Claude will call `rl_create`, `rl_reset`, `rl_step` (in a loop), and `rl_close` automatically.
 
