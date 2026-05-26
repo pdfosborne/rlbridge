@@ -163,6 +163,26 @@ from .predefined.gridworld import ALL_GRIDWORLD_FACTORIES  # noqa: E402
 for _factory in ALL_GRIDWORLD_FACTORIES:
     registry.register(_factory)
 
+# Register built-in workout environments
+from .predefined.workout import ALL_WORKOUT_FACTORIES  # noqa: E402
+for _factory in ALL_WORKOUT_FACTORIES:
+    registry.register(_factory)
+
+# Register built-in stock trading environments
+from .predefined.stock_trading import ALL_STOCK_TRADING_FACTORIES  # noqa: E402
+for _factory in ALL_STOCK_TRADING_FACTORIES:
+    registry.register(_factory)
+
+# Register built-in meal planning environments
+from .predefined.meal_planning import ALL_MEAL_PLANNING_FACTORIES  # noqa: E402
+for _factory in ALL_MEAL_PLANNING_FACTORIES:
+    registry.register(_factory)
+
+# Register built-in smart home control environments
+from .predefined.smart_home import ALL_SMART_HOME_FACTORIES  # noqa: E402
+for _factory in ALL_SMART_HOME_FACTORIES:
+    registry.register(_factory)
+
 # Register third-party environment plugins (pip-installed packages)
 from .plugins import load_plugin_environments  # noqa: E402
 

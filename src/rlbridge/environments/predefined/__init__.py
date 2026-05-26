@@ -13,6 +13,30 @@ from .gridworld import (
     GRIDWORLD_V0,
     ALL_GRIDWORLD_FACTORIES,
 )
+from .workout import (
+    WorkoutEnvironment,
+    WorkoutFactory,
+    WORKOUT_SIM_V0,
+    ALL_WORKOUT_FACTORIES,
+)
+from .stock_trading import (
+    StockTradingEnvironment,
+    StockTradingFactory,
+    STOCK_TRADING_SIM_V0,
+    ALL_STOCK_TRADING_FACTORIES,
+)
+from .meal_planning import (
+    MealPlanningEnvironment,
+    MealPlanningFactory,
+    MEAL_PLANNING_SIM_V0,
+    ALL_MEAL_PLANNING_FACTORIES,
+)
+from .smart_home import (
+    SmartHomeEnvironment,
+    SmartHomeFactory,
+    SMART_HOME_CONTROL_V0,
+    ALL_SMART_HOME_FACTORIES,
+)
 # Chess (python-chess) is an optional dependency; skip if not installed.
 try:
     from .chess_env import (
@@ -79,6 +103,22 @@ __all__ = [
     "GridWorldFactory",
     "GRIDWORLD_V0",
     "ALL_GRIDWORLD_FACTORIES",
+    "WorkoutEnvironment",
+    "WorkoutFactory",
+    "WORKOUT_SIM_V0",
+    "ALL_WORKOUT_FACTORIES",
+    "StockTradingEnvironment",
+    "StockTradingFactory",
+    "STOCK_TRADING_SIM_V0",
+    "ALL_STOCK_TRADING_FACTORIES",
+    "MealPlanningEnvironment",
+    "MealPlanningFactory",
+    "MEAL_PLANNING_SIM_V0",
+    "ALL_MEAL_PLANNING_FACTORIES",
+    "SmartHomeEnvironment",
+    "SmartHomeFactory",
+    "SMART_HOME_CONTROL_V0",
+    "ALL_SMART_HOME_FACTORIES",
     # Chess (optional - requires python-chess)
     "ChessEnvironment",
     "ChessFactory",

@@ -20,6 +20,8 @@ env/
 .idea/
 *.swp
 *.swo
+.vscode/
+.claude/
 
 # Testing
 .pytest_cache/
