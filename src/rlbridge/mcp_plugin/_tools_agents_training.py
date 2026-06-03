@@ -192,7 +192,7 @@ def rl_train_agent(
     ppo_epochs: int = 4,
     mini_batch_size: int = 64,
     # Parallel environments
-    n_envs: int = 10,
+    n_envs: int = 1,
     # Post-training clean evaluation
     clean_eval_episodes: int = 100,
     clean_eval_timeout_secs: int = 180,

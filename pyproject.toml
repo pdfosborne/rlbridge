@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rlbridge"
-version = "0.1.3"
+version = "0.1.4"
 description = "Reinforcement Learning Bridge - connects LLMs to RL environments, automates language-based problem construction, and derives instructions for long-term goals without user supervision"
 readme = "README.md"
 requires-python = ">=3.10"

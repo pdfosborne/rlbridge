@@ -18,21 +18,118 @@ def _get(obj: Any, key: str, default: Any = None) -> Any:
     return getattr(obj, key, default)
 
 
-def _n_actions_of(env: Any) -> int:
-    """Infer the number of discrete actions from an rlbridge environment."""
+def _discrete_n(env: Any) -> Optional[int]:
+    """Return the size of a fixed Discrete action space, or ``None``.
+
+    ``None`` signals a variable / text action space (e.g. an rlbridge
+    ``TextSpace``) whose number of valid actions changes per state and must be
+    read from ``observation["legal_actions"]`` instead.
+    """
     space = getattr(env, "action_space", None)
     if space is None:
-        return 2  # safe fallback
-    space_type = getattr(space, "type", None)
-
-    if space_type == "Discrete":
+        return None
+    if getattr(space, "type", None) == "Discrete":
         return int(space.n)
     if isinstance(space, dict) and space.get("type") == "Discrete":
         return int(space["n"])
-    # Gymnasium Discrete space
-    if hasattr(space, "n"):
-        return int(space.n)
-    return 2
+    if hasattr(space, "n"):  # Gymnasium Discrete space
+        try:
+            return int(space.n)
+        except Exception:
+            return None
+    return None
+
+
+def _n_actions_of(env: Any) -> int:
+    """Infer the number of discrete actions from an rlbridge environment."""
+    n = _discrete_n(env)
+    return n if n is not None else 2  # safe fallback
+
+
+def _legal_actions_of(obs: Any) -> Optional[list]:
+    """Extract the ordered ``legal_actions`` list from an observation, if any.
+
+    Environments with variable action spaces expose the actions that are valid
+    in the current state under ``observation["legal_actions"]``. The list is
+    index-aligned: selecting index ``i`` corresponds to ``legal_actions[i]``.
+    """
+    if isinstance(obs, dict):
+        legal = obs.get("legal_actions")
+        if isinstance(legal, (list, tuple)):
+            return list(legal)
+    return None
+
+
+def _n_legal_of(obs: Any) -> Optional[int]:
+    """Number of legal actions in *obs* (or ``None`` if not exposed)."""
+    legal = _legal_actions_of(obs)
+    return len(legal) if legal is not None else None
+
+
+def _to_env_action(obs: Any, index: int, use_masking: bool) -> Any:
+    """Map a policy action *index* to the action object the env expects.
+
+    For variable action spaces the policy selects an index into the current
+    ``legal_actions`` list; the environment is fed the corresponding action so
+    that index ``i`` reliably resolves to ``legal_actions[i]``. For fixed
+    Discrete spaces the integer index is returned unchanged.
+    """
+    if use_masking:
+        legal = _legal_actions_of(obs)
+        if legal and 0 <= index < len(legal):
+            return legal[index]
+    return index
+
+
+_ACTION_CAPACITY_HEADROOM = 8
+
+
+def _probe_max_legal(env: Any, probe_steps: int, seed: Optional[int]) -> int:
+    """Roll out random legal moves to estimate the max legal-action count."""
+    import random as _random
+
+    rng = _random.Random(seed)
+    max_n = 0
+    try:
+        reset_out = env.reset(seed=seed)
+        obs = _get(reset_out, "observation", reset_out)
+        for _ in range(max(1, probe_steps)):
+            legal = _legal_actions_of(obs)
+            if not legal:
+                break
+            max_n = max(max_n, len(legal))
+            choice = rng.randrange(len(legal))
+            step_out = env.step(legal[choice])
+            obs = _get(step_out, "observation", obs)
+            done = bool(_get(step_out, "terminated", False)) or bool(_get(step_out, "truncated", False))
+            if done:
+                reset_out = env.reset(seed=seed)
+                obs = _get(reset_out, "observation", reset_out)
+    except Exception:
+        pass
+    return max_n
+
+
+def _infer_action_capacity(
+    env: Any,
+    *,
+    probe_steps: int = 64,
+    seed: Optional[int] = None,
+) -> tuple[int, bool]:
+    """Return ``(capacity, use_masking)`` for an environment.
+
+    Fixed Discrete spaces return their exact size and disable masking. Variable
+    / text action spaces are probed to size an action head large enough to
+    cover the most legal actions ever offered (plus headroom); masking is then
+    used to restrict the agent to the legal actions of each state.
+    """
+    n = _discrete_n(env)
+    if n is not None:
+        return n, False
+    max_legal = _probe_max_legal(env, probe_steps, 0 if seed is None else int(seed))
+    if max_legal <= 0:
+        return _n_actions_of(env), False
+    return max_legal + _ACTION_CAPACITY_HEADROOM, True
 
 
 def _env_id_of(env: Any) -> str:

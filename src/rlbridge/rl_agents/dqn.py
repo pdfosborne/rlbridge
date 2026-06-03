@@ -54,7 +54,16 @@ try:
 except ImportError:  # pragma: no cover
     raise ImportError("DQN agent requires PyTorch. Install with: pip install torch")
 
-from .._agent_base import AgentBase, TrainResult, _flat_obs, _get, _n_actions_of
+from .._agent_base import (
+    AgentBase,
+    TrainResult,
+    _discrete_n,
+    _flat_obs,
+    _get,
+    _infer_action_capacity,
+    _n_legal_of,
+    _to_env_action,
+)
 
 # Use GPU when available; falls back to CPU transparently.
 _DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -206,19 +215,21 @@ class _ReplayBuffer:
         reward: float,
         next_obs: np.ndarray,
         done: bool,
+        next_n_legal: int,
     ) -> None:
-        self._buf.append((obs, action, reward, next_obs, done))
+        self._buf.append((obs, action, reward, next_obs, done, next_n_legal))
 
     def sample(self, batch_size: int) -> tuple[np.ndarray, ...]:
         idxs = self._rng.integers(0, len(self._buf), size=batch_size)
         batch = [self._buf[i] for i in idxs]
-        obs, actions, rewards, next_obs, dones = zip(*batch)
+        obs, actions, rewards, next_obs, dones, next_n_legal = zip(*batch)
         return (
-            np.array(obs,      dtype=np.float64),
-            np.array(actions,  dtype=np.int64),
-            np.array(rewards,  dtype=np.float64),
-            np.array(next_obs, dtype=np.float64),
-            np.array(dones,    dtype=np.float64),
+            np.array(obs,          dtype=np.float64),
+            np.array(actions,      dtype=np.int64),
+            np.array(rewards,      dtype=np.float64),
+            np.array(next_obs,     dtype=np.float64),
+            np.array(dones,        dtype=np.float64),
+            np.array(next_n_legal, dtype=np.int64),
         )
 
     def __len__(self) -> int:
@@ -294,6 +305,9 @@ class DQNAgent(AgentBase):
         self._seed = seed
         self._rng_py = random.Random(seed)
         self._rng_np = np.random.default_rng(seed)
+        # Restrict Q-value selection to per-state legal actions for variable /
+        # text action spaces; disabled for fixed Discrete spaces.
+        self._mask_actions = False
 
         # Built lazily on first obs
         self._online: Optional[_MLP] = None
@@ -332,13 +346,28 @@ class DQNAgent(AgentBase):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def act(self, obs: Any) -> int:
-        """Greedy action selection (no exploration)."""
+    def _masked_q(self, q_vals: np.ndarray, obs: Any) -> np.ndarray:
+        """Mask Q-values of illegal actions with ``-inf`` before argmax.
+
+        A no-op for fixed Discrete spaces or when ``legal_actions`` is absent.
+        """
+        if not getattr(self, "_mask_actions", False):
+            return q_vals
+        n_legal = _n_legal_of(obs)
+        if n_legal is None or n_legal <= 0 or n_legal >= self.n_actions:
+            return q_vals
+        masked = np.array(q_vals, dtype=np.float64, copy=True)
+        masked[..., n_legal:] = -np.inf
+        return masked
+
+    def act(self, obs: Any) -> Any:
+        """Greedy legal action selection (no exploration)."""
         if self._online is None:
             return 0  # not yet trained
         x = self._obs_to_vec(obs)
-        q_vals = self._online.predict(x)
-        return int(np.argmax(q_vals))
+        q_vals = self._masked_q(self._online.predict(x), obs)
+        idx = int(np.argmax(q_vals))
+        return _to_env_action(obs, idx, getattr(self, "_mask_actions", False))
 
     def train(
         self,
@@ -366,7 +395,9 @@ class DQNAgent(AgentBase):
         DQNTrainResult
         """
         if self.n_actions == 0:
-            self.n_actions = _n_actions_of(env)
+            self.n_actions, self._mask_actions = _infer_action_capacity(env, seed=seed)
+        else:
+            self._mask_actions = _discrete_n(env) is None
 
         episode_rewards: list[float] = []
         total_losses: list[float] = []
@@ -387,15 +418,23 @@ class DQNAgent(AgentBase):
             ep_history: list[tuple] = []
 
             for _ in range(max_steps):
-                # ε-greedy action
+                # Number of choices in this state (legal actions when masking).
+                n_legal = _n_legal_of(obs)
+                select_n = (
+                    n_legal
+                    if (self._mask_actions and n_legal and 0 < n_legal <= self.n_actions)
+                    else self.n_actions
+                )
+                # ε-greedy action (restricted to legal actions when masking)
                 if self._rng_py.random() < self.epsilon:
-                    action = self._rng_py.randint(0, self.n_actions - 1)
+                    action = self._rng_py.randint(0, select_n - 1)
                 else:
-                    q_vals = self._online.predict(obs_vec)  # type: ignore[union-attr]
+                    q_vals = self._masked_q(self._online.predict(obs_vec), obs)  # type: ignore[union-attr]
                     action = int(np.argmax(q_vals))
 
-                ep_history.append((obs, action))
-                step_out = env.step(action)
+                env_action = _to_env_action(obs, action, self._mask_actions)
+                ep_history.append((obs, env_action))
+                step_out = env.step(env_action)
                 next_obs  = _get(step_out, "observation", obs)
                 reward     = float(_get(step_out, "reward", 0.0))
                 terminated = bool(_get(step_out, "terminated", False))
@@ -403,7 +442,15 @@ class DQNAgent(AgentBase):
                 done = terminated or truncated
 
                 next_obs_vec = self._obs_to_vec(next_obs)
-                self._buffer.push(obs_vec, action, reward, next_obs_vec, done)  # type: ignore[union-attr]
+                next_n_legal = _n_legal_of(next_obs)
+                self._buffer.push(  # type: ignore[union-attr]
+                    obs_vec,
+                    action,
+                    reward,
+                    next_obs_vec,
+                    done,
+                    next_n_legal if next_n_legal is not None else self.n_actions,
+                )
                 total_reward += reward
                 obs_vec = next_obs_vec
                 obs = next_obs
@@ -443,6 +490,7 @@ class DQNAgent(AgentBase):
         data: dict[str, Any] = {
             "agent": self.name,
             "n_actions": self.n_actions,
+            "mask_actions": self._mask_actions,
             "obs_dim": self.obs_dim,
             "hidden_size": self.hidden_size,
             "lr": self.lr,
@@ -463,6 +511,7 @@ class DQNAgent(AgentBase):
         """Restore network weights and hyper-parameters from a JSON file."""
         data = json.loads(Path(path).read_text())
         self.n_actions        = data["n_actions"]
+        self._mask_actions    = bool(data.get("mask_actions", False))
         self.obs_dim          = data["obs_dim"]
         self.hidden_size      = data["hidden_size"]
         self.lr               = data["lr"]
@@ -482,14 +531,21 @@ class DQNAgent(AgentBase):
 
     def _learn(self) -> float:
         """Draw a mini-batch from the replay buffer and update the online net."""
-        obs_b, act_b, rew_b, next_b, done_b = self._buffer.sample(self.batch_size)  # type: ignore[union-attr]
+        obs_b, act_b, rew_b, next_b, done_b, nlegal_b = self._buffer.sample(self.batch_size)  # type: ignore[union-attr]
 
         # Target Q-values from target network
         q_next = self._target.predict(next_b)                 # type: ignore[union-attr]
         q_target_full = self._online.forward(obs_b).copy()    # type: ignore[union-attr]
 
-        # Bellman targets
+        # Bellman targets: max over the legal actions of each next state.
+        if self._mask_actions:
+            legal_mask = np.arange(self.n_actions)[None, :] < nlegal_b[:, None]
+            q_next = np.where(legal_mask, q_next, -np.inf)
         best_next = q_next.max(axis=1)
+        # Terminal next states expose no legal actions (fully masked → -inf);
+        # their bootstrap value is zeroed by ``(1 - done)`` below, so replace
+        # the non-finite max to avoid -inf * 0 = NaN.
+        best_next = np.where(np.isfinite(best_next), best_next, 0.0)
         batch_idx = np.arange(self.batch_size)
         q_target_full[batch_idx, act_b] = (
             rew_b + self.gamma * best_next * (1.0 - done_b)

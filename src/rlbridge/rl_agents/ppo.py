@@ -63,7 +63,16 @@ try:
 except ImportError:  # pragma: no cover
     raise ImportError("PPO agent requires PyTorch. Install with: pip install torch")
 
-from .._agent_base import AgentBase, TrainResult, _flat_obs, _get, _n_actions_of
+from .._agent_base import (
+    AgentBase,
+    TrainResult,
+    _discrete_n,
+    _flat_obs,
+    _get,
+    _infer_action_capacity,
+    _n_legal_of,
+    _to_env_action,
+)
 
 # Use GPU when available; falls back to CPU transparently.
 _DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -284,6 +293,9 @@ class PPOAgent(AgentBase):
         self._seed          = seed
         self._rng_py        = random.Random(seed)
         self._rng_np        = np.random.default_rng(seed)
+        # Whether to restrict the policy to per-state legal actions (set for
+        # variable / text action spaces; disabled for fixed Discrete spaces).
+        self._mask_actions  = False
 
         self._actor:  Optional[_MLP] = None
         self._critic: Optional[_MLP] = None
@@ -317,22 +329,44 @@ class PPOAgent(AgentBase):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def act(self, obs: Any) -> int:
-        """Sample an action from the current policy (stochastic)."""
-        if self._actor is None:
-            return 0
-        x = self._obs_to_vec(obs)
-        logits = self._actor.predict(x)
-        probs = _softmax(logits)
-        return int(self._rng_np.choice(self.n_actions, p=probs))
+    def _masked_logits(self, logits: np.ndarray, obs: Any) -> np.ndarray:
+        """Set logits of illegal actions to a large negative value.
 
-    def act_greedy(self, obs: Any) -> int:
-        """Return the most probable action (greedy / deterministic)."""
+        Restricts the policy to the ``[0, n_legal)`` indices that map onto the
+        current state's legal actions. A no-op for fixed Discrete spaces or
+        when the observation does not expose ``legal_actions``.
+        """
+        if not getattr(self, "_mask_actions", False):
+            return logits
+        n_legal = _n_legal_of(obs)
+        if n_legal is None or n_legal <= 0 or n_legal >= self.n_actions:
+            return logits
+        masked = np.array(logits, dtype=np.float64, copy=True)
+        masked[..., n_legal:] = -1e9
+        return masked
+
+    def act(self, obs: Any) -> Any:
+        """Sample an action from the current policy (stochastic).
+
+        Returns the environment-ready action: for variable action spaces this
+        is the selected ``legal_actions`` entry; otherwise an integer index.
+        """
         if self._actor is None:
             return 0
         x = self._obs_to_vec(obs)
-        logits = self._actor.predict(x)
-        return int(np.argmax(logits))
+        logits = self._masked_logits(self._actor.predict(x), obs)
+        probs = _softmax(logits)
+        idx = int(self._rng_np.choice(self.n_actions, p=probs))
+        return _to_env_action(obs, idx, getattr(self, "_mask_actions", False))
+
+    def act_greedy(self, obs: Any) -> Any:
+        """Return the most probable legal action (greedy / deterministic)."""
+        if self._actor is None:
+            return 0
+        x = self._obs_to_vec(obs)
+        logits = self._masked_logits(self._actor.predict(x), obs)
+        idx = int(np.argmax(logits))
+        return _to_env_action(obs, idx, getattr(self, "_mask_actions", False))
 
     def train(
         self,
@@ -367,7 +401,9 @@ class PPOAgent(AgentBase):
         PPOTrainResult
         """
         if self.n_actions == 0:
-            self.n_actions = _n_actions_of(env)
+            self.n_actions, self._mask_actions = _infer_action_capacity(env, seed=seed)
+        else:
+            self._mask_actions = _discrete_n(env) is None
 
         total_steps = n_episodes * max_steps
         episode_rewards: list[float] = []
@@ -397,9 +433,10 @@ class PPOAgent(AgentBase):
             rollout_dones:     list[float]      = []
             rollout_log_probs: list[float]      = []
             rollout_values:    list[float]      = []
+            rollout_n_legal:   list[int]        = []
 
             for _ in range(self.n_steps):
-                logits = self._actor.forward(obs_vec[None, :])   # type: ignore[union-attr]
+                logits = self._masked_logits(self._actor.forward(obs_vec[None, :]), obs)  # type: ignore[union-attr]
                 log_probs_all = _log_softmax(logits)[0]
                 probs = _softmax(logits)[0]
                 action = int(self._rng_np.choice(self.n_actions, p=probs))
@@ -407,7 +444,9 @@ class PPOAgent(AgentBase):
 
                 value = float(self._critic.predict(obs_vec[None, :]).flatten()[0])  # type: ignore[union-attr]
 
-                step_out = env.step(action)
+                n_legal = _n_legal_of(obs)
+                env_action = _to_env_action(obs, action, self._mask_actions)
+                step_out = env.step(env_action)
                 next_obs   = _get(step_out, "observation", obs)
                 reward     = float(_get(step_out, "reward", 0.0))
                 terminated = bool(_get(step_out, "terminated", False))
@@ -420,7 +459,8 @@ class PPOAgent(AgentBase):
                 rollout_dones.append(float(done))
                 rollout_log_probs.append(log_prob)
                 rollout_values.append(value)
-                current_ep_history.append((obs, action))
+                rollout_n_legal.append(n_legal if n_legal is not None else self.n_actions)
+                current_ep_history.append((obs, env_action))
 
                 current_ep_reward += reward
                 current_ep_steps  += 1
@@ -452,6 +492,7 @@ class PPOAgent(AgentBase):
             values_arr  = np.array(rollout_values,    dtype=np.float64)    # (T,)
             log_old_arr = np.array(rollout_log_probs, dtype=np.float64)    # (T,)
             dones_arr   = np.array(rollout_dones,     dtype=np.float64)    # (T,)
+            nlegal_arr  = np.array(rollout_n_legal,   dtype=np.int64)      # (T,)
 
             # Bootstrap value of state after last rollout step
             next_val = float(self._critic.predict(obs_vec[None, :]).flatten()[0])  # type: ignore[union-attr]
@@ -483,12 +524,19 @@ class PPOAgent(AgentBase):
                     mb_adv  = advantages[mb_idx]                # (B,)
                     mb_ret  = returns[mb_idx]                   # (B,)
                     mb_lp_old = log_old_arr[mb_idx]             # (B,)
+                    mb_nlegal = nlegal_arr[mb_idx]              # (B,)
 
                     # ── Actor forward ──────────────────────────────────────────
                     logits_new = self._actor.forward(mb_obs)    # type: ignore[union-attr]
+                    B = mb_obs.shape[0]
+                    legal_mask: Optional[np.ndarray] = None
+                    if self._mask_actions:
+                        # Same per-state legal masking used during rollout, so
+                        # the probability ratio and entropy stay consistent.
+                        legal_mask = np.arange(self.n_actions)[None, :] < mb_nlegal[:, None]  # (B, A)
+                        logits_new = np.where(legal_mask, logits_new, -1e9)
                     log_probs_new = _log_softmax(logits_new)    # (B, A)
                     probs_new = _softmax(logits_new)            # (B, A)
-                    B = mb_obs.shape[0]
                     lp_new = log_probs_new[np.arange(B), mb_acts]  # (B,)
 
                     # ── PPO-clip actor loss ────────────────────────────────────
@@ -514,6 +562,10 @@ class PPOAgent(AgentBase):
                     ent_grad = probs_new * (log_probs_new + 1.0) - \
                                (probs_new * (log_probs_new + 1.0)).sum(axis=1, keepdims=True)
                     grad_logits += self.c_ent * ent_grad
+
+                    if legal_mask is not None:
+                        # No gradient through masked (illegal) action logits.
+                        grad_logits = np.where(legal_mask, grad_logits, 0.0)
 
                     self._actor.backward(grad_logits)             # type: ignore[union-attr]
 
@@ -542,6 +594,7 @@ class PPOAgent(AgentBase):
         data: dict[str, Any] = {
             "agent": self.name,
             "n_actions":      self.n_actions,
+            "mask_actions":   self._mask_actions,
             "obs_dim":        self.obs_dim,
             "hidden_size":    self.hidden_size,
             "lr_actor":       self.lr_actor,
@@ -564,6 +617,7 @@ class PPOAgent(AgentBase):
         """Restore actor/critic weights and hyper-parameters from a JSON file."""
         data = json.loads(Path(path).read_text())
         self.n_actions       = data["n_actions"]
+        self._mask_actions   = bool(data.get("mask_actions", False))
         self.obs_dim         = data["obs_dim"]
         self.hidden_size     = data["hidden_size"]
         self.lr_actor        = data["lr_actor"]

@@ -86,6 +86,7 @@ class EnvironmentRegistry:
     # ── Look-up ───────────────────────────────────────────────────────────────
 
     def get(self, env_id: str) -> rlbridgeEnvironmentFactory:
+        _ensure_plugins_loaded()
         with self._lock:
             factory = self._factories.get(env_id)
         if factory is None:
@@ -103,6 +104,7 @@ class EnvironmentRegistry:
         tags: Optional[list[str]] = None,
         namespace: Optional[str] = None,
     ) -> list[EnvironmentInfo]:
+        _ensure_plugins_loaded()
         with self._lock:
             factories = list(self._factories.values())
 
@@ -126,10 +128,12 @@ class EnvironmentRegistry:
         return factory.create(render_mode=render_mode, **kwargs)
 
     def __len__(self) -> int:
+        _ensure_plugins_loaded()
         with self._lock:
             return len(self._factories)
 
     def __contains__(self, env_id: str) -> bool:
+        _ensure_plugins_loaded()
         with self._lock:
             return env_id in self._factories
 
@@ -183,10 +187,28 @@ from .predefined.smart_home import ALL_SMART_HOME_FACTORIES  # noqa: E402
 for _factory in ALL_SMART_HOME_FACTORIES:
     registry.register(_factory)
 
-# Register third-party environment plugins (pip-installed packages)
+# Register third-party environment plugins (pip-installed packages).
+#
+# Plugins are loaded lazily on first registry use rather than at import time:
+# importing rlbridge.environments runs this module, and a plugin's
+# register_environments() may need to import the very environment module that
+# triggered the load (e.g. it imports ``rlbridge.environments.base``). Eager
+# loading therefore re-enters the plugin mid-import and fails with a spurious
+# circular-import warning. Deferring until first lookup avoids that.
 from .plugins import load_plugin_environments  # noqa: E402
 
-load_plugin_environments(registry)
+_plugins_loaded = False
+
+
+def _ensure_plugins_loaded() -> None:
+    """Load third-party environment plugins once, on first registry access."""
+    global _plugins_loaded
+    if _plugins_loaded:
+        return
+    # Set the flag before loading so re-entrant lookups during a plugin's
+    # registration are treated as no-ops rather than recursing.
+    _plugins_loaded = True
+    load_plugin_environments(registry)
 
 # Register TextWorld environments (optional dependency)
 from .predefined import ALL_TEXTWORLD_FACTORIES as _tw_factories  # noqa: E402

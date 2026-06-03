@@ -587,7 +587,7 @@ def save_path_image(
 def save_overlay_image(
     frames: list[RenderedFrame],
     output_path: str | os.PathLike,
-    max_width: int = 480,
+    max_width: int = 0,
 ) -> bool:
     """
     Composite all ``rgb_array`` frames into a single PNG by overlaying every
@@ -677,7 +677,7 @@ def save_gif(
     output_path: str | os.PathLike,
     fps: float = 4.0,
     annotate: bool = True,
-    max_width: int = 480,
+    max_width: int = 0,
 ) -> int:
     """
     Compose ``rgb_array`` frames into an animated GIF using Pillow.

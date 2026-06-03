@@ -33,7 +33,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from .._agent_base import AgentBase, TrainResult, _get, _n_actions_of
+from .._agent_base import (
+    AgentBase,
+    TrainResult,
+    _discrete_n,
+    _get,
+    _infer_action_capacity,
+    _n_legal_of,
+    _to_env_action,
+)
 
 
 # ── Result dataclass ──────────────────────────────────────────────────────────
@@ -105,14 +113,18 @@ class TabularQAgent(AgentBase):
         self.epsilon_decay = epsilon_decay
         self.q_init = q_init
         self._rng = random.Random(seed)
+        # Restrict action selection to per-state legal actions for variable /
+        # text action spaces; disabled for fixed Discrete spaces.
+        self._mask_actions = False
         # Q-table: state → list of Q-values per action
         self._q: dict[Any, list[float]] = {}
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def act(self, obs: Any) -> int:
-        """Return the greedy action for *obs* (no exploration)."""
-        return int(self._greedy_action(obs))
+    def act(self, obs: Any) -> Any:
+        """Return the greedy legal action for *obs* (no exploration)."""
+        idx = self._greedy_index(obs)
+        return _to_env_action(obs, idx, getattr(self, "_mask_actions", False))
 
     def train(
         self,
@@ -140,7 +152,9 @@ class TabularQAgent(AgentBase):
         TabularQTrainResult
         """
         if self.n_actions == 0:
-            self.n_actions = _n_actions_of(env)
+            self.n_actions, self._mask_actions = _infer_action_capacity(env, seed=seed)
+        else:
+            self._mask_actions = _discrete_n(env) is None
 
         episode_rewards: list[float] = []
         best_ep_reward  = float("-inf")
@@ -156,8 +170,9 @@ class TabularQAgent(AgentBase):
 
             for _ in range(max_steps):
                 action = self._epsilon_greedy(obs)
-                ep_history.append((obs, action))
-                step_out = env.step(action)
+                env_action = _to_env_action(obs, action, getattr(self, "_mask_actions", False))
+                ep_history.append((obs, env_action))
+                step_out = env.step(env_action)
                 next_obs  = _get(step_out, "observation", obs)
                 reward     = float(_get(step_out, "reward", 0.0))
                 terminated = bool(_get(step_out, "terminated", False))
@@ -200,6 +215,7 @@ class TabularQAgent(AgentBase):
         data = {
             "agent": self.name,
             "n_actions": self.n_actions,
+            "mask_actions": self._mask_actions,
             "alpha": self.alpha,
             "gamma": self.gamma,
             "epsilon": self.epsilon,
@@ -214,6 +230,7 @@ class TabularQAgent(AgentBase):
         """Restore Q-table and hyper-parameters from a JSON file."""
         data = json.loads(Path(path).read_text())
         self.n_actions    = data["n_actions"]
+        self._mask_actions = bool(data.get("mask_actions", False))
         self.alpha        = data["alpha"]
         self.gamma        = data["gamma"]
         self.epsilon      = data["epsilon"]
@@ -237,17 +254,27 @@ class TabularQAgent(AgentBase):
             self._q[key] = [self.q_init] * self.n_actions
         return self._q[key]
 
-    def _greedy_action(self, obs: Any) -> int:
+    def _legal_count(self, obs: Any) -> int:
+        """Number of selectable actions for *obs* (legal actions when masking)."""
+        if getattr(self, "_mask_actions", False):
+            n_legal = _n_legal_of(obs)
+            if n_legal is not None and 0 < n_legal <= self.n_actions:
+                return n_legal
+        return self.n_actions
+
+    def _greedy_index(self, obs: Any) -> int:
         qv = self._q_values(obs)
-        best = max(qv)
-        # Break ties randomly
-        best_actions = [i for i, v in enumerate(qv) if v == best]
+        n = self._legal_count(obs)
+        best = max(qv[:n])
+        # Break ties randomly among the legal actions.
+        best_actions = [i for i in range(n) if qv[i] == best]
         return self._rng.choice(best_actions)
 
     def _epsilon_greedy(self, obs: Any) -> int:
+        n = self._legal_count(obs)
         if self._rng.random() < self.epsilon:
-            return self._rng.randint(0, self.n_actions - 1)
-        return self._greedy_action(obs)
+            return self._rng.randint(0, n - 1)
+        return self._greedy_index(obs)
 
     def _update(
         self,
@@ -258,7 +285,12 @@ class TabularQAgent(AgentBase):
         done: bool,
     ) -> None:
         qv = self._q_values(obs)
-        next_max = max(self._q_values(next_obs)) if not done else 0.0
+        if done:
+            next_max = 0.0
+        else:
+            next_qv = self._q_values(next_obs)
+            next_n = self._legal_count(next_obs)
+            next_max = max(next_qv[:next_n])
         td_target = reward + self.gamma * next_max
         qv[action] += self.alpha * (td_target - qv[action])
 
