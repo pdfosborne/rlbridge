@@ -76,11 +76,11 @@ rlbridge-mcp = "rlbridge.mcp_plugin.plugin:main"
 rlbridge = "rlbridge.__main__:app"
 
 [project.urls]
-Homepage = "https://github.com/pdfosborne/RL-IP"
-Documentation = "https://github.com/pdfosborne/RL-IP#readme"
-Repository = "https://github.com/pdfosborne/RL-IP"
-Issues = "https://github.com/pdfosborne/RL-IP/issues"
-Changelog = "https://github.com/pdfosborne/RL-IP/releases"
+Homepage = "https://github.com/pdfosborne/rlbridge"
+Documentation = "https://github.com/pdfosborne/rlbridge#readme"
+Repository = "https://github.com/pdfosborne/rlbridge"
+Issues = "https://github.com/pdfosborne/rlbridge/issues"
+Changelog = "https://github.com/pdfosborne/rlbridge/releases"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rlbridge"]

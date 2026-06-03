@@ -81,8 +81,8 @@ uv add "rlbridge[examples]"
 From source (development):
 
 ```bash
-git clone https://github.com/pdfosborne/RL-IP
-cd RL-IP
+git clone https://github.com/pdfosborne/rlbridge
+cd rlbridge
 pip install -e ".[dev,examples]"
 # or: uv sync --extra dev --extra examples
 ```
